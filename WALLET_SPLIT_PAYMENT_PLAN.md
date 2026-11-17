@@ -1,6 +1,6 @@
 # Wallet + Online Split Payment, and Split Refunds
 
-**Goal:** a customer can pay part of an order from their Minto wallet and the rest online (Razorpay). If the order is cancelled, the wallet part goes back to the wallet instantly and the online part goes back to the card, UPI or bank account it came from.
+**Goal:** a customer can pay part of an order from their Quick Spicy wallet and the rest online (Razorpay). If the order is cancelled, the wallet part goes back to the wallet instantly and the online part goes back to the card, UPI or bank account it came from.
 
 **Example:** order ₹450, wallet balance ₹120.
 - At checkout: ₹120 from wallet + ₹330 through Razorpay.
@@ -113,7 +113,7 @@ Steps:
 **Who can cancel, and how much comes back:** no change from today (user before acceptance, restaurant, admin, auto-cancel on timeout). Each of these calls `applyCancellationRefund`, so all of them get split refunds automatically.
 
 **Customer message:**
-> "₹120 has been added back to your Minto wallet. ₹330 will be refunded to your original payment method within 5–7 working days."
+> "₹120 has been added back to your Quick Spicy wallet. ₹330 will be refunded to your original payment method within 5–7 working days."
 
 ---
 
@@ -129,7 +129,7 @@ Steps:
 
 ## 7. Customer app (Flutter), for the app developer
 
-- Checkout: a "Use Minto wallet (₹120 available)" toggle, shown when balance > 0.
+- Checkout: a "Use Quick Spicy wallet (₹120 available)" toggle, shown when balance > 0.
 - When on, show "Wallet −₹120" and "To pay ₹330" in the bill; the button reads "Pay ₹330".
 - Send `useWallet: true` with `paymentMethod: 'razorpay'`, and open Razorpay with the **amount the server returns**, not a figure the app works out itself.
 - If wallet covers the whole order, skip Razorpay (server returns `paymentMethod: 'wallet'`).

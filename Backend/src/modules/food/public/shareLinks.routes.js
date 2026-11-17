@@ -7,9 +7,11 @@ import { applyAppPricingOne } from '../pricing/priceRules.service.js';
 
 const router = express.Router();
 
+// Until the Quick Spicy app is on the Play Store, store links fall back to
+// ordering on the website.
 const PLAY_STORE_URL =
     process.env.ANDROID_PLAY_STORE_URL ||
-    'https://play.google.com/store/apps/details?id=com.minto.user';
+    `${String(process.env.FRONTEND_URL || 'https://new.quickspicy.in').replace(/\/+$/, '')}/food/user`;
 const APP_STORE_URL = process.env.IOS_APP_STORE_URL || '';
 
 const escapeHtml = (value) =>
@@ -49,11 +51,11 @@ const renderPage = ({ title, description, image, canonical, appUrl }) => `<!doct
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(title)} · Suvio</title>
+<title>${escapeHtml(title)} · Quick Spicy</title>
 <meta name="description" content="${escapeHtml(description)}" />
 <link rel="canonical" href="${escapeHtml(canonical)}" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="Suvio" />
+<meta property="og:site_name" content="Quick Spicy" />
 <meta property="og:title" content="${escapeHtml(title)}" />
 <meta property="og:description" content="${escapeHtml(description)}" />
 <meta property="og:url" content="${escapeHtml(canonical)}" />
@@ -88,8 +90,8 @@ a.btn { display:block; padding:14px 20px; border-radius:999px; text-decoration:n
   ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(title)}" />` : ''}
   <h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(description)}</p>
-  <a class="btn primary" href="${escapeHtml(PLAY_STORE_URL)}">Get Suvio on Android</a>
-  ${APP_STORE_URL ? `<a class="btn secondary" href="${escapeHtml(APP_STORE_URL)}">Get Suvio on iPhone</a>` : ''}
+  <a class="btn primary" href="${escapeHtml(PLAY_STORE_URL)}">Get Quick Spicy on Android</a>
+  ${APP_STORE_URL ? `<a class="btn secondary" href="${escapeHtml(APP_STORE_URL)}">Get Quick Spicy on iPhone</a>` : ''}
   <a class="btn secondary" href="${escapeHtml(appUrl)}">Already have the app? Open it</a>
 </div>
 </body>
@@ -114,7 +116,7 @@ const notFoundPage = (req, res, what) =>
         renderPage({
             title: `This ${what} is unavailable`,
             description:
-                'The link may have expired, or the item is no longer being served. Browse everything else on Suvio.',
+                'The link may have expired, or the item is no longer being served. Browse everything else on Quick Spicy.',
             image: '',
             canonical: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
             appUrl: PLAY_STORE_URL,
@@ -188,7 +190,7 @@ router.get('/restaurant-detail/:id', async (req, res, next) => {
             renderPage({
                 title: restaurant.restaurantName || 'Restaurant',
                 description: [cuisines, place].filter(Boolean).join(' · ') ||
-                    'Order food on Suvio.',
+                    'Order food on Quick Spicy.',
                 image: absoluteUrl(
                     req,
                     // `coverImage` singular was a Mongo field that duplicated the
@@ -242,7 +244,7 @@ router.get('/food-detail', async (req, res, next) => {
             res,
             renderPage({
                 title: food.name || 'Dish',
-                description: description || 'Order it on Suvio.',
+                description: description || 'Order it on Quick Spicy.',
                 image: absoluteUrl(req, firstOf(food.image, food.images || [])),
                 canonical: `${req.protocol}://${req.get('host')}/food-detail?${query}`,
                 appUrl: `suvio://food-detail?${query}`,
@@ -263,17 +265,16 @@ router.get(['/invite', '/share/invite'], (req, res) => {
     const code = String(req.query.ref || '').trim().toLowerCase();
     if (!isId(code)) return notFoundPage(req, res, 'invite');
 
-    const pkg = process.env.ANDROID_PACKAGE_NAME || 'com.minto.user';
+    const pkg = process.env.ANDROID_PACKAGE_NAME || 'in.quickspicy.user';
     const store = `${PLAY_STORE_URL}${PLAY_STORE_URL.includes('?') ? '&' : '?'}referrer=${encodeURIComponent(`ref=${code}`)}`;
     const intentUrl = `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${pkg};S.browser_fallback_url=${encodeURIComponent(store)};end`;
     const html = renderPage({
-        title: 'You are invited to MintoFood',
+        title: 'You are invited to Quick Spicy',
         description: `Sign up with referral code ${code} and order your first meal.`,
         image: '',
         canonical: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
         appUrl: intentUrl,
     })
-        .replace(/Suvio/g, 'MintoFood')
         .replace(/<a class="btn primary" href="[^"]*">[^<]*<\/a>/,
             `<p style="font-size:20px;font-weight:700;letter-spacing:1px;color:inherit;word-break:break-all">${escapeHtml(code)}</p>
   <a class="btn primary" id="go" href="${escapeHtml(store)}">Copy code &amp; get the app</a>`)

@@ -1,5 +1,5 @@
 export const APP_CONFIG = {
-  NAME: 'Minto Foods',
+  NAME: 'Quick Spicy',
   VERSION: '1.0.0',
 };
 

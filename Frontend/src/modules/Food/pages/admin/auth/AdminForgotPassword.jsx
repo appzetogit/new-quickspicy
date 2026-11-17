@@ -6,7 +6,7 @@ import { Input } from "@food/components/ui/input"
 import { Label } from "@food/components/ui/label"
 import AdminAuthHero from "@food/components/admin/auth/AdminAuthHero"
 import { ArrowLeft, Shield, Eye, EyeOff, Loader2 } from "lucide-react"
-import mintoLogo from "@food/assets/minto-logo.png"
+import brandLogo from "@food/assets/quickspicy-logo.png"
 import { adminAPI } from "@food/api"
 import { useCompanyName } from "@food/hooks/useCompanyName"
 import {
@@ -15,7 +15,7 @@ import {
   getModulePowerScanning,
 } from "@food/utils/businessSettings"
 
-const THEME = "#008078"
+const THEME = "#EB590E"
 
 const STEP_META = {
   1: { title: "Forgot password", subtitle: "Enter your email to receive a verification code" },
@@ -63,7 +63,7 @@ export default function AdminForgotPassword() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [resendTimer, setResendTimer] = useState(0)
-  const [logoUrl, setLogoUrl] = useState(mintoLogo)
+  const [logoUrl, setLogoUrl] = useState(brandLogo)
   const [themeColor, setThemeColor] = useState(THEME)
   const inputRefs = useRef(Array(6).fill(null).map(() => null))
 
@@ -296,13 +296,13 @@ export default function AdminForgotPassword() {
               <div className="mb-5 flex justify-center lg:justify-start">
                 <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
                   <img
-                    src={logoUrl || mintoLogo}
+                    src={logoUrl || brandLogo}
                     alt={`${companyName} logo`}
                     className="h-full w-full scale-[1.65] object-contain"
                     loading="lazy"
                     onError={(e) => {
-                      if (e.target.src !== mintoLogo) {
-                        e.target.src = mintoLogo
+                      if (e.target.src !== brandLogo) {
+                        e.target.src = brandLogo
                       }
                     }}
                   />

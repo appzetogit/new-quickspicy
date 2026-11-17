@@ -579,7 +579,7 @@ export async function assignRiderManually(orderId, partnerId, adminId, { force =
 
 /**
  * Give an order to a rider from outside -- Rapido, Shadowfax, a temporary hand
- * -- when no Minto rider can take it. Their name and phone go on the order and
+ * -- when no Quick Spicy rider can take it. Their name and phone go on the order and
  * show to the customer and restaurant as the rider. They have no app, so the
  * admin moves the order on (picked up, delivered) from the Orders page.
  */

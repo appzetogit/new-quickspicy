@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Rubik:wght@400;500;700&family=Ubuntu:wght@400;500;700&family=Work+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Fredoka:wght@500;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Rubik:wght@400;500;700&family=Ubuntu:wght@400;500;700&family=Work+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 /* The CMS pages (terms, privacy, refund and the rest) are written against
    prose-* classes, and without this plugin every one of them is a no-op:
@@ -9,10 +9,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Quick Spicy brand. #EB590E is the logo orange; everything else is derived. */
 :root {
-  font-family: 'Poppins', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Outfit', system-ui, Avenir, Helvetica, Arial, sans-serif;
   --font-poppins: 'Poppins', sans-serif;
   --font-outfit: 'Outfit', sans-serif;
+  --font-brand: 'Fredoka', 'Outfit', sans-serif;
+
+  --brand-50: #FFF2EB;
+  --brand-100: #FFE3D3;
+  --brand-200: #FFC4A3;
+  --brand-300: #FB9A66;
+  --brand-400: #F47835;
+  --brand-500: #EB590E;
+  --brand-600: #D94F0C;
+  --brand-700: #B23F09;
+  --brand-800: #8A320B;
+  --brand-900: #5E230A;
+  --ink: #1F1A17;
+  --ink-muted: #6B5E57;
+  --cream: #FFF8F3;
   line-height: 1.5;
   font-weight: 400;
 
@@ -23,31 +39,31 @@
   --radius: 0.625rem;
   
   --background: #ffffff;
-  --foreground: oklch(0.2 0.03 190);
+  --foreground: var(--ink);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.03 190);
+  --card-foreground: var(--ink);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.03 190);
-  --primary: oklch(0.7 0.12 185);
-  --primary-foreground: oklch(0.15 0.03 190);
-  --secondary: oklch(0.95 0.02 185);
-  --secondary-foreground: oklch(0.3 0.06 190);
-  --muted: oklch(0.96 0.01 185);
-  --muted-foreground: oklch(0.5 0.03 190);
-  --accent: oklch(0.92 0.06 185);
-  --accent-foreground: oklch(0.25 0.05 190);
+  --popover-foreground: var(--ink);
+  --primary: var(--brand-500);
+  --primary-foreground: #ffffff;
+  --secondary: var(--brand-50);
+  --secondary-foreground: var(--brand-800);
+  --muted: oklch(0.97 0.005 60);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--brand-100);
+  --accent-foreground: var(--brand-800);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.9 0.02 185);
-  --input: oklch(0.95 0.01 185);
-  --ring: oklch(0.7 0.12 185);
-  --sidebar: oklch(0.98 0.01 185);
-  --sidebar-foreground: oklch(0.2 0.03 190);
-  --sidebar-primary: oklch(0.7 0.12 185);
-  --sidebar-primary-foreground: oklch(0.15 0.03 190);
-  --sidebar-accent: oklch(0.95 0.02 185);
-  --sidebar-accent-foreground: oklch(0.3 0.06 190);
-  --sidebar-border: oklch(0.9 0.02 185);
-  --sidebar-ring: oklch(0.7 0.12 185);
+  --border: oklch(0.92 0.01 60);
+  --input: oklch(0.95 0.008 60);
+  --ring: var(--brand-500);
+  --sidebar: var(--cream);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--brand-500);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--brand-50);
+  --sidebar-accent-foreground: var(--brand-800);
+  --sidebar-border: oklch(0.92 0.01 60);
+  --sidebar-ring: var(--brand-500);
 }
 
 @theme inline {
@@ -83,9 +99,26 @@
   --color-sidebar-ring: var(--sidebar-ring);
   
   --color-page-bg: #ffffff;
-  --color-primary-orange: #dc2626;
+  --color-primary-orange: var(--brand-500);
   --font-poppins: var(--font-poppins);
   --font-outfit: var(--font-outfit);
+  --font-brand: var(--font-brand);
+  --font-sans: var(--font-outfit);
+
+  /* bg-brand-500, text-brand-600, from-brand-500 ... */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-cream: var(--cream);
 }
 
 .dark {
@@ -95,8 +128,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.75 0.13 185);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: var(--brand-400);
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -106,15 +139,15 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.62 0.10 185);
+  --ring: var(--brand-500);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.62 0.12 185);
+  --sidebar-primary: var(--brand-500);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.62 0.10 185);
+  --sidebar-ring: var(--brand-500);
 }
 
 @layer base {

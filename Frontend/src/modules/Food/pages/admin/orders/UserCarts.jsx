@@ -99,11 +99,11 @@ function CartBillBreakdown({ pricing, fallbackSubtotal = 0, items = [] }) {
             decimals={2}
             showDiscountTag={false}
             plainClassName="font-medium text-slate-800 tabular-nums"
-            saleClassName="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-sm font-bold text-[#008078] tabular-nums"
+            saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
           />
         </div>
         {offerAmount > 0 && (
-          <div className="flex justify-between text-sm font-semibold text-[#008078]">
+          <div className="flex justify-between text-sm font-semibold text-[#EB590E]">
             <span>Offer / Coupon{couponCode ? ` (${couponCode})` : ""}</span>
             <span>-{formatMoney(offerAmount)}</span>
           </div>
@@ -133,7 +133,7 @@ function CartBillBreakdown({ pricing, fallbackSubtotal = 0, items = [] }) {
           </span>
         </div>
         {quickDeliveryFee > 0 && (
-          <div className="flex justify-between text-sm font-semibold text-[#008078]">
+          <div className="flex justify-between text-sm font-semibold text-[#EB590E]">
             <span>Quick Mode</span>
             <span>{formatMoney(quickDeliveryFee)}</span>
           </div>

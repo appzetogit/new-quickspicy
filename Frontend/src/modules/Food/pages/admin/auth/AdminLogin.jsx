@@ -14,14 +14,14 @@ import { Input } from "@food/components/ui/input"
 import { Label } from "@food/components/ui/label"
 import AdminAuthHero from "@food/components/admin/auth/AdminAuthHero"
 import { Eye, EyeOff, Shield, Loader2 } from "lucide-react"
-import mintoLogo from "@food/assets/minto-logo.png"
+import brandLogo from "@food/assets/quickspicy-logo.png"
 
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
 
-const THEME = "#008078"
-const THEME_RGB = "0, 128, 120"
+const THEME = "#EB590E"
+const THEME_RGB = "235, 89, 14"
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -34,7 +34,7 @@ export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [successMessage, setSuccessMessage] = useState("")
-  const [logoUrl, setLogoUrl] = useState(mintoLogo)
+  const [logoUrl, setLogoUrl] = useState(brandLogo)
   const [themeColor, setThemeColor] = useState(THEME)
   const submittingRef = useRef(false)
 
@@ -184,8 +184,8 @@ export default function AdminLogin() {
                     className="h-full w-full scale-[1.65] object-contain"
                     loading="lazy"
                     onError={(e) => {
-                      if (e.target.src !== mintoLogo) {
-                        e.target.src = mintoLogo
+                      if (e.target.src !== brandLogo) {
+                        e.target.src = brandLogo
                       }
                     }}
                   />

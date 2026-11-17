@@ -814,7 +814,7 @@ export async function createOrder(userId, rawDto) {
 
     // Provisional; synced to the transaction's platformNetProfit (which also accounts
     // for the admin discount share) once the initial transaction is created.
-    // Admin price-rule markup on the lines: Minto's, not the restaurant's.
+    // Admin price-rule markup on the lines: Quick Spicy's, not the restaurant's.
     const priceMarkupAmount = foodTransactionService.priceMarkupOf({ items: resolvedItems });
     const platformProfit =
       priceMarkupAmount +
@@ -1725,7 +1725,7 @@ export async function cancelOrder(orderId, userId, reason) {
     logger.warn(`cancelOrder transaction sync failed: ${err?.message || err}`);
   }
 
-  // Says where each part went: "₹120 has been added back to your Minto
+  // Says where each part went: "₹120 has been added back to your Quick Spicy
   // wallet. ₹330 will be refunded to your original payment method...".
   const refundDetail = refund.message
     ? ` ${refund.message}`
@@ -2261,11 +2261,11 @@ export async function updateOrderStatusRestaurant(orderId, restaurantId, orderSt
     const refundDetail = !paid
       ? ""
       : fromOnline && fromWallet
-        ? " Your refund is on its way: the wallet part back to your Minto wallet, the rest to your original payment method (5-7 working days). The order shows the details."
+        ? " Your refund is on its way: the wallet part back to your Quick Spicy wallet, the rest to your original payment method (5-7 working days). The order shows the details."
         : fromOnline
           ? " Your refund is on its way to your original payment method (5-7 working days). The order shows the details."
           : fromWallet
-            ? " The amount you paid is being added back to your Minto wallet."
+            ? " The amount you paid is being added back to your Quick Spicy wallet."
             : "";
     title = "Order Cancelled ❌";
     body = (note && String(note).trim()) ? note : `Unfortunately, your order has been cancelled by the restaurant.${refundDetail}`;
@@ -3053,7 +3053,7 @@ export async function markOrderDeliveredAdmin(orderId, adminId, note = "") {
  * credit. `chargedTo` says who bears it:
  *  - 'restaurant': taken off the restaurant's payout for this order (its
  *    mistake, and it agreed). Refused once that payout has been paid.
- *  - 'platform': Minto's cost (rider or company mistake); the restaurant and
+ *  - 'platform': Quick Spicy's cost (rider or company mistake); the restaurant and
  *    rider are paid as normal.
  * A cancelled order that is now fully refunded leaves the payouts entirely.
  */

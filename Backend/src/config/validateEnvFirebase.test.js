@@ -27,36 +27,36 @@ const firebaseProblems = (cfg) =>
 
 test('flags a project id that disagrees with the service account', () => {
     const problems = firebaseProblems({
-        firebaseProjectId: 'minto-805bd',
-        firebaseServiceAccountPath: keyFor('mintofoods-8981a'),
+        firebaseProjectId: 'quickspicy-app',
+        firebaseServiceAccountPath: keyFor('quickspicy-other'),
     });
     assert.equal(problems.length, 1);
-    assert.match(problems[0], /minto-805bd.*mintofoods-8981a/s);
+    assert.match(problems[0], /quickspicy-app.*quickspicy-other/s);
 });
 
 test('accepts a project id that agrees', () => {
     assert.deepEqual(firebaseProblems({
-        firebaseProjectId: 'mintofoods-8981a',
-        firebaseServiceAccountPath: keyFor('mintofoods-8981a'),
+        firebaseProjectId: 'quickspicy-other',
+        firebaseServiceAccountPath: keyFor('quickspicy-other'),
     }), []);
 });
 
 test('accepts the project id being unset', () => {
     assert.deepEqual(firebaseProblems({
-        firebaseServiceAccountPath: keyFor('mintofoods-8981a'),
+        firebaseServiceAccountPath: keyFor('quickspicy-other'),
     }), []);
 });
 
 test('reads an inline service account too', () => {
     assert.equal(firebaseProblems({
-        firebaseProjectId: 'minto-805bd',
-        firebaseServiceAccount: JSON.stringify({ project_id: 'mintofoods-8981a' }),
+        firebaseProjectId: 'quickspicy-app',
+        firebaseServiceAccount: JSON.stringify({ project_id: 'quickspicy-other' }),
     }).length, 1);
 });
 
 test('stays quiet when the key cannot be read', () => {
     assert.deepEqual(firebaseProblems({
-        firebaseProjectId: 'minto-805bd',
+        firebaseProjectId: 'quickspicy-app',
         firebaseServiceAccountPath: join(dir, 'does-not-exist.json'),
     }), []);
 });

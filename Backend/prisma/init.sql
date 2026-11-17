@@ -1080,8 +1080,8 @@ CREATE TABLE "food_fee_settings" (
 -- CreateTable
 CREATE TABLE "food_business_settings" (
     "id" VARCHAR(24) NOT NULL DEFAULT encode(gen_random_bytes(12), 'hex'),
-    "companyName" TEXT NOT NULL DEFAULT 'Minto Foods',
-    "email" TEXT NOT NULL DEFAULT 'admin@mintofood.com',
+    "companyName" TEXT NOT NULL DEFAULT 'Quick Spicy',
+    "email" TEXT NOT NULL DEFAULT 'quickspicyenterprises@gmail.com',
     "phoneCountryCode" VARCHAR(8) NOT NULL DEFAULT '+91',
     "phoneNumber" VARCHAR(20) NOT NULL DEFAULT '',
     "address" TEXT NOT NULL DEFAULT '',
@@ -1100,8 +1100,8 @@ CREATE TABLE "food_business_settings" (
     "deliveryLogoPublicId" TEXT NOT NULL DEFAULT '',
     "deliveryFaviconUrl" TEXT NOT NULL DEFAULT '',
     "deliveryFaviconPublicId" TEXT NOT NULL DEFAULT '',
-    "userThemeColor" TEXT NOT NULL DEFAULT '#FA0272',
-    "userFontFamily" TEXT NOT NULL DEFAULT 'Poppins',
+    "userThemeColor" TEXT NOT NULL DEFAULT '#EB590E',
+    "userFontFamily" TEXT NOT NULL DEFAULT 'Outfit',
     "restaurantThemeColor" TEXT NOT NULL DEFAULT '#2563EB',
     "restaurantFontFamily" TEXT NOT NULL DEFAULT 'Poppins',
     "deliveryThemeColor" TEXT NOT NULL DEFAULT '#00B761',

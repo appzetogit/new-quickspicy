@@ -380,7 +380,7 @@ export async function getRefundableAmounts(orderId) {
 
 /**
  * The customer-facing sentence for a set of legs, e.g.
- * "₹120 has been added back to your Minto wallet. ₹330 will be refunded to
+ * "₹120 has been added back to your Quick Spicy wallet. ₹330 will be refunded to
  * your original payment method within 5-7 working days."
  */
 export function describeRefundLegs(legs) {
@@ -392,7 +392,7 @@ export function describeRefundLegs(legs) {
         else toGateway += toPaise(leg.amount);
     }
     const parts = [];
-    if (toWallet > 0) parts.push(`₹${toRupees(toWallet)} has been added back to your Minto wallet.`);
+    if (toWallet > 0) parts.push(`₹${toRupees(toWallet)} has been added back to your Quick Spicy wallet.`);
     if (toGateway > 0) {
         parts.push(`₹${toRupees(toGateway)} will be refunded to your original payment method within 5-7 working days.`);
     }

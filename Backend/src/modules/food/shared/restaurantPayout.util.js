@@ -57,7 +57,7 @@ export function computeRestaurantOrderShare(money = {}, offers = [], restaurantI
     if (Number.isFinite(stored)) return Math.max(0, stored);
 
     // The restaurant is paid on its own prices: the admin price-rule markup
-    // in the subtotal is Minto's.
+    // in the subtotal is Quick Spicy's.
     const subtotal = (Number(money.subtotal) || 0) - (Number(money.priceMarkupAmount) || 0);
     const packagingFee = Number(money.packagingFee) || 0;
     const commission = Number(money.restaurantCommission) || 0;

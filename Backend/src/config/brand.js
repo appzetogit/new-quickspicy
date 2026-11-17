@@ -1,14 +1,18 @@
+// Imported for its side effect: env.js runs dotenv, so FRONTEND_URL is read
+// from .env even when this module is the first config file loaded.
+import './env.js';
+
 /**
  * The image shown on push notifications when there is no better one.
  *
- * It was another brand's image on a free third-party host -- left over from the
- * codebase this platform was forked from, and shown on every order push a
- * Minto customer, restaurant or rider received. It is now the Minto logo from
- * our own bucket, which is publicly readable so a phone can fetch it when the
- * notification arrives.
+ * The Quick Spicy badge, served by the web app itself (Frontend/public/brand),
+ * so a phone can fetch it when the notification arrives without any bucket
+ * being public.
  *
  * Set PUSH_BRAND_IMAGE_URL to use a different image without a code change.
  */
+const webOrigin = String(process.env.FRONTEND_URL || 'https://new.quickspicy.in').replace(/\/+$/, '');
+
 export const BRAND_IMAGE_URL =
     process.env.PUSH_BRAND_IMAGE_URL
-    || 'https://minto-media.s3.ap-south-1.amazonaws.com/business/logos/minto-logo.webp';
+    || `${webOrigin}/brand/push-logo.webp`;

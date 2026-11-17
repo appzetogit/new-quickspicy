@@ -274,7 +274,7 @@ test('a zone-B banner does not show in zone A, and tracking banners stay on the 
 test('a broadcast image reaches the inbox, and only our uploads are accepted', async () => {
     const admin = await prisma.foodAdmin.create({ data: { name: 'B2 Admin', email: `${uniqueTag('a')}@admin.test`, password: 'x' } });
     created.admins.push(admin.id);
-    const imageUrl = 'https://minto-media.s3.ap-south-1.amazonaws.com/food/notifications/x.png';
+    const imageUrl = 'https://quickspicy-media.s3.ap-south-1.amazonaws.com/food/notifications/x.png';
 
     const { broadcast } = await createBroadcastNotification({
         adminId: admin.id,

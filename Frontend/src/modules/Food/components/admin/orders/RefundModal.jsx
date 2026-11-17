@@ -222,7 +222,7 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
                       className="mt-1"
                     />
                     <span>
-                      <span className="font-medium text-slate-800">All to Minto wallet</span>
+                      <span className="font-medium text-slate-800">All to Quick Spicy wallet</span>
                       <span className="block text-xs text-slate-500">Instant</span>
                     </span>
                   </label>
@@ -241,7 +241,7 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
                     className="mt-1"
                   />
                   <span>
-                    <span className="font-medium text-slate-800">Company (Minto)</span>
+                    <span className="font-medium text-slate-800">Company (Quick Spicy)</span>
                     <span className="block text-xs text-slate-500">Rider or company mistake. The restaurant is paid as normal.</span>
                   </span>
                 </label>

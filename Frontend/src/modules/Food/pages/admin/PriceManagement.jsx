@@ -8,7 +8,7 @@ import { Loader2, Plus, Trash2, Pencil, X, Search, Eye } from "lucide-react"
  * A rule raises or lowers what customers see and pay by a percentage of the
  * restaurant's own price. The restaurant's price is never changed: their menu,
  * their orders and their payout all stay on the price they set. The gap is
- * Minto's (or Minto's cost, for a decrease).
+ * Quick Spicy's (or Quick Spicy's cost, for a decrease).
  *
  * One dish follows one rule -- the most specific: dish > category >
  * restaurant > zone > all. A 0% dish rule takes a dish out of a wider rule.

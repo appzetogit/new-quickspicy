@@ -53,15 +53,15 @@ export default function Favorites() {
           <CardContent className="py-12 text-center">
             <Heart
               className="h-16 w-16 mx-auto mb-4"
-              style={{ color: "var(--module-theme-color, #008078)" }}
+              style={{ color: "var(--module-theme-color, #EB590E)" }}
             />
             <p className="text-muted-foreground text-lg mb-4">You haven't added any favorites yet</p>
             <Link to="/user">
               <Button
                 className="text-white border-0"
                 style={{
-                  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.92), var(--module-theme-color,#008078))",
-                  boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,0, 128, 120),0.25)",
+                  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.92), var(--module-theme-color,#EB590E))",
+                  boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,235, 89, 14),0.25)",
                 }}
               >
                 Explore Restaurants
@@ -130,8 +130,8 @@ export default function Favorites() {
                   <Button
                     className="text-white border-0"
                     style={{
-                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.92), var(--module-theme-color,#008078))",
-                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,0, 128, 120),0.25)",
+                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.92), var(--module-theme-color,#EB590E))",
+                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,235, 89, 14),0.25)",
                     }}
                   >
                     Explore Restaurants
@@ -214,8 +214,8 @@ export default function Favorites() {
                   <Button
                     className="text-white border-0"
                     style={{
-                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.92), var(--module-theme-color,#008078))",
-                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,0, 128, 120),0.25)",
+                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.92), var(--module-theme-color,#EB590E))",
+                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,235, 89, 14),0.25)",
                     }}
                   >
                     Explore Dishes

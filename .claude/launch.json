@@ -4,7 +4,8 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "Frontend"],
+      "runtimeArgs": ["--prefix", "Frontend", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "env": { "DEV_API_PROXY_TARGET": "https://api-new.quickspicy.in" },
       "port": 5173
     }
   ]

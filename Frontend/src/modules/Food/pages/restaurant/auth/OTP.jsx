@@ -12,15 +12,15 @@ import { resolveDeviceFcmToken, registerWebPushForCurrentModule } from "@food/ut
 import { useCompanyName } from "@food/hooks/useCompanyName"
 import { loadBusinessSettings, getModuleLogoUrl } from "@food/utils/businessSettings"
 import RestaurantPartnerHero from "@food/components/restaurant/auth/RestaurantPartnerHero"
-import mintoLogo from "@food/assets/minto-logo.png"
+import brandLogo from "@food/assets/quickspicy-logo.png"
 
-const THEME = "#008078"
+const THEME = "#EB590E"
 
 export default function RestaurantOTP() {
   const companyName = useCompanyName()
   const navigate = useNavigate()
   const prefersReducedMotion = useReducedMotion()
-  const [logoUrl, setLogoUrl] = useState(() => getModuleLogoUrl("restaurant") || mintoLogo)
+  const [logoUrl, setLogoUrl] = useState(() => getModuleLogoUrl("restaurant") || brandLogo)
   const [otp, setOtp] = useState(["", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -319,7 +319,7 @@ export default function RestaurantOTP() {
                     className="h-full w-full scale-[1.65] object-contain"
                     loading="lazy"
                     onError={(e) => {
-                      if (e.target.src !== mintoLogo) e.target.src = mintoLogo
+                      if (e.target.src !== brandLogo) e.target.src = brandLogo
                     }}
                   />
                 </div>
@@ -360,7 +360,7 @@ export default function RestaurantOTP() {
                         error
                           ? "border-red-300 bg-red-50"
                           : focusedIndex === index
-                            ? "border-[#008078] ring-4 ring-[#008078]/15"
+                            ? "border-[#EB590E] ring-4 ring-[#EB590E]/15"
                             : "border-gray-200"
                       }`}
                     />

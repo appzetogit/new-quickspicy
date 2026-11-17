@@ -1003,7 +1003,7 @@ export default function Profile() {
               </Button>
               <Button
                 type="button"
-                className="flex-1 rounded-xl bg-[#008078] hover:bg-[#D6005E] text-white"
+                className="flex-1 rounded-xl bg-[#EB590E] hover:bg-[#D94F0C] text-white"
                 onClick={() => {
                   setLogoutConfirmOpen(false);
                   handleLogout();

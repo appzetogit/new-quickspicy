@@ -218,7 +218,7 @@ export function RiderPicker({ order, onClose, onAssigned }) {
   const [q, setQ] = useState("")
   const [search, setSearch] = useState("")
   const [saving, setSaving] = useState("")
-  // An outside rider (Rapido, Shadowfax...) when no Minto rider can take it.
+  // An outside rider (Rapido, Shadowfax...) when no Quick Spicy rider can take it.
   const [outside, setOutside] = useState(null) // null | { provider, name, phone }
   // The server caps the online list and pages the offline one.
   const [onlineCapped, setOnlineCapped] = useState(0)

@@ -46,7 +46,7 @@ import {
   chipClass,
 } from "@food/components/restaurant/onboardingStyles"
 
-const RESTAURANT_THEME = "#008078"
+const RESTAURANT_THEME = "#EB590E"
 
 const formatMoney = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
@@ -466,7 +466,7 @@ function TimeSelector({ label, value, onChange }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
-        <Clock className="h-4 w-4 text-[#008078]" />
+        <Clock className="h-4 w-4 text-[#EB590E]" />
         <span className="text-sm font-medium text-gray-900">{label}</span>
       </div>
       <MobileTimePicker ampm={true}
@@ -515,7 +515,7 @@ function TimeSelector({ label, value, onChange }) {
 /**
  * Restaurant self sign-up can be switched off by the admin. Then the form is
  * not shown at all -- the API would refuse it anyway -- and the visitor is
- * told to contact Minto instead.
+ * told to contact Quick Spicy instead.
  */
 export default function RestaurantOnboarding() {
   const [signupOpen, setSignupOpen] = useState(null)
@@ -537,7 +537,7 @@ export default function RestaurantOnboarding() {
         <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-6 text-center">
           <h1 className="text-xl font-bold text-gray-900">Account not found</h1>
           <p className="text-sm text-gray-600 mt-2">
-            Please contact Minto to register your restaurant. Once we add it, you can log in here with your phone number.
+            Please contact Quick Spicy to register your restaurant. Once we add it, you can log in here with your phone number.
           </p>
           <button
             type="button"
@@ -2057,7 +2057,7 @@ function RestaurantOnboardingForm() {
               />
               {isSearchingLocation && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#008078] border-t-transparent" />
+                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#EB590E] border-t-transparent" />
                 </div>
               )}
             </div>
@@ -3266,8 +3266,8 @@ function RestaurantOnboardingForm() {
     <div className="space-y-5">
       <section className={ONBOARDING_INFO_BOX}>
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#008078]/10">
-            <Info className="h-5 w-5 text-[#008078]" />
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EB590E]/10">
+            <Info className="h-5 w-5 text-[#EB590E]" />
           </div>
           <div>
             <h2 className={ONBOARDING_SECTION_TITLE}>How subscription billing works</h2>
@@ -3301,8 +3301,8 @@ function RestaurantOnboardingForm() {
                 return (
                   <div key={plan.id} className={ONBOARDING_PLAN_CARD}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#008078]/10">
-                        <Award className="h-5 w-5 text-[#008078]" />
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EB590E]/10">
+                        <Award className="h-5 w-5 text-[#EB590E]" />
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold text-gray-900">{formatMoney(plan.basePrice)}</p>
@@ -3341,11 +3341,11 @@ function RestaurantOnboardingForm() {
       )}
 
       {requiresOnboardingFee ? (
-        <section className={`${ONBOARDING_SECTION_FULL} border-[#008078]/20`}>
+        <section className={`${ONBOARDING_SECTION_FULL} border-[#EB590E]/20`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#008078]/10">
-                <Wallet className="h-5 w-5 text-[#008078]" />
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EB590E]/10">
+                <Wallet className="h-5 w-5 text-[#EB590E]" />
               </div>
               <div className="max-w-xl">
                 <h3 className={ONBOARDING_SECTION_TITLE}>One-time onboarding fee</h3>

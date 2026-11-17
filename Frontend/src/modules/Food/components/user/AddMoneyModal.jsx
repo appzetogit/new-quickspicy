@@ -234,9 +234,9 @@ export default function AddMoneyModal({ open, onOpenChange, onSuccess }) {
               className="w-full h-12 text-white font-semibold text-base"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.94), var(--module-theme-color,#008078))",
+                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.94), var(--module-theme-color,#EB590E))",
                 boxShadow:
-                  "0 10px 20px rgba(var(--module-theme-rgb,0, 128, 120),0.30)",
+                  "0 10px 20px rgba(var(--module-theme-rgb,235, 89, 14),0.30)",
               }}
             >
               {loading || processing ? (

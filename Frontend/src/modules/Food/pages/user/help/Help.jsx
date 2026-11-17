@@ -408,10 +408,10 @@ export default function Help() {
                       We'll respond within 24 hours
                     </p>
                     <a
-                      href="mailto:support@mintofood.com"
+                      href="mailto:quickspicyenterprises@gmail.com"
                       className="text-sm text-primary hover:underline font-medium"
                     >
-                      support@mintofood.com
+                      quickspicyenterprises@gmail.com
                     </a>
                   </div>
                 </div>

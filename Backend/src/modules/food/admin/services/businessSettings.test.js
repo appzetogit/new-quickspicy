@@ -29,8 +29,8 @@ test.after(async () => {
 });
 
 const valid = {
-    companyName: 'Minto Foods',
-    email: 'admin@mintofood.com',
+    companyName: 'Quick Spicy',
+    email: 'quickspicyenterprises@gmail.com',
     phoneNumber: '9876543210',
 };
 
@@ -38,11 +38,11 @@ test('the row is created on first read, with usable defaults', async () => {
     await prisma.foodBusinessSettings.deleteMany({});
 
     const first = await settings.getBusinessSettings();
-    assert.equal(first.companyName, 'Minto Foods');
+    assert.equal(first.companyName, 'Quick Spicy');
     assert.equal(first.orderAcceptanceTimeMinutes, 4);
     // Every app has a theme from the start. The Mongo version stored this as a
     // sub-document and had to repair rows that predated it.
-    assert.equal(first.powerScanning.user.themeColor, '#FA0272');
+    assert.equal(first.powerScanning.user.themeColor, '#EB590E');
     assert.equal(first.powerScanning.delivery.fontFamily, 'Poppins');
     // The flat columns are rebuilt into the shape the panel reads.
     assert.deepEqual(first.phone, { countryCode: '+91', number: '' });
@@ -136,13 +136,13 @@ test('saving the company details leaves the branding alone', async () => {
 
     const saved = await settings.updateBusinessSettings({
         ...valid,
-        companyName: 'Minto Foods',
+        companyName: 'Quick Spicy',
         phoneCountryCode: '+44',
         address: '1 Test Lane',
         pincode: '452001',
     });
 
-    assert.equal(saved.companyName, 'Minto Foods');
+    assert.equal(saved.companyName, 'Quick Spicy');
     assert.deepEqual(saved.phone, { countryCode: '+44', number: '9876543210' });
     assert.equal(saved.address, '1 Test Lane');
     // Two different screens write this row; neither may clobber the other.

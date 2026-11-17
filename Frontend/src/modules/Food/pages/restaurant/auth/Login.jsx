@@ -8,17 +8,17 @@ import { restaurantAPI } from "@food/api"
 import { useCompanyName } from "@food/hooks/useCompanyName"
 import { loadBusinessSettings, getModuleLogoUrl } from "@food/utils/businessSettings"
 import RestaurantPartnerHero from "@food/components/restaurant/auth/RestaurantPartnerHero"
-import mintoLogo from "@food/assets/minto-logo.png"
+import brandLogo from "@food/assets/quickspicy-logo.png"
 
 const DEFAULT_COUNTRY_CODE = "+91"
-const THEME = "#008078"
+const THEME = "#EB590E"
 
 export default function RestaurantLogin() {
   const companyName = useCompanyName()
   const navigate = useNavigate()
   const prefersReducedMotion = useReducedMotion()
   const phoneInputRef = useRef(null)
-  const [logoUrl, setLogoUrl] = useState(() => getModuleLogoUrl("restaurant") || mintoLogo)
+  const [logoUrl, setLogoUrl] = useState(() => getModuleLogoUrl("restaurant") || brandLogo)
   const [formData, setFormData] = useState(() => {
     const saved = sessionStorage.getItem("restaurantLoginPhone")
     return {
@@ -164,7 +164,7 @@ export default function RestaurantLogin() {
                     className="h-full w-full scale-[1.65] object-contain"
                     loading="lazy"
                     onError={(e) => {
-                      if (e.target.src !== mintoLogo) e.target.src = mintoLogo
+                      if (e.target.src !== brandLogo) e.target.src = brandLogo
                     }}
                   />
                 </div>
@@ -187,7 +187,7 @@ export default function RestaurantLogin() {
                   <Label htmlFor="restaurant-phone" className="text-sm font-medium text-gray-700">
                     Mobile number
                   </Label>
-                  <div className="flex overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all focus-within:ring-2 focus-within:ring-[#008078]/30">
+                  <div className="flex overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all focus-within:ring-2 focus-within:ring-[#EB590E]/30">
                     <div className="flex items-center border-r border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700">
                       +91
                     </div>
@@ -231,15 +231,15 @@ export default function RestaurantLogin() {
                 Secure partner login &middot; {companyName}
               </p>
               <p className="text-[11px] text-gray-400">
-                <Link to="/food/restaurant/terms" className="transition-colors hover:text-[#008078]">
+                <Link to="/food/restaurant/terms" className="transition-colors hover:text-[#EB590E]">
                   Terms
                 </Link>
                 {" · "}
-                <Link to="/food/restaurant/privacy" className="transition-colors hover:text-[#008078]">
+                <Link to="/food/restaurant/privacy" className="transition-colors hover:text-[#EB590E]">
                   Privacy
                 </Link>
                 {" · "}
-                <Link to="/food/restaurant/help-content" className="transition-colors hover:text-[#008078]">
+                <Link to="/food/restaurant/help-content" className="transition-colors hover:text-[#EB590E]">
                   Support
                 </Link>
               </p>

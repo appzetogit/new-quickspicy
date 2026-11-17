@@ -103,7 +103,7 @@ import {
   DropdownMenuTrigger,
 } from "@food/components/ui/dropdown-menu";
 import { useDeliveryLocation } from "@food/context/DeliveryLocationContext";
-import mintoLogo from "@food/assets/minto-logo.png";
+import brandLogo from "@food/assets/quickspicy-logo.png";
 import offerImage from "@food/assets/offerimage.png";
 import api, { restaurantAPI, adminAPI } from "@food/api";
 import { usePublicAppConfig } from "@food/context/PublicAppConfigContext";
@@ -640,16 +640,16 @@ const RestaurantCard = React.memo(({
                 {/* Restaurant Name & Rating */}
                 <div className="flex items-start justify-between gap-2 mb-2 lg:mb-3">
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg lg:text-2xl font-medium text-gray-950 dark:text-white line-clamp-1 leading-tight tracking-tight transition-colors duration-300 group-hover:text-[#008078]">
+                    <h3 className="text-lg lg:text-2xl font-medium text-gray-950 dark:text-white line-clamp-1 leading-tight tracking-tight transition-colors duration-300 group-hover:text-[#EB590E]">
                       {restaurant.name}
                     </h3>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-widest shadow-sm ${availability.isOpen ? "" : "bg-gray-400 text-white"}`}
                         style={availability.isOpen ? {
-                          backgroundColor: "var(--module-theme-color, #008078)",
+                          backgroundColor: "var(--module-theme-color, #EB590E)",
                           color: "#ffffff",
-                          boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 0, 128, 120), 0.25)",
+                          boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 235, 89, 14), 0.25)",
                         } : undefined}
                       >
                         {availability.isOpen
@@ -675,8 +675,8 @@ const RestaurantCard = React.memo(({
                   <div
                     className={`flex-shrink-0 ${Number(restaurant.rating) > 0 ? "" : "bg-gray-400"} text-white px-3 py-1.5 rounded-2xl flex items-center gap-1.5 shadow-md transform transition-transform duration-300 group-hover:scale-110`}
                     style={Number(restaurant.rating) > 0 ? {
-                      backgroundColor: "var(--module-theme-color, #008078)",
-                      boxShadow: "0 6px 14px rgba(var(--module-theme-rgb, 0, 128, 120), 0.30)",
+                      backgroundColor: "var(--module-theme-color, #EB590E)",
+                      boxShadow: "0 6px 14px rgba(var(--module-theme-rgb, 235, 89, 14), 0.30)",
                     } : undefined}
                   >
                     <span className="text-sm lg:text-lg font-medium tracking-tight">
@@ -3265,8 +3265,8 @@ export default function Home() {
                           <div
                             className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-lg ${Number(restaurant.rating) > 0 ? "text-white font-medium" : "bg-gray-200/90 text-gray-600 font-medium"} text-[10px] shadow-lg border border-white/10`}
                             style={Number(restaurant.rating) > 0 ? {
-                              backgroundColor: "var(--module-theme-color, #008078)",
-                              boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 0, 128, 120), 0.25)",
+                              backgroundColor: "var(--module-theme-color, #EB590E)",
+                              boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 235, 89, 14), 0.25)",
                             } : undefined}
                           >
                             {Number(restaurant.rating) > 0 ? Number(restaurant.rating).toFixed(1) : "NEW"}

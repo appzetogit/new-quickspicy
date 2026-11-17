@@ -1,4 +1,4 @@
-// Minto Foods — full Postgres schema, translated from the 72 Mongoose models.
+// Quick Spicy — full Postgres schema, translated from the 72 Mongoose models.
 //
 // Conventions applied throughout:
 //   * ids stay 24-char hex so the frontend's /^[a-f0-9]{24}$/ checks keep working
@@ -1747,7 +1747,7 @@ model FoodTransaction {
   /// Can be negative when discounts/rider pay exceed platform income.
   platformNetProfit                Decimal @db.Decimal(14, 2)
   /// Customer price minus the restaurant's price across the order (admin price
-  /// rules). Minto's, never the restaurant's; negative when prices were lowered.
+  /// rules). Quick Spicy's, never the restaurant's; negative when prices were lowered.
   priceMarkupAmount                Decimal @default(0) @db.Decimal(14, 2)
   taxAmount                        Decimal @default(0) @db.Decimal(14, 2)
   adminDiscountShare               Decimal @default(0) @db.Decimal(14, 2)
@@ -2571,8 +2571,8 @@ model DeliveryFeeBand {
 model FoodBusinessSettings {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  companyName      String @default("Minto Foods")
-  email            String @default("admin@mintofood.com")
+  companyName      String @default("Quick Spicy")
+  email            String @default("quickspicyenterprises@gmail.com")
   phoneCountryCode String @default("+91") @db.VarChar(8)
   phoneNumber      String @default("") @db.VarChar(20)
 
@@ -2616,8 +2616,8 @@ model FoodBusinessSettings {
   ordersPausedMessage String    @default("") @db.VarChar(300)
   ordersPausedUntil   DateTime?
 
-  userThemeColor       String @default("#FA0272")
-  userFontFamily       String @default("Poppins")
+  userThemeColor       String @default("#EB590E")
+  userFontFamily       String @default("Outfit")
   restaurantThemeColor String @default("#2563EB")
   restaurantFontFamily String @default("Poppins")
   deliveryThemeColor   String @default("#00B761")
@@ -3907,7 +3907,7 @@ model FoodPriceRule {
   restaurantIds String[]       @default([])
   categoryIds   String[]       @default([])
   itemIds       String[]       @default([])
-  /// -50.00 … 100.00. Negative lowers the app price; Minto funds the gap.
+  /// -50.00 … 100.00. Negative lowers the app price; Quick Spicy funds the gap.
   percent       Decimal        @db.Decimal(6, 2)
   rounding      PriceRounding  @default(nearest_1)
   applyToAddons Boolean        @default(false)

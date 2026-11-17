@@ -14,8 +14,8 @@ import { FEATURE_KEYS, isFeatureEnabled } from '../../modules/food/admin/service
  * The messages are shown as-is by the shipped restaurant and rider apps.
  */
 
-export const RESTAURANT_NOT_FOUND = 'Account not found. Please contact Minto to register your restaurant.';
-export const DELIVERY_NOT_FOUND = 'Account not found. Please contact Minto to join as a delivery partner.';
+export const RESTAURANT_NOT_FOUND = 'Account not found. Please contact Quick Spicy to register your restaurant.';
+export const DELIVERY_NOT_FOUND = 'Account not found. Please contact Quick Spicy to join as a delivery partner.';
 
 export const isRestaurantSelfOnboardingOpen = () =>
     isFeatureEnabled(FEATURE_KEYS.RESTAURANT_SELF_ONBOARDING, true);

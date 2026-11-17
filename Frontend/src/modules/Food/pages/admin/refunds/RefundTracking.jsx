@@ -102,7 +102,7 @@ export default function RefundTracking() {
             {tile("In progress", rupees(summary.pending.amount), `${summary.pending.count} refunds`, "border-amber-200 bg-amber-50 text-amber-800")}
             {tile("Failed", rupees(summary.failed.amount), `${summary.failed.count} refunds`, "border-red-200 bg-red-50 text-red-800")}
             {tile("Borne by restaurants", rupees(summary.chargedToRestaurant), "taken off payouts", "border-slate-200 bg-white text-slate-800")}
-            {tile("Borne by company", rupees(summary.chargedToPlatform), "Minto's cost", "border-slate-200 bg-white text-slate-800")}
+            {tile("Borne by company", rupees(summary.chargedToPlatform), "Quick Spicy's cost", "border-slate-200 bg-white text-slate-800")}
           </div>
         ) : null}
 

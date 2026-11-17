@@ -17,13 +17,14 @@ export { resolveModuleFromPath } from "./moduleTheme";
 
 const SETTINGS_KEY = 'food_business_settings';
 const DEFAULT_MODULE_POWER_SCANNING = {
-  user: { themeColor: "#008078", fontFamily: "Poppins" },
+  // Quick Spicy orange (the logo colour) for the customer app and admin.
+  user: { themeColor: "#EB590E", fontFamily: "Outfit" },
   restaurant: { themeColor: "#2563EB", fontFamily: "Poppins" },
   delivery: { themeColor: "#00B761", fontFamily: "Poppins" },
   // Fixed. The admin panel is internal tooling with a stable brand, not a
   // themeable storefront -- getModulePowerScanning deliberately ignores any
   // stored value for this key.
-  admin: { themeColor: "#008078", fontFamily: "Poppins" },
+  admin: { themeColor: "#EB590E", fontFamily: "Outfit" },
 };
 
 const FONT_STACKS = {
@@ -69,7 +70,7 @@ const shadeOf = (colorToken) => {
 const hexToRgbTuple = (hex) => {
   const raw = String(hex || "").trim();
   const normalized = raw.startsWith("#") ? raw.slice(1) : raw;
-  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return "0, 128, 120";
+  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return "235, 89, 14";
   const r = parseInt(normalized.slice(0, 2), 16);
   const g = parseInt(normalized.slice(2, 4), 16);
   const b = parseInt(normalized.slice(4, 6), 16);
@@ -562,22 +563,22 @@ export const getCachedSettings = () => {
 
 /**
  * Get company name from business settings with fallback
- * @returns {string} Company name or default "Minto Foods Food"
+ * @returns {string} Company name or default "Quick Spicy"
  */
 export const getCompanyName = () => {
   const settings = getCachedSettings();
-  return settings?.companyName || "Minto Foods";
+  return settings?.companyName || "Quick Spicy";
 };
 
 /**
  * Get company name asynchronously (loads if not cached)
- * @returns {Promise<string>} Company name or default "Minto Foods Food"
+ * @returns {Promise<string>} Company name or default "Quick Spicy"
  */
 export const getCompanyNameAsync = async () => {
   try {
     const settings = await loadBusinessSettings();
-    return settings?.companyName || "Minto Foods";
+    return settings?.companyName || "Quick Spicy";
   } catch (error) {
-    return "Minto Foods";
+    return "Quick Spicy";
   }
 };

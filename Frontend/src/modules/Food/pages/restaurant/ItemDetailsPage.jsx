@@ -597,7 +597,7 @@ export default function ItemDetailsPage() {
             let uploadResponse
             try {
               uploadResponse = await uploadAPI.uploadMedia(file, {
-                folder: 'minto/restaurant/menu-items'
+                folder: 'quickspicy/restaurant/menu-items'
               })
             } catch (folderUploadError) {
               // Fallback: retry without folder in case provider/account rejects custom folder.
@@ -639,7 +639,7 @@ export default function ItemDetailsPage() {
       if (itemVideo?.file) {
         try {
           toast.info("Uploading video...")
-          videoUrl = await uploadAPI.uploadVideo(itemVideo.file, { folder: 'minto/restaurant/menu-videos' })
+          videoUrl = await uploadAPI.uploadVideo(itemVideo.file, { folder: 'quickspicy/restaurant/menu-videos' })
         } catch (videoError) {
           toast.error(videoError?.response?.data?.message || "The video could not be uploaded. Please try again.")
           setUploadingImages(false)

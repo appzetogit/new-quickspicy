@@ -10,7 +10,7 @@ import { useLocationSelector, useSearchOverlay } from "./UserLayout"
 import { useProfile } from "@food/context/ProfileContext"
 import { FaLocationDot } from "react-icons/fa6"
 import { AnimatePresence, motion } from "framer-motion"
-import mintoLogo from "@food/assets/minto-logo.png"
+import brandLogo from "@food/assets/quickspicy-logo.png"
 import { getCachedSettings, loadBusinessSettings } from "@food/utils/businessSettings"
 import { clearHomeScrollState } from "@food/utils/homeScrollRestore"
 const debugLog = (...args) => {}
@@ -169,17 +169,17 @@ export default function DesktopNavbar({ showLogo = true }) {
                                 >
                                     {logoUrl || companyName ? (
                                         <img
-                                            src={logoUrl || mintoLogo}
+                                            src={logoUrl || brandLogo}
                                             alt={companyName || "Company Logo"}
                                             className="h-10 w-auto md:h-14 lg:h-16 object-contain"
                                             onError={(e) => {
-                                                if (e.target.src !== mintoLogo) {
-                                                    e.target.src = mintoLogo
+                                                if (e.target.src !== brandLogo) {
+                                                    e.target.src = brandLogo
                                                 }
                                             }}
                                         />
                                     ) : (
-                                        <img src={mintoLogo} alt={companyName || "Logo"} className="h-10 w-auto md:h-14 lg:h-16 object-contain" />
+                                        <img src={brandLogo} alt={companyName || "Logo"} className="h-10 w-auto md:h-14 lg:h-16 object-contain" />
                                     )}
                                 </Link>
                             )}

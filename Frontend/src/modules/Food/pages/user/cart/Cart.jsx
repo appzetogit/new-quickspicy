@@ -2415,7 +2415,7 @@ export default function Cart() {
           `2. Backend is accessible at ${backendUrl}\n` +
           `3. Check browser console (F12) for more details\n\n` +
           `If backend is not running, start it with:\n` +
-          `cd minto/backend && npm start`
+          `cd Backend && npm start`
 
         debugError("?? Network Error Details:", {
           code: error.code,
@@ -2483,8 +2483,8 @@ export default function Cart() {
             <Button
               className="text-white border-0"
               style={{
-                background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.9), var(--module-theme-color,#008078))",
-                boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,0, 128, 120),0.25)",
+                background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.9), var(--module-theme-color,#EB590E))",
+                boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,235, 89, 14),0.25)",
               }}
             >
               Browse Restaurants
@@ -2499,7 +2499,7 @@ export default function Cart() {
     <div className="relative min-h-screen bg-slate-50 dark:bg-[#0a0a0a]">
       {/* Header */}
       <div className="sticky top-0 z-20 flex-shrink-0 text-white">
-        <div style={{ backgroundColor: "var(--module-theme-color, #008078)" }}>
+        <div style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}>
           <div className="max-w-7xl mx-auto px-3 md:px-6 pt-4 pb-4 md:pt-5 md:pb-5">
             <div className="flex items-start gap-2.5">
               <Button
@@ -2542,7 +2542,7 @@ export default function Cart() {
         {/* Transition curve: Downward green corners effect */}
         <div 
           className="h-5 md:h-6 w-full relative"
-          style={{ backgroundColor: "var(--module-theme-color, #008078)" }}
+          style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
         >
           <div 
             className="absolute top-0 left-0 w-full bg-slate-50 dark:bg-[#0a0a0a] rounded-t-[1.75rem] md:rounded-t-[2rem]" 
@@ -2639,7 +2639,7 @@ export default function Cart() {
                                 )}
                               </span>
                               <div className="flex items-center gap-1 justify-end">
-                                <span className="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-xs font-bold text-[#008078] tabular-nums">
+                                <span className="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-xs font-bold text-[#EB590E] tabular-nums">
                                   {RUPEE_SYMBOL}
                                   {((item.price || 0) * (item.quantity || 1)).toFixed(0)}
                                 </span>
@@ -2792,7 +2792,7 @@ export default function Cart() {
                 onClick={() => setShowOffersView(true)}
                 className={`w-full bg-white dark:bg-[#1a1a1a] rounded-2xl border shadow-sm px-4 py-3.5 flex items-center gap-3 text-left ${
                   appliedCoupon
-                    ? "border-[#008078]/30 dark:border-[#008078]/40"
+                    ? "border-[#EB590E]/30 dark:border-[#EB590E]/40"
                     : "border-slate-100 dark:border-gray-800"
                 }`}
               >
@@ -2801,15 +2801,15 @@ export default function Cart() {
                     ? "bg-pink-50 dark:bg-pink-950/40"
                     : "bg-emerald-50 dark:bg-emerald-950/40"
                 }`}>
-                  <Tag className={`h-4 w-4 ${appliedCoupon ? "text-[#008078]" : "text-emerald-600"}`} />
+                  <Tag className={`h-4 w-4 ${appliedCoupon ? "text-[#EB590E]" : "text-emerald-600"}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold ${appliedCoupon ? "text-[#008078]" : "text-gray-900 dark:text-white"}`}>
+                  <p className={`text-sm font-semibold ${appliedCoupon ? "text-[#EB590E]" : "text-gray-900 dark:text-white"}`}>
                     {appliedCoupon
                       ? `'${appliedCoupon.code}' applied`
                       : "Payment offers & more"}
                   </p>
-                  <p className={`text-xs mt-0.5 truncate ${appliedCoupon ? "text-[#008078]/80 font-medium" : "text-gray-500 dark:text-gray-400"}`}>
+                  <p className={`text-xs mt-0.5 truncate ${appliedCoupon ? "text-[#EB590E]/80 font-medium" : "text-gray-500 dark:text-gray-400"}`}>
                     {appliedCoupon
                       ? `You saved ${RUPEE_SYMBOL}${discount.toFixed(0)} on this order`
                       : loadingCoupons
@@ -2838,7 +2838,7 @@ export default function Cart() {
                       <span className="whitespace-nowrap">Delivery Modes</span>
                       <span
                         className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wide px-1 sm:px-1.5 py-0.5 rounded-full text-white shrink-0"
-                        style={{ backgroundColor: "var(--module-theme-color, #008078)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
                       >
                         New
                       </span>
@@ -2848,7 +2848,7 @@ export default function Cart() {
                       onClick={() => setDeliverySectionTab("instructions")}
                       className={`flex-1 rounded-full px-2 sm:px-3 py-2 text-[11px] sm:text-[12px] font-semibold whitespace-nowrap transition-colors ${
                         deliverySectionTab === "instructions"
-                          ? "bg-white dark:bg-[#1a1a1a] text-[#008078] shadow-sm"
+                          ? "bg-white dark:bg-[#1a1a1a] text-[#EB590E] shadow-sm"
                           : "text-gray-500 dark:text-gray-400"
                       }`}
                     >
@@ -2865,16 +2865,16 @@ export default function Cart() {
                       className="w-full flex items-start gap-3 text-left pb-3 border-b border-gray-100 dark:border-gray-800"
                     >
                       <div className={`mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                        deliveryMode === "quick" ? "border-[#008078]" : "border-gray-300 dark:border-gray-600"
+                        deliveryMode === "quick" ? "border-[#EB590E]" : "border-gray-300 dark:border-gray-600"
                       }`}>
-                        {deliveryMode === "quick" ? <div className="h-2.5 w-2.5 rounded-full bg-[#008078]" /> : null}
+                        {deliveryMode === "quick" ? <div className="h-2.5 w-2.5 rounded-full bg-[#EB590E]" /> : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                            Quick <Zap className="inline h-3.5 w-3.5 text-[#008078] mb-0.5" /> {quickDeliveryTime}
+                            Quick <Zap className="inline h-3.5 w-3.5 text-[#EB590E] mb-0.5" /> {quickDeliveryTime}
                           </p>
-                          <p className={`text-xs font-semibold shrink-0 ${deliveryMode === "quick" ? "text-[#008078]" : "text-gray-500"}`}>
+                          <p className={`text-xs font-semibold shrink-0 ${deliveryMode === "quick" ? "text-[#EB590E]" : "text-gray-500"}`}>
                             +{RUPEE_SYMBOL}{configuredQuickDeliveryFee}
                           </p>
                         </div>
@@ -2890,9 +2890,9 @@ export default function Cart() {
                       className="w-full flex items-start gap-3 text-left pt-3"
                     >
                       <div className={`mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                        deliveryMode === "basic" ? "border-[#008078]" : "border-gray-300 dark:border-gray-600"
+                        deliveryMode === "basic" ? "border-[#EB590E]" : "border-gray-300 dark:border-gray-600"
                       }`}>
-                        {deliveryMode === "basic" ? <div className="h-2.5 w-2.5 rounded-full bg-[#008078]" /> : null}
+                        {deliveryMode === "basic" ? <div className="h-2.5 w-2.5 rounded-full bg-[#EB590E]" /> : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -3004,7 +3004,7 @@ export default function Cart() {
                     type="button"
                     onClick={handleRecipientEditToggle}
                     className="text-xs font-bold uppercase tracking-wide shrink-0"
-                    style={{ color: "var(--module-theme-color, #008078)" }}
+                    style={{ color: "var(--module-theme-color, #EB590E)" }}
                   >
                     {isEditingRecipient ? "Save" : "Change"}
                   </button>
@@ -3033,14 +3033,14 @@ export default function Cart() {
                           }))
                         }
                         placeholder="Enter recipient name"
-                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#008078]"
+                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#EB590E]"
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
                         Phone number
                       </label>
-                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] overflow-hidden focus-within:border-[#008078]">
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] overflow-hidden focus-within:border-[#EB590E]">
                         <span className="px-3 text-sm text-gray-500 border-r border-gray-200 dark:border-gray-700">+91</span>
                         <input
                           type="tel"
@@ -3092,13 +3092,13 @@ export default function Cart() {
                         decimals={2}
                         showDiscountTag={false}
                         plainClassName="text-gray-800 dark:text-gray-200 font-medium tabular-nums"
-                        saleClassName="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-sm font-bold text-[#008078] tabular-nums"
+                        saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
                       />
                     </div>
                     {itemDiscountAmount > 0 && (
                       <div className="flex justify-between text-sm font-medium">
-                        <span className="text-[#008078] border-b border-dotted border-pink-300">Coupon Discount</span>
-                        <span className="text-[#008078]">-{RUPEE_SYMBOL}{itemDiscountAmount.toFixed(2)}</span>
+                        <span className="text-[#EB590E] border-b border-dotted border-pink-300">Coupon Discount</span>
+                        <span className="text-[#EB590E]">-{RUPEE_SYMBOL}{itemDiscountAmount.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex items-start justify-between gap-3 text-sm">
@@ -3129,8 +3129,8 @@ export default function Cart() {
                     </div>
                     {quickDeliveryFee > 0 && (
                       <div className="flex justify-between text-sm font-semibold">
-                        <span className="text-[#008078] border-b border-dotted border-pink-300">Quick Mode</span>
-                        <span className="text-[#008078]">{RUPEE_SYMBOL}{quickDeliveryFee.toFixed(2)}</span>
+                        <span className="text-[#EB590E] border-b border-dotted border-pink-300">Quick Mode</span>
+                        <span className="text-[#EB590E]">{RUPEE_SYMBOL}{quickDeliveryFee.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm">
@@ -3200,8 +3200,8 @@ export default function Cart() {
               }
               className="shrink-0 min-w-[132px] px-5 rounded-full text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               style={{
-                backgroundColor: "var(--module-theme-color, #008078)",
-                boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 0, 128, 120), 0.28)",
+                backgroundColor: "var(--module-theme-color, #EB590E)",
+                boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 235, 89, 14), 0.28)",
               }}
             >
               {isPlacingOrder
@@ -3275,7 +3275,7 @@ export default function Cart() {
                         className="h-full bg-gradient-to-r from-[#EB590E] to-[#D94F0C] rounded-full transition-all duration-100 ease-linear"
                         style={{
                           width: `${orderProgress}%`,
-                          boxShadow: '0 0 10px rgba(235, 89, 14, 0.5)'
+                          boxShadow: '0 0 10px rgba(235,89,14, 0.5)'
                         }}
                       />
                     </div>
@@ -3580,7 +3580,7 @@ export default function Cart() {
                         type="button"
                         onClick={() => setShowCookingSheet(false)}
                         className="flex-1 h-11 rounded-xl text-white text-sm font-bold"
-                        style={{ backgroundColor: "var(--module-theme-color, #008078)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
                       >
                         Save
                       </button>
@@ -3603,7 +3603,7 @@ export default function Cart() {
               >
                 <div
                   className="sticky top-0 z-10 text-white shadow-sm"
-                  style={{ backgroundColor: "var(--module-theme-color, #008078)" }}
+                  style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
                 >
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Button
@@ -3659,7 +3659,7 @@ export default function Cart() {
                         type="button"
                         onClick={handleApplyCouponCode}
                         className="h-11 px-4 rounded-xl text-white text-sm font-bold shrink-0"
-                        style={{ backgroundColor: "var(--module-theme-color, #008078)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
                       >
                         Apply
                       </button>

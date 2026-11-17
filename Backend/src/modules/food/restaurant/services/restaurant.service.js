@@ -1108,7 +1108,7 @@ export const updateRestaurantAcceptingOrders = async (restaurantId, isAcceptingO
             select: { offlineByAdmin: true },
         });
         if (row?.offlineByAdmin) {
-            throw new ValidationError('Minto has taken your restaurant offline. Please contact Minto support to go back online.');
+            throw new ValidationError('Quick Spicy has taken your restaurant offline. Please contact Quick Spicy support to go back online.');
         }
     }
 

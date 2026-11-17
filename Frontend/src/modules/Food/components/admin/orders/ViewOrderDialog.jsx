@@ -435,7 +435,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                       compareAmount={compareUnit > 0 ? compareUnit * qty : 0}
                       decimals={2}
                       plainClassName="text-sm font-semibold text-slate-900 tabular-nums"
-                      saleClassName="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-sm font-bold text-[#008078] tabular-nums"
+                      saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
                     />
                   </div>
                   )
@@ -555,7 +555,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                     compareAmount={compareItemTotal}
                     decimals={2}
                     plainClassName="font-medium text-slate-900 tabular-nums"
-                    saleClassName="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-sm font-bold text-[#008078] tabular-nums"
+                    saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
                   />
                 </div>
               )}
@@ -591,7 +591,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                 </div>
               )}
               {quickDeliveryFee > 0 && (
-                <div className="flex justify-between text-sm font-semibold text-[#008078]">
+                <div className="flex justify-between text-sm font-semibold text-[#EB590E]">
                   <span>Quick Mode</span>
                   <span>₹{quickDeliveryFee.toFixed(2)}</span>
                 </div>
@@ -618,7 +618,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                     compareAmount={compareOrderTotal}
                     decimals={2}
                     plainClassName="text-xl font-bold text-emerald-600 tabular-nums"
-                    saleClassName="inline-flex items-center rounded-full border border-[#008078] bg-[#008078]/10 px-2 py-0.5 text-base font-bold text-[#008078] tabular-nums"
+                    saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-base font-bold text-[#EB590E] tabular-nums"
                   />
                 </div>
               </div>
@@ -637,7 +637,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                   <span className="text-slate-600">Customer Paid</span>
                   <span className="font-medium text-slate-900">{formatDialogMoney(transaction.amounts.totalCustomerPaid)}</span>
                 </div>
-                {/* What the customer paid is made of: food, and the fees Minto charged. */}
+                {/* What the customer paid is made of: food, and the fees Quick Spicy charged. */}
                 {transaction.pricing ? (
                   <div className="pl-3 space-y-1 border-l-2 border-slate-100">
                     <div className="flex justify-between text-xs">
@@ -677,7 +677,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                 {Number(transaction.amounts.priceMarkupAmount) !== 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-600" title="Customer price minus the restaurant's price (Price Management rules)">
-                      Price Markup (Minto)
+                      Price Markup (Quick Spicy)
                     </span>
                     <span className={`font-medium ${Number(transaction.amounts.priceMarkupAmount) > 0 ? "text-emerald-700" : "text-rose-600"}`}>
                       {Number(transaction.amounts.priceMarkupAmount) < 0 ? "-" : ""}

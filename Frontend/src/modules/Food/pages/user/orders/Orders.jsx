@@ -937,8 +937,8 @@ Order again from this restaurant in the ${companyName} app.`
                     </div>
                     {order.quickDeliveryFee > 0 && (
                       <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-[#008078]">Quick Mode</span>
-                        <span className="text-[#008078]">{"\u20B9"}{order.quickDeliveryFee.toFixed(2)}</span>
+                        <span className="text-[#EB590E]">Quick Mode</span>
+                        <span className="text-[#EB590E]">{"\u20B9"}{order.quickDeliveryFee.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-xs">
@@ -1103,7 +1103,7 @@ Order again from this restaurant in the ${companyName} app.`
 
       {/* Footer Branding */}
       <div className="flex justify-center mt-8 mb-4">
-        <h1 className="text-4xl font-black text-gray-200 dark:text-zinc-900 tracking-tighter italic capitalize">Minto Foods</h1>
+        <h1 className="text-4xl font-black text-gray-200 dark:text-zinc-900 tracking-tighter italic capitalize">Quick Spicy</h1>
       </div>
 
       {/* Rating & Feedback Modal */}
@@ -1205,9 +1205,9 @@ Order again from this restaurant in the ${companyName} app.`
                 className="w-full rounded-xl text-white text-base font-bold py-3.5 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(var(--module-theme-rgb,0, 128, 120),0.94), var(--module-theme-color,#008078))",
+                    "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.94), var(--module-theme-color,#EB590E))",
                   boxShadow:
-                    "0 12px 24px rgba(var(--module-theme-rgb,0, 128, 120),0.30)",
+                    "0 12px 24px rgba(var(--module-theme-rgb,235, 89, 14),0.30)",
                 }}
               >
                 {submittingRating ? (

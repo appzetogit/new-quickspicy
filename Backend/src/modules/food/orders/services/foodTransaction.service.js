@@ -251,7 +251,7 @@ export async function createInitialTransaction(order) {
   const deliveryFeeGst = Number(order.deliveryFeeGst) || 0;
   const tax = Number(order.tax) || 0;
 
-  // Price-rule markup is Minto's: the restaurant is paid on its own prices.
+  // Price-rule markup is Quick Spicy's: the restaurant is paid on its own prices.
   const priceMarkupAmount = priceMarkupOf(order);
   let restaurantNet = subtotal - priceMarkupAmount + packagingFee - restaurantCommission;
   let platformNetProfit =
