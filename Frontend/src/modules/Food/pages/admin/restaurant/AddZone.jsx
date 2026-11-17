@@ -247,20 +247,7 @@ export default function AddZone() {
     mapInstanceRef.current = map
 
     mapClickListenerRef.current?.remove?.()
-    mapClickListenerRef.current = map.addListener('click', (event) => {
-      if (!isDrawingRef.current) return
-
-      const nextCoords = [
-        ...coordinatesRef.current,
-        {
-          latitude: parseFloat(event.latLng.lat().toFixed(6)),
-          longitude: parseFloat(event.latLng.lng().toFixed(6))
-        }
-      ]
-
-      setCoordinates(nextCoords)
-      updateDraftPath(google, map, nextCoords)
-    })
+    mapClickListenerRef.current = map.addListener('click', (event) => addPoint(event.latLng))
 
     setMapLoading(false)
 
@@ -326,7 +313,14 @@ export default function AddZone() {
         `
       })
 
-      polygon.addListener('click', () => {
+      polygon.addListener('click', (event) => {
+        // While drawing, a click on a neighbouring zone is a point of the new
+        // one. It used to open this popup instead, so a boundary that touched
+        // another zone could not be drawn.
+        if (isDrawingRef.current) {
+          addPoint(event.latLng)
+          return
+        }
         infoWindow.setPosition(polygon.getPath().getAt(0))
         infoWindow.open(map)
       })
@@ -368,34 +362,59 @@ export default function AddZone() {
     }
   }
 
-  const createVertexMarker = (google, map, position, index) => (
-    new google.maps.Marker({
+  // While drawing, the first point closes the shape once there are three; it
+  // is drawn larger and green then. The other points let clicks through to
+  // the map, so a click near one still adds a point instead of vanishing.
+  const createVertexMarker = (google, map, position, index, canClose) => {
+    const closer = index === 0 && canClose
+    const marker = new google.maps.Marker({
       position,
       map,
+      clickable: closer,
+      cursor: closer ? "pointer" : undefined,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: "#9333ea",
+        scale: closer ? 11 : 8,
+        fillColor: closer ? "#16a34a" : "#9333ea",
         fillOpacity: 1,
         strokeColor: "#ffffff",
         strokeWeight: 2
       },
-      zIndex: 1000,
-      title: `Point ${index + 1}`
+      zIndex: closer ? 1001 : 1000,
+      title: closer ? "Click to close the shape" : `Point ${index + 1}`
     })
-  )
+    if (closer) marker.addListener('click', () => handleFinishDrawing())
+    return marker
+  }
 
   const renderPathMarkers = (google, map, coords) => {
     clearPathMarkers()
+    const canClose = isDrawingRef.current && coords.length >= 3
 
     pathMarkersRef.current = coords
       .map((coord, index) => {
         const lat = typeof coord === 'object' ? (coord.latitude ?? coord.lat) : null
         const lng = typeof coord === 'object' ? (coord.longitude ?? coord.lng) : null
         if (lat === null || lng === null) return null
-        return createVertexMarker(google, map, { lat, lng }, index)
+        return createVertexMarker(google, map, { lat, lng }, index, canClose)
       })
       .filter(Boolean)
+  }
+
+  /** One more point of the shape being drawn. */
+  const addPoint = (latLng) => {
+    if (!isDrawingRef.current || !latLng || !window.google || !mapInstanceRef.current) return
+    const nextCoords = [
+      ...coordinatesRef.current,
+      {
+        latitude: parseFloat(latLng.lat().toFixed(6)),
+        longitude: parseFloat(latLng.lng().toFixed(6))
+      }
+    ]
+    // Updated now, not after the next render, so quick clicks are not lost.
+    coordinatesRef.current = nextCoords
+    setCoordinates(nextCoords)
+    updateDraftPath(window.google, mapInstanceRef.current, nextCoords)
   }
 
   const extractCoordinatesFromPath = (path) => {
@@ -522,6 +541,13 @@ export default function AddZone() {
 
   const toggleDrawingMode = () => {
     if (isDrawing) {
+      // Stopping with a usable shape closes it; it used to leave an open line
+      // on the map while the panel said "ready to save".
+      if (coordinatesRef.current.length >= 3) {
+        handleFinishDrawing()
+        return
+      }
+      isDrawingRef.current = false
       setIsDrawing(false)
     } else {
       if (polygonRef.current) {
@@ -530,7 +556,10 @@ export default function AddZone() {
       }
       clearPolygonListeners()
       clearDraftPath()
+      clearPathMarkers()
+      coordinatesRef.current = []
       setCoordinates([])
+      isDrawingRef.current = true
       setIsDrawing(true)
     }
   }
@@ -538,14 +567,31 @@ export default function AddZone() {
   const handleFinishDrawing = () => {
     if (!window.google || !mapInstanceRef.current || coordinatesRef.current.length < 3) return
 
-    drawExistingPolygon(window.google, mapInstanceRef.current, coordinatesRef.current)
+    // Off first, so the closed shape's points are drawn as plain points.
+    isDrawingRef.current = false
     setIsDrawing(false)
+    drawExistingPolygon(window.google, mapInstanceRef.current, coordinatesRef.current)
   }
+
+  // Enter closes the shape while drawing.
+  useEffect(() => {
+    if (!isDrawing) return undefined
+    const onKey = (e) => {
+      if (e.key !== "Enter") return
+      const tag = String(e.target?.tagName || "").toLowerCase()
+      if (tag === "input" || tag === "textarea" || tag === "select") return
+      e.preventDefault()
+      handleFinishDrawing()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [isDrawing])
 
   const handleUndoLastPoint = () => {
     if (!window.google || !mapInstanceRef.current || coordinatesRef.current.length === 0) return
 
     const nextCoords = coordinatesRef.current.slice(0, -1)
+    coordinatesRef.current = nextCoords
     setCoordinates(nextCoords)
     updateDraftPath(window.google, mapInstanceRef.current, nextCoords)
   }
@@ -939,7 +985,8 @@ export default function AddZone() {
                   <div className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
                     <p>Use Start Drawing to begin a new boundary.</p>
                     <p>Use Undo Point to remove the most recent click.</p>
-                    <p>Finish the shape, then drag polygon vertices directly on the map.</p>
+                    <p>Close the shape by clicking the green first point, pressing Enter, or Finish Shape.</p>
+                    <p>Then drag the polygon's points directly on the map.</p>
                   </div>
                 </div>
               </div>
