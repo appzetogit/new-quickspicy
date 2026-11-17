@@ -5,6 +5,7 @@ import {
     isDeliverySelfOnboardingOpen,
 } from '../../../../core/auth/onboardingGate.js';
 import { deleteOwnAccountController } from '../../../../core/auth/accountDeletion.service.js';
+import { listPublicVerticals } from '../../admin/controllers/adminFoundations.controller.js';
 import { logoutAllRestaurantDevices } from '../../../../core/auth/auth.service.js';
 import { upload } from '../../../../middleware/upload.js';
 import { imageUpload, uploadRateLimiter } from '../../../uploads/middleware/upload.middleware.js';
@@ -169,6 +170,8 @@ router.get('/restaurants/:id/outlet-timings', cacheResponse(600, 'restaurant_tim
 router.get('/offers', optionalAuth, listPublicOffersController);
 // Public: categories list (zone-aware; returns zone categories + global)
 router.get('/categories/public', cacheResponse(600, 'categories'), listCategoriesController);
+// Public: business verticals (Food, Home Food, ...) for the app's section tabs. ?lang=te for Telugu.
+router.get('/verticals/public', cacheResponse(600, 'verticals'), listPublicVerticals);
 
 // Restaurant dashboard/profile (Bearer token + RESTAURANT role)
 router.get('/current', authMiddleware, requireRestaurant, getCurrentRestaurantController);

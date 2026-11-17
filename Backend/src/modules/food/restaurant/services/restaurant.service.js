@@ -16,6 +16,7 @@ import { getRestaurantOperationalStatus, withOpenStatus } from '../helpers/resta
 import { slugifyRestaurantName } from '../../shared/restaurantSlug.js';
 import { restaurantIdForFormerSlug } from './restaurantLookup.helper.js';
 import { openFirst } from '../../shared/openFirst.js';
+import { verticalFilterFromQuery } from '../../shared/verticals.js';
 import {
     calculateDistanceKm,
     normalizeRestaurantLocation,
@@ -1728,6 +1729,7 @@ const PUBLIC_CARD_SELECT = {
     openingTime: true, closingTime: true, openDays: true,
     latitude: true, longitude: true, formattedAddress: true,
     addressLine1: true, addressLine2: true, state: true, pincode: true, landmark: true,
+    verticalIds: true,
 };
 
 /** Up to ten recommended dishes per restaurant, in one query for the whole page. */
@@ -1779,6 +1781,8 @@ const toPublicCard = (r) => ({
     highlightBadgeInfo: badgeInfo(r.highlightBadge),
     // What /restaurants/:idOrSlug accepts besides the id.
     slug: r.nameSlug || slugifyRestaurantName(r.restaurantName),
+    // Business verticals; empty means the default one (Food).
+    verticalIds: Array.isArray(r.verticalIds) ? r.verticalIds : [],
 });
 
 const TOP_WINDOW_DAYS = 30;
@@ -1869,6 +1873,11 @@ export const listApprovedRestaurants = async (query = {}) => {
 
     if (query.topRated === 'true') AND.push({ rating: { gte: 4.5 } });
     if (query.trusted === 'true') AND.push({ totalRatings: { gte: 100 } });
+
+    // ?verticalId= (or ?vertical=home food): one business vertical's section.
+    const verticalPick = await verticalFilterFromQuery(query);
+    if (verticalPick.none) return { restaurants: [], total: 0, page, limit };
+    if (verticalPick.filter) AND.push(verticalPick.filter);
 
     if (query.search && String(query.search).trim()) {
         const raw = String(query.search).trim().slice(0, 80);

@@ -11,6 +11,8 @@ import {
     zoneVisibilityFilter,
 } from '../../shared/categoryWorkflow.js';
 import { restaurantsInReach } from '../../shared/deliveryRadius.js';
+import { verticalFilterFromQuery, categoryVerticalWhere } from '../../shared/verticals.js';
+import { languageFromQuery, pickText } from '../../shared/language.js';
 
 /** Columns the category screens read. */
 const CATEGORY_SELECT = {
@@ -143,7 +145,14 @@ export async function listPublicCategories(query = {}) {
         AND.push({ name: { contains: search.slice(0, 80), mode: 'insensitive' } });
     }
 
+    // ?verticalId= / ?vertical=: categories of one business vertical (plus the
+    // ones with no vertical, which belong everywhere).
+    const verticalPick = await verticalFilterFromQuery(query);
+    if (verticalPick.none) return { categories: [], total: 0, page, limit };
+    if (verticalPick.vertical) AND.push(categoryVerticalWhere(verticalPick.vertical));
+
     const where = { AND, isActive: true };
+    const lang = languageFromQuery(query);
 
     const [list, total] = await Promise.all([
         prisma.foodCategory.findMany({
@@ -152,7 +161,7 @@ export async function listPublicCategories(query = {}) {
             skip,
             take: limit,
             select: {
-                id: true, name: true, image: true, type: true, foodTypeScope: true,
+                id: true, name: true, nameTe: true, verticalId: true, image: true, type: true, foodTypeScope: true,
                 zoneId: true, sortOrder: true, createdAt: true, updatedAt: true,
             },
         }),
@@ -160,7 +169,14 @@ export async function listPublicCategories(query = {}) {
     ]);
 
     return {
-        categories: list.map((category) => serializeCategoryForResponse(category)),
+        categories: list.map((category) => ({
+            ...serializeCategoryForResponse(category),
+            // ?lang=te: Telugu name where one exists; English kept as nameEn.
+            name: pickText(category.name, category.nameTe, lang),
+            nameEn: category.name,
+            nameTe: category.nameTe || '',
+            verticalId: category.verticalId || null,
+        })),
         total,
         page,
         limit,

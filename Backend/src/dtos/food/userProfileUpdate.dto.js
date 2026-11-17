@@ -14,7 +14,9 @@ const schema = z.object({
     profileImage: z.string().max(2000).optional(),
     dateOfBirth: isoDate.optional(),
     anniversary: isoDate.optional(),
-    gender: genderEnum.optional()
+    gender: genderEnum.optional(),
+    // App language: English or Telugu. The apps send ?lang= from this.
+    preferredLanguage: z.enum(['en', 'te']).optional()
 });
 
 export const validateUserProfileUpdateDto = (body) => {

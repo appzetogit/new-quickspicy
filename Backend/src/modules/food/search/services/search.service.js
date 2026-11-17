@@ -6,6 +6,7 @@ import { restaurantIdsMatchingCuisine } from '../../shared/restaurantQuery.util.
 import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
 import { withOpenStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
 import { openFirst } from '../../shared/openFirst.js';
+import { verticalFilterFromQuery } from '../../shared/verticals.js';
 import { restoreExpiredFoodAvailability } from '../../restaurant/services/foodAvailability.service.js';
 
 /** Columns the search cards need, plus the address columns toRestaurant() rebuilds `location` from. */
@@ -74,6 +75,11 @@ export const searchUnified = async (query = {}, options = {}) => {
     if (Number.isFinite(minutes) && minutes > 0) {
         where.estimatedDeliveryTimeMinutes = { lte: Math.min(minutes, 1440) };
     }
+    // ?verticalId= / ?vertical=: search inside one business vertical. Kept in
+    // AND because `where.id` is narrowed further down and must not replace it.
+    const verticalPick = await verticalFilterFromQuery(query);
+    if (verticalPick.none) return empty();
+    if (verticalPick.filter) where.AND = [verticalPick.filter];
 
     // Dishes whose timed out-of-stock has run out come back before matching,
     // and anything still out of stock never matches: a customer must not be

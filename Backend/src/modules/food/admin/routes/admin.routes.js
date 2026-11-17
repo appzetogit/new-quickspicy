@@ -37,6 +37,7 @@ import * as restaurantAppBanner from '../controllers/restaurantAppBanner.control
 import * as offerBanner from '../controllers/offerBanner.controller.js';
 import * as tipSurge from '../controllers/tipSurge.controller.js';
 import * as highlightBadges from '../controllers/highlightBadge.controller.js';
+import * as foundations from '../controllers/adminFoundations.controller.js';
 
 const router = express.Router();
 
@@ -613,6 +614,14 @@ router.get('/orders/:id/eligible-riders', manualDispatchController.getEligibleRi
 router.post('/orders/:id/assign-rider', manualDispatchController.assignRider);
 router.post('/orders/:id/unassign-rider', manualDispatchController.unassignRider);
 router.post('/orders/:id/assign-external-rider', manualDispatchController.assignOutsideRider);
+// ----- Rider cohorts and service areas -----
+// Above the /delivery/:id routes, which would otherwise take "cohorts" for a rider id.
+router.get('/delivery/cohorts', requireAdminPermission('delivery_management', 'view'), foundations.listRiderCohorts);
+router.post('/delivery/cohorts', requireAdminPermission('delivery_management', 'create'), foundations.createRiderCohort);
+router.patch('/delivery/cohorts/:id', requireAdminPermission('delivery_management', 'edit'), foundations.updateRiderCohort);
+router.delete('/delivery/cohorts/:id', requireAdminPermission('delivery_management', 'delete'), foundations.deleteRiderCohort);
+router.post('/delivery/cohorts/:id/riders', requireAdminPermission('delivery_management', 'edit'), foundations.addRidersToCohort);
+router.patch('/delivery/:id/service-area', requireAdminPermission('delivery_management', 'edit'), foundations.setRiderServiceArea);
 router.get('/delivery/partners', adminController.getDeliveryPartners);
 // Live tracking map: each busy rider's order and where they are heading.
 router.get('/delivery/active-orders', adminController.getRiderActiveOrders);
@@ -647,6 +656,18 @@ router.get('/cuisines', requireAdminPermission('restaurant_management', 'view'),
 router.post('/cuisines', requireAdminPermission('restaurant_management', 'create'), adminController.createCuisine);
 router.patch('/cuisines/:id', requireAdminPermission('restaurant_management', 'edit'), adminController.updateCuisine);
 router.delete('/cuisines/:id', requireAdminPermission('restaurant_management', 'delete'), adminController.deleteCuisine);
+
+// ----- Business verticals (Food, Home Food, ...) -----
+router.get('/verticals', requireAdminPermission('restaurant_management', 'view'), foundations.listVerticals);
+router.post('/verticals', requireAdminPermission('restaurant_management', 'create'), foundations.createVertical);
+router.patch('/verticals/:id', requireAdminPermission('restaurant_management', 'edit'), foundations.updateVertical);
+router.delete('/verticals/:id', requireAdminPermission('restaurant_management', 'delete'), foundations.deleteVertical);
+router.put('/restaurants/:id/verticals', requireAdminPermission('restaurant_management', 'edit'), foundations.setRestaurantVerticals);
+
+// ----- Telugu translations of dishes, categories and verticals -----
+router.get('/translations', requireAdminPermission('food_management', 'view'), foundations.listTranslations);
+router.put('/translations', requireAdminPermission('food_management', 'edit'), foundations.bulkUpdateTranslations);
+router.patch('/translations/:entity/:id', requireAdminPermission('food_management', 'edit'), foundations.updateTranslation);
 
 // ----- Zones -----
 router.get(

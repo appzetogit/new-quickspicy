@@ -431,3 +431,12 @@ ALTER TABLE "food_orders" ADD CONSTRAINT "order_payment_split_valid" CHECK (
 
 ALTER TABLE "food_order_refunds" DROP CONSTRAINT IF EXISTS "order_refund_amount_positive";
 ALTER TABLE "food_order_refunds" ADD CONSTRAINT "order_refund_amount_positive" CHECK ("amount" > 0);
+
+-- Verticals and cohorts. Not expressible in schema.prisma: a GIN index over the
+-- restaurant's vertical ids (the "has" filter every listing runs), a partial
+-- unique index so at most one vertical is the default, and plain lookups for
+-- the two foreign-key-ish columns Prisma models as bare strings.
+CREATE INDEX IF NOT EXISTS "food_restaurants_verticalIds_gin" ON "food_restaurants" USING GIN ("verticalIds");
+CREATE UNIQUE INDEX IF NOT EXISTS "food_verticals_one_default" ON "food_verticals"("isDefault") WHERE "isDefault";
+CREATE INDEX IF NOT EXISTS "food_categories_verticalId_idx" ON "food_categories"("verticalId");
+CREATE INDEX IF NOT EXISTS "food_delivery_partners_cohortId_idx" ON "food_delivery_partners"("cohortId");

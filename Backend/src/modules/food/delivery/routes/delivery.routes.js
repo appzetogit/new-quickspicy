@@ -8,6 +8,7 @@ import { uploadRateLimiter } from '../../../uploads/middleware/upload.middleware
 import * as orderController from '../../orders/controllers/order.controller.js';
 import { registerDeliveryPartnerController, updateDeliveryPartnerProfileController, updateDeliveryPartnerBankDetailsController, listSupportTicketsController, createSupportTicketController, getSupportTicketByIdController, listOrderEmergencyRequestsController, createOrderEmergencyRequestController, getOrderEmergencyRequestController, updateDeliveryPartnerDetailsController, updateDeliveryPartnerProfilePhotoBase64Controller, updateAvailabilityController, getWalletController, createWithdrawalRequestController, createCashDepositOrderController, verifyCashDepositPaymentController, getEarningsController, getTripHistoryController, getPocketDetailsController, getEmergencyHelpController, getCashLimitController, getDeliveryReferralStatsController, getActiveEarningAddonsController, deleteDeliveryPartnerAccountController } from '../controllers/delivery.controller.js';
 import { getPublicFormSchemaController } from '../controllers/driverRegistrationField.controller.js';
+import { getMyServiceArea } from '../../admin/controllers/adminFoundations.controller.js';
 
 const router = express.Router();
 
@@ -113,5 +114,7 @@ router.get('/pocket-details', authMiddleware, requireRoles('DELIVERY_PARTNER'), 
 router.get('/emergency-help', authMiddleware, requireRoles('DELIVERY_PARTNER'), getEmergencyHelpController);
 router.get('/cash-limit', authMiddleware, requireRoles('DELIVERY_PARTNER'), getCashLimitController);
 router.get('/referrals/stats', authMiddleware, requireRoles('DELIVERY_PARTNER'), getDeliveryReferralStatsController);
+// The rider's own zones (home zone + cohort zones), with boundaries, for the map.
+router.get('/service-area', authMiddleware, requireRoles('DELIVERY_PARTNER'), getMyServiceArea);
 
 export default router;

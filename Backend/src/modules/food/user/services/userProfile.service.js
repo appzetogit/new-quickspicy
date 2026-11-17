@@ -54,6 +54,7 @@ export const updateCurrentUserProfile = async (userId, body) => {
     }
 
     if (body.profileImage !== undefined) data.profileImage = String(body.profileImage || '').trim();
+    if (body.preferredLanguage !== undefined) data.preferredLanguage = body.preferredLanguage;
 
     if (body.gender !== undefined) {
         // The Postgres enum names the hyphenated Mongo value `prefer_not_to_say`

@@ -9,8 +9,9 @@ import {
 import { restoreExpiredFoodAvailability } from './foodAvailability.service.js';
 import { findApprovedRestaurant } from './restaurantLookup.helper.js';
 import { applyAppPricing } from '../../pricing/priceRules.service.js';
+import { pickText } from '../../shared/language.js';
 
-const buildMenuFromFoods = async (foods = []) => {
+const buildMenuFromFoods = async (foods = [], { lang = 'en' } = {}) => {
     const categoryIds = [
         ...new Set((foods || []).map((f) => (f?.categoryId ? String(f.categoryId) : '')).filter(isId)),
     ];
@@ -18,7 +19,7 @@ const buildMenuFromFoods = async (foods = []) => {
     const categoryDocs = categoryIds.length
         ? await prisma.foodCategory.findMany({
             where: { id: { in: categoryIds } },
-            select: { id: true, name: true, image: true, sortOrder: true },
+            select: { id: true, name: true, nameTe: true, image: true, sortOrder: true },
         })
         : [];
     const categoryMap = new Map(categoryDocs.map((doc) => [doc.id, doc]));
@@ -27,9 +28,12 @@ const buildMenuFromFoods = async (foods = []) => {
     for (const food of foods) {
         const categoryId = food?.categoryId ? String(food.categoryId) : '';
         const categoryDoc = categoryMap.get(categoryId) || null;
-        const sectionName =
+        // Grouping stays on the English name, so a half-translated menu does not
+        // split one category into two sections; only the label is translated.
+        const sectionKeyName =
             (categoryDoc?.name || food?.categoryName || 'Menu').trim() || 'Menu';
-        const groupKey = categoryId || `name:${sectionName.toLowerCase()}`;
+        const sectionName = pickText(sectionKeyName, categoryDoc?.nameTe, lang);
+        const groupKey = categoryId || `name:${sectionKeyName.toLowerCase()}`;
 
         if (!byCategory.has(groupKey)) {
             byCategory.set(groupKey, {
@@ -49,8 +53,13 @@ const buildMenuFromFoods = async (foods = []) => {
             categoryId: categoryId || null,
             categoryName: sectionName,
             category: sectionName,
-            name: food.name,
-            description: food.description || '',
+            // ?lang=te: Telugu where translated; the English always rides along.
+            name: pickText(food.name, food.nameTe, lang),
+            description: pickText(food.description || '', food.descriptionTe, lang),
+            nameEn: food.name,
+            nameTe: food.nameTe || '',
+            descriptionTe: food.descriptionTe || '',
+            verticalId: food.verticalId || null,
             price: getFoodDisplayPrice(food),
             otherPrice: getFoodDisplayOtherPrice(food),
             variants: serializeFoodVariants(food.variants),
@@ -132,7 +141,7 @@ export async function updateRestaurantMenu() {
     throw new ValidationError('Menu editing is disabled. Menu is generated from food items.');
 }
 
-export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug) {
+export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug, { lang = 'en' } = {}) {
     if (!String(restaurantIdOrSlug || '').trim()) {
         throw new ValidationError('Restaurant id is required');
     }
@@ -151,7 +160,7 @@ export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug) {
     });
     // Customers see the app price (admin price rules); the restaurant's own
     // menu endpoint above keeps the restaurant's prices.
-    return buildMenuFromFoods(await applyAppPricing(foods));
+    return buildMenuFromFoods(await applyAppPricing(foods), { lang });
 }
 
 export async function syncMenuItemApprovalStatus() {

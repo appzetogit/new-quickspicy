@@ -582,11 +582,14 @@ enum EarningAddonHistoryStatus {
 model FoodUser {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  phone        String  @unique @db.VarChar(20)
-  countryCode  String  @default("+91") @db.VarChar(8)
-  name         String?
-  email        String?
-  profileImage String  @default("")
+  phone             String  @unique @db.VarChar(20)
+  countryCode       String  @default("+91") @db.VarChar(8)
+  name              String?
+  /// Language the customer reads the app in: "en" or "te". Public endpoints
+  /// fall back to it when a request carries no ?lang= of its own.
+  preferredLanguage String  @default("en") @db.VarChar(5)
+  email             String?
+  profileImage      String  @default("")
 
   fcmTokens      String[]
   fcmTokenMobile String[]
@@ -607,7 +610,7 @@ model FoodUser {
   deletedAt    DateTime?
   /// The number the account had, moved here so it is free to sign up again.
   deletedPhone String?   @db.VarChar(20)
-  role       String  @default("USER")
+  role         String    @default("USER")
 
   rating       Decimal @default(0) @db.Decimal(2, 1)
   totalRatings Int     @default(0)
@@ -767,6 +770,10 @@ model FoodRestaurant {
   formattedAddress String?
 
   cuisines    String[]
+  /// Business verticals (FoodVertical ids) the restaurant trades under, e.g.
+  /// Food and Home Food. Empty means the default vertical (Food), so every
+  /// restaurant that predates verticals keeps showing where it always did.
+  verticalIds String[] @default([])
   openingTime String?
   closingTime String?
   openDays    String[]
@@ -774,7 +781,7 @@ model FoodRestaurant {
   /// Manual Online/Offline toggle. false = force offline regardless of outlet timings.
   isAcceptingOrders    Boolean @default(true)
   /// Taken offline by an admin: the restaurant app cannot turn it back on.
-  offlineByAdmin    Boolean @default(false)
+  offlineByAdmin       Boolean @default(false)
   /// Legacy, no longer honoured. Cleared whenever the toggle is updated.
   outsideHoursOverride Boolean @default(false)
 
@@ -959,12 +966,15 @@ model FoodDeliveryPartner {
   email       String?
   countryCode String  @default("+91") @db.VarChar(8)
 
-  address String?
-  city    String?
-  state   String?
+  address  String?
+  city     String?
+  state    String?
   /// The zone the admin put the rider in. For the admin list only: dispatch
   /// goes by distance, not zone.
-  zoneId  String? @db.VarChar(24)
+  zoneId   String? @db.VarChar(24)
+  /// Rider cohort (FoodRiderCohort). Groups riders for incentives, pay rules
+  /// and zone eligibility; null means not in any cohort.
+  cohortId String? @db.VarChar(24)
 
   vehicleType   String?
   vehicleName   String?
@@ -990,8 +1000,8 @@ model FoodDeliveryPartner {
   deletedAt    DateTime?
   /// The number the account had, moved here so it is free to sign up again.
   deletedPhone String?   @db.VarChar(20)
-  rejectedAt      DateTime?
-  approvedAt      DateTime?
+  rejectedAt   DateTime?
+  approvedAt   DateTime?
 
   bankAccountHolderName String?
   bankAccountNumber     String?
@@ -1424,17 +1434,17 @@ model FoodOrder {
   zoneId        String? @db.VarChar(24)
   transactionId String? @db.VarChar(24)
 
-  customerName  String @default("")
-  customerPhone String @default("")
+  customerName     String    @default("")
+  customerPhone    String    @default("")
   /// Delivered to someone other than the account holder. customerName/Phone
   /// stay the account holder (who pays and gets the OTP); the rider calls the
   /// recipient, whose name and phone are also the delivery address contact.
   /// When the order started waiting for an admin to assign a rider (manual
   /// dispatch). Cleared once a rider accepts.
   awaitingManualAt DateTime?
-  isForSomeoneElse Boolean @default(false)
-  recipientName    String  @default("")
-  recipientPhone   String  @default("")
+  isForSomeoneElse Boolean   @default(false)
+  recipientName    String    @default("")
+  recipientPhone   String    @default("")
 
   // ── delivery address (was an embedded subdoc) ──
   addrLabel             AddressLabel                           @default(Home)
@@ -1503,9 +1513,9 @@ model FoodOrder {
   dispatchDeliveryPartnerId String?        @db.VarChar(24)
   /// An outside rider (Rapido, Shadowfax...) an admin gave the order to. No
   /// rider account: the admin moves the order along by hand.
-  externalRiderProvider String? @db.VarChar(40)
-  externalRiderName     String? @db.VarChar(80)
-  externalRiderPhone    String? @db.VarChar(20)
+  externalRiderProvider     String?        @db.VarChar(40)
+  externalRiderName         String?        @db.VarChar(80)
+  externalRiderPhone        String?        @db.VarChar(20)
   dispatchAssignedAt        DateTime?
   dispatchAcceptedAt        DateTime?
   dispatchingAt             DateTime?
@@ -1546,9 +1556,9 @@ model FoodOrder {
   deliveryFleet String    @default("standard")
   scheduledAt   DateTime?
 
-  riderEarning   Decimal @default(0) @db.Decimal(14, 2)
+  riderEarning      Decimal @default(0) @db.Decimal(14, 2)
   /// Can be negative when discounts/rider pay exceed platform income.
-  platformProfit Decimal @default(0) @db.Decimal(14, 2)
+  platformProfit    Decimal @default(0) @db.Decimal(14, 2)
   /// See FoodTransaction.priceMarkupAmount.
   priceMarkupAmount Decimal @default(0) @db.Decimal(14, 2)
 
@@ -1560,15 +1570,15 @@ model FoodOrder {
   dropOtpRequired Boolean @default(false)
   dropOtpVerified Boolean @default(false)
 
-  riderLat          Float?
-  riderLng          Float?
-  riderLocationAt   DateTime?
+  riderLat            Float?
+  riderLng            Float?
+  riderLocationAt     DateTime?
   /// Live ETA, worked out by the server (eta.service.js) and refreshed on
   /// status changes and rider pings.
   etaMinutes          Int?
   estimatedDeliveryAt DateTime?
   etaComputedAt       DateTime?
-  lastRiderLocation Unsupported("geography(Point, 4326)")?
+  lastRiderLocation   Unsupported("geography(Point, 4326)")?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1613,14 +1623,14 @@ model OrderItem {
   id      String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
   orderId String @db.VarChar(24)
 
-  itemId       String
-  name         String
-  variantId    String  @default("")
-  variantName  String  @default("")
-  variantPrice Decimal @default(0) @db.Decimal(14, 2)
-  price        Decimal @db.Decimal(14, 2)
+  itemId           String
+  name             String
+  variantId        String   @default("")
+  variantName      String   @default("")
+  variantPrice     Decimal  @default(0) @db.Decimal(14, 2)
+  price            Decimal  @db.Decimal(14, 2)
   /// Compare-at / other-platform unit price snapshot at order time.
-  otherPrice   Decimal @default(0) @db.Decimal(14, 2)
+  otherPrice       Decimal  @default(0) @db.Decimal(14, 2)
   /// The restaurant's own unit price (add-ons included) and variant price when
   /// an admin price rule changed what the customer paid. Null on lines from
   /// before price rules: the restaurant's price was `price` then.
@@ -1628,10 +1638,10 @@ model OrderItem {
   baseVariantPrice Decimal? @db.Decimal(14, 2)
   markupPercent    Decimal  @default(0) @db.Decimal(6, 2)
   priceRuleId      String?  @db.VarChar(24)
-  quantity     Int
-  isVeg        Boolean @default(true)
-  image        String  @default("")
-  notes        String  @default("")
+  quantity         Int
+  isVeg            Boolean  @default(true)
+  image            String   @default("")
+  notes            String   @default("")
 
   /// [{ addonId, name, price }] as chosen and priced at order time. Already folded
   /// into `price`. Json rather than a table — written once, never queried across orders.
@@ -1802,22 +1812,22 @@ model FoodTransactionHistory {
 model FoodSettings {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  key              String    @unique
+  key                       String    @unique
   /// 'auto' (offer to nearby riders) or 'manual' (an admin assigns each order).
   /// The global default; a zone can override it (FoodZone.dispatchMode).
-  dispatchMode     String    @default("auto")
+  dispatchMode              String    @default("auto")
   /// How long a rider has to accept an order an admin assigned them.
-  manualAcceptWindowSeconds Int @default(120)
+  manualAcceptWindowSeconds Int       @default(120)
   /// Re-alert admins when an order has waited this long for a rider.
-  manualQueueAlertMinutes   Int @default(5)
+  manualQueueAlertMinutes   Int       @default(5)
   /// How long a rider has to accept an automatic offer before it moves on.
-  riderAcceptWindowSeconds  Int @default(45)
+  riderAcceptWindowSeconds  Int       @default(45)
   /// How many accepted, unfinished orders one rider may carry at once (peak
   /// time batching). 1 = one trip at a time, the behaviour before this existed.
-  maxActiveOrdersPerRider   Int @default(1)
-  updatedByRole    String?
-  updatedByAdminId String?   @db.VarChar(24)
-  updatedAtBy      DateTime?
+  maxActiveOrdersPerRider   Int       @default(1)
+  updatedByRole             String?
+  updatedByAdminId          String?   @db.VarChar(24)
+  updatedAtBy               DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1836,21 +1846,28 @@ model FoodItem {
   categoryId   String? @db.VarChar(24)
   categoryName String  @default("")
 
-  name        String
-  description String  @default("")
-  price       Decimal @db.Decimal(14, 2)
+  name          String
+  description   String  @default("")
+  /// Telugu name/description. Empty means not translated yet: public
+  /// endpoints fall back to the English text.
+  nameTe        String  @default("")
+  descriptionTe String  @default("")
+  /// Overrides the restaurant's vertical for this one product (e.g. a
+  /// grocery line in a food restaurant). Null means inherit.
+  verticalId    String? @db.VarChar(24)
+  price         Decimal @db.Decimal(14, 2)
   /// Compare-at / other-platform price for strikethrough UI.
-  otherPrice  Decimal @default(0) @db.Decimal(14, 2)
+  otherPrice    Decimal @default(0) @db.Decimal(14, 2)
 
   /// Sizes/options. See FoodItemVariant — this is on the checkout path.
   variants FoodItemVariant[]
 
   /// Primary image, also the first entry of `images`. Kept as its own column
   /// because the user app, admin list, share previews and push payloads all read it.
-  image  String   @default("")
-  images String[]
+  image    String   @default("")
+  images   String[]
   /// One short MP4/WebM clip of the dish, shown with the gallery. "" = none.
-  videoUrl String @default("")
+  videoUrl String   @default("")
 
   foodType    FoodType @default(NonVeg)
   isAvailable Boolean  @default(true)
@@ -1930,6 +1947,10 @@ model FoodCategory {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
   name          String
+  /// Telugu name; empty falls back to `name`.
+  nameTe        String        @default("")
+  /// Vertical this category belongs to; null means it shows in every vertical.
+  verticalId    String?       @db.VarChar(24)
   image         String        @default("")
   type          String        @default("")
   foodTypeScope FoodTypeScope @default(Both)
@@ -2209,10 +2230,10 @@ model FoodLedgerEntry {
 model FoodCity {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  name String
+  name    String
   /// Lowercased and whitespace-collapsed name. Unique, so "Indore" and
   /// "indore " cannot become two cities.
-  nameKey String @unique
+  nameKey String  @unique
   state   String?
 
   isActive  Boolean  @default(true)
@@ -2257,8 +2278,8 @@ model FoodZone {
 
   /// The city this zone belongs to; a city has many zones. `city` above is kept
   /// in step with the city's name for the screens and apps that still read it.
-  cityId   String?   @db.VarChar(24)
-  cityRef  FoodCity? @relation(fields: [cityId], references: [id])
+  cityId  String?   @db.VarChar(24)
+  cityRef FoodCity? @relation(fields: [cityId], references: [id])
 
   /// [{ latitude, longitude }] ring, ≥3 points. This stays the editable record —
   /// it is the shape the admin UI sends and renders — and `boundary` below is
@@ -2339,19 +2360,19 @@ model FoodOffer {
   perUserLimit  Int?
   usedCount     Int      @default(0)
 
-  startDate        DateTime?
-  endDate          DateTime?
-  isFirstOrderOnly Boolean   @default(false)
+  startDate           DateTime?
+  endDate             DateTime?
+  isFirstOrderOnly    Boolean   @default(false)
   /// Days the code works on, 0 = Sunday .. 6 = Saturday, in India time.
   /// Empty means every day.
-  activeDays      Int[]     @default([])
+  activeDays          Int[]     @default([])
   /// A daily window, "HH:mm" in India time. Both or neither. A window whose
   /// end is before its start runs overnight (22:00 -> 02:00).
-  activeFromTime  String?   @db.VarChar(5)
-  activeToTime    String?   @db.VarChar(5)
+  activeFromTime      String?   @db.VarChar(5)
+  activeToTime        String?   @db.VarChar(5)
   /// Only for customers who have never ordered from the restaurant the order
   /// is for. Different from isFirstOrderOnly, which is first order anywhere.
-  newToRestaurantOnly Boolean @default(false)
+  newToRestaurantOnly Boolean   @default(false)
 
   status     OfferStatus @default(active)
   showInCart Boolean     @default(true)
@@ -2596,8 +2617,8 @@ model FoodBusinessSettings {
 
   /// Tipping, set here and nowhere else: the app offers exactly these amounts,
   /// so a customer can never be shown a tip the platform did not sanction.
-  tipsEnabled  Boolean @default(true)
-  tipPresets   Int[]   @default([10, 20, 30])
+  tipsEnabled  Boolean  @default(true)
+  tipPresets   Int[]    @default([10, 20, 30])
   /// A ceiling on a custom amount. Null means no ceiling.
   tipMaxAmount Decimal? @db.Decimal(14, 2)
 
@@ -2623,7 +2644,7 @@ model FoodBusinessSettings {
   deliveryThemeColor   String @default("#00B761")
   deliveryFontFamily   String @default("Poppins")
 
-  orderAcceptanceTimeMinutes Int @default(4)
+  orderAcceptanceTimeMinutes Int  @default(4)
   /// The restaurant's accept time for a new order, in seconds (30-600). Wins
   /// over the minutes above, which older admin builds still write.
   orderAcceptanceTimeSeconds Int?
@@ -3459,7 +3480,7 @@ model NotificationBroadcast {
   /// [{ ownerType, ownerId, label, subLabel }] — display snapshot of the audience.
   targets    Json                @default("[]")
 
-  link String @default("")
+  link     String @default("")
   /// Optional picture: shown big in the phone tray and in the inbox.
   imageUrl String @default("")
 
@@ -3629,10 +3650,10 @@ model FoodDiningBanner {
 model HomePromotionBanner {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  imageUrl String
-  publicId String
-  title    String?
-  ctaLink  String?
+  imageUrl     String
+  publicId     String
+  title        String?
+  ctaLink      String?
   /// The restaurant the banner opens, by id, so renaming it cannot break the
   /// link. ctaLink is rebuilt from it.
   restaurantId String? @db.VarChar(24)
@@ -3675,9 +3696,9 @@ model FoodSurgeRule {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
   /// Shown to admins, never to customers. "Friday night", "Heavy rain".
-  label     String  @default("")
+  label    String  @default("")
   /// Rupees added to the delivery fee. Never touches the rider's pay.
-  surgeFee  Decimal @db.Decimal(14, 2)
+  surgeFee Decimal @db.Decimal(14, 2)
 
   /// Null is every zone, the same meaning it carries on an offer banner.
   zoneId String? @db.VarChar(24)
@@ -3702,11 +3723,11 @@ model FoodSurgeRule {
 model FoodOfferBanner {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
-  imageUrl String
-  publicId String @default("")
-  title    String @default("")
+  imageUrl     String
+  publicId     String  @default("")
+  title        String  @default("")
   /// Optional deep link opened on tap. Blank = not tappable.
-  ctaLink  String @default("")
+  ctaLink      String  @default("")
   /// Set when ctaLink opens a restaurant: the link is rebuilt from the id, so
   /// renaming the restaurant cannot break it.
   restaurantId String? @db.VarChar(24)
@@ -3984,4 +4005,47 @@ model FoodRestaurantSlugHistory {
 
   @@index([restaurantId])
   @@map("food_restaurant_slug_history")
+}
+
+/// Business verticals ("Food", "Home Food", "Grocery" ...): what kind of
+/// business a restaurant is, so the apps can give each its own section.
+/// Restaurants reference these by id in FoodRestaurant.verticalIds.
+model FoodVertical {
+  id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+
+  name        String  @unique
+  /// Lowercased, spaces collapsed; what two spellings of one vertical share.
+  slug        String  @unique
+  nameTe      String  @default("")
+  description String  @default("")
+  image       String?
+  /// The vertical a restaurant with no verticals belongs to. Exactly one.
+  isDefault   Boolean @default(false)
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("food_verticals")
+}
+
+/// A group of riders (by shift, vehicle, region ...). Admin assigns riders to
+/// a cohort and the cohort to the zones it may serve.
+model FoodRiderCohort {
+  id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+
+  name        String   @unique
+  description String   @default("")
+  /// FoodZone ids this cohort serves. Empty means no zone restriction.
+  zoneIds     String[] @default([])
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("food_rider_cohorts")
 }

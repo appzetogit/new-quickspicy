@@ -4,6 +4,7 @@ import {
     updateRestaurantMenu,
     getPublicApprovedRestaurantMenu
 } from '../services/restaurantMenu.service.js';
+import { languageFromQuery } from '../../shared/language.js';
 
 export const getMenuController = async (req, res, next) => {
     try {
@@ -27,7 +28,7 @@ export const updateMenuController = async (req, res, next) => {
 
 export const getPublicRestaurantMenuController = async (req, res, next) => {
     try {
-        const menu = await getPublicApprovedRestaurantMenu(req.params.id);
+        const menu = await getPublicApprovedRestaurantMenu(req.params.id, { lang: languageFromQuery(req.query) });
         if (!menu) {
             return res.status(404).json({ success: false, message: 'Restaurant not found' });
         }
