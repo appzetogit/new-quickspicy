@@ -145,7 +145,8 @@ export function validateCreateOrderDto(body) {
         paymentMethod: z.enum(['razorpay', 'razorpay_qr', 'card', 'wallet', 'cash'], {
             errorMap: () => ({ message: 'Unsupported payment method' }),
         }),
-        // With 'razorpay': pay what the wallet can and the rest online.
+        // Pay what the wallet can now and the rest online ('razorpay') or in
+        // cash to the rider ('cash').
         useWallet: z.boolean().optional(),
         zoneId: z.string().nullable().optional(),
         scheduledAt: z.string().datetime().optional()

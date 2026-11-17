@@ -272,6 +272,9 @@ legitimately returns a 2-point polyline. That's correct, not a bug.
 
 ## 5. Payment collection at the door
 
+### How much to collect
+Every order the rider sees carries **`cashToCollect`**. Show that, not `pricing.total`: a customer can pay part of a cash order from their wallet when they place it, and the rider collects only the rest. `paidFromWallet` is that wallet part (0 if none); `cashToCollect` is 0 for prepaid orders and once payment is collected. `payment.amountDue` holds the same figure. The QR below charges `cashToCollect`, and the rider's cash in hand only ever counts the cash part.
+
 ### `POST /food/delivery/orders/:orderId/collect/qr`
 Body (optional, falls back to the order's customer): `{ "name": "…", "email": "…", "phone": "…" }`
 

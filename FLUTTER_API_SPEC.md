@@ -656,7 +656,8 @@ Maths, so your UI can explain the bill:
   "customerName": "…",
   "customerPhone": "…",
   "pricing": { /* echo back what /calculate returned */ },
-  "paymentMethod": "razorpay",       // razorpay | razorpay_qr | card | wallet
+  "paymentMethod": "razorpay",       // razorpay | razorpay_qr | card | wallet | cash
+  "useWallet": true,                 // optional: wallet pays what it can, the rest online or in cash
   "deliveryMode": "basic",
   "deliveryFleet": "…",
   "note": "kitchen note",
@@ -667,7 +668,14 @@ Maths, so your UI can explain the bill:
 }
 ```
 
-**Cash on delivery is rejected** — the enum error reads *"Cash on Delivery is no longer available. Please pay online."* `razorpay_qr` is the pay-at-door flow where the rider generates a Razorpay QR.
+**Cash on delivery** (`"paymentMethod": "cash"`) is accepted where the zone allows it; otherwise the error message says why (COD off for the zone, too few delivered orders yet, or the order is above the COD maximum). `razorpay_qr` is the pay-at-door flow where the rider generates a Razorpay QR.
+
+**Paying part from the wallet** (`"useWallet": true`):
+- With `razorpay`: the wallet pays what it can and Razorpay charges the rest (never less than ₹1). Pay the `razorpay.amount` returned, not the total.
+- With `cash`: the wallet pays what it can **when the order is placed** and the rider collects the rest. The order comes back with `walletAmount` and `payment.amountDue` = the cash to hand over; show the customer "Pay ₹`amountDue` in cash". The COD maximum applies to the cash part only.
+- A wallet that covers the whole order turns it into a `wallet` order (nothing to pay). An empty wallet leaves it a plain `razorpay` / `cash` order.
+- `POST /food/orders/calculate` previews both before placing: `wallet: { balance, canUse, coversAll, walletAmount, onlineAmount, withCash: { canUse, coversAll, walletAmount, cashAmount } }`.
+- Cancelling sends the wallet part back to the wallet automatically. The cash part was never taken, so there is nothing else to refund.
 
 → 201:
 ```json
