@@ -19,6 +19,17 @@ New admin endpoints, for the admin panel or any admin tool. All are under
 - DELETE on a vertical restaurants still use switches it off instead (`deactivated: true`). An unused one is removed, and categories/products pointing at it fall back to "no vertical".
 - `PUT .../verticals` replaces the list. `[]` puts the restaurant back in the default vertical. Unknown or switched-off ids are refused.
 
+## Outlets of one brand — `restaurant_management`
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| PUT | `/restaurants/:id/outlets` | `{ outletIds: ["…"] }` | `{ outletGroupId, outlets: [{ id, restaurantName, area, city, status }] }` |
+| DELETE | `/restaurants/:id/outlets` | — | `{ outletGroupId, outlets }` (what is left) |
+
+- PUT links `:id` and the listed restaurants into one group, keeping `:id`'s group if it already has one. Restaurants in another group move into this one.
+- DELETE takes `:id` out of its group. A group left with a single restaurant is dissolved.
+- Customers see the other outlets at `GET /food/restaurant/restaurants/:id/outlets`. List cards carry `outletCount`.
+
 ## Rider cohorts and service areas — `delivery_management`
 
 | Method | Path | Body / query | Returns |

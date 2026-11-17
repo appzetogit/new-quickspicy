@@ -316,6 +316,53 @@ Restaurants matched via a dish carry:
 ```
 Use those to render the "matched on dish" subtitle. Results are restaurant-shaped even when the query hit a dish — there's no separate dish array. With lat/lng, results are re-sorted by distance and gain `distanceScore`. Unless `strictZone` is true, a zone with no results falls back to a wider search.
 
+### `GET /food/search/dishes`
+Dish-level search: every matching dish (not one per restaurant) at the price the customer pays, from restaurants that deliver to them.
+Query: `q` (≥ 2 chars; or `categoryId` alone), `lat`, `lng` (required), `sortBy` = `relevance` (default) | `price-low` | `price-high` | `rating` | `distance`, `minPrice`, `maxPrice`, `isVeg=true`, `minRating`, `categoryId`, `verticalId`, `openOnly=true`, `lang`, `page`, `limit` (≤ 50).
+```json
+{ "items": [{
+    "id": "…", "name": "Chicken Dum Biryani", "nameEn": "…", "nameTe": "", "description": "…",
+    "categoryId": "…", "categoryName": "Biryani",
+    "price": 240, "otherPrice": 0, "hasVariants": false,
+    "image": "…", "foodType": "NonVeg", "isVeg": false, "rating": 0, "totalRatings": 0,
+    "restaurant": { "id": "…", "name": "…", "slug": "…", "image": "…", "rating": 4.4, "distanceKm": 3.9,
+                    "isOpenNow": true, "closingSoon": false, "closesInMinutes": 299, "nextOpeningAt": null }
+  }],
+  "total": 5, "page": 1, "limit": 20 }
+```
+Dishes from open restaurants always come first. `minChars: 2` comes back when `q` is too short; `requiresLocation: true` without lat/lng. If `hasVariants`, open the dish to pick a variant before adding it to the cart.
+
+### `GET /food/search/suggest`
+Type-ahead. Query: `q`, `lat`, `lng`, `lang`. Returns nothing until 3 characters (`minChars: 3`), so call it on every keystroke and let the server decide.
+```json
+{ "query": "bir", "minChars": 3,
+  "dishes":      [{ "name": "Veg Biryani", "nameEn": "Veg Biryani", "image": "…", "count": 2 }],
+  "restaurants": [{ "id": "…", "name": "…", "slug": "…", "image": "…", "distanceKm": 3.9 }],
+  "categories":  [{ "id": "…", "name": "Biryani", "nameEn": "Biryani", "image": "…" }] }
+```
+`count` = how many restaurants near the customer serve that dish. Tapping a dish suggestion → `/search/dishes?q=<nameEn>`.
+
+### "Closing soon", hiding closed restaurants
+Every restaurant card (list, detail, unified search, dish search) has `closingSoon` (open and within `closingSoonThresholdMinutes`, 30 by default, of closing) and `closesInMinutes` (`null` when closed, open all day, or no hours set). Overnight hours count through midnight.
+Add `openOnly=true` to the restaurant list, unified search or dish search to leave out restaurants that can't take an order right now; without it they come last.
+
+### Outlets (branches of one brand)
+List cards have `outletGroupId` and `outletCount` (other outlets; **0 = hide the "other outlets" button**).
+`GET /food/restaurant/restaurants/:id/outlets?lat=&lng=` → `{ outletGroupId, outlets: [ card + { area, city, address, inReach } ] }`, the ones that deliver to the customer first, then open, then nearest.
+
+### `GET /food/restaurant/videos/feed` — optional auth
+Dish videos and restaurant storefront videos from restaurants in reach. Query: `lat`, `lng` (required), `verticalId`, `lang`, `page`, `limit` (≤ 30). Send the Bearer token when signed in: restaurants the customer has ordered from come first (`forYou: true`).
+```json
+{ "items": [{
+    "type": "dish",                    // or "restaurant"
+    "id": "dish:…", "dishId": "…",     // dishId null for restaurant videos
+    "title": "…", "videoUrl": "https://…", "poster": "…", "mimeType": "",
+    "price": 240, "isVeg": false, "forYou": true,
+    "restaurant": { /* same compact card as dish search */ }
+  }], "total": 12, "page": 1, "limit": 10 }
+```
+Video urls are signed and expire within the hour; don't store them.
+
 ### `GET /food/search/categories/admin?zoneId=`
 → `{ categories: [ … ] }` — admin-curated only, excludes restaurant-created categories. Cached 30 min.
 
@@ -385,6 +432,21 @@ All optional. → `{ user }` (includes `preferredLanguage`, default `"en"`).
 | PATCH | `/food/user/addresses/:addressId/default` | — | `{ address }` |
 
 Legacy label `"Work"` is coerced to `"Office"`; anything unrecognized becomes `"Other"`.
+
+### `GET /food/user/order-again?lat=&lng=&lang=&limit=`
+Dishes and restaurants from the customer's **delivered** orders that can still be ordered, at today's price, from restaurants that deliver to them (without lat/lng: all, distance unknown).
+```json
+{ "items": [{ "id": "…", "name": "…", "price": 90, "otherPrice": 0, "hasVariants": false, "image": "…",
+              "foodType": "Veg", "isVeg": true, "timesOrdered": 2, "lastOrderedAt": "…",
+              "restaurant": { /* compact card */ } }],
+  "restaurants": [{ /* compact card */ "ordersCount": 2, "lastOrderedAt": "…" }] }
+```
+Most-ordered first, open restaurants before closed. Empty lists for a new customer.
+
+### Share cart
+- `POST /food/user/cart/share` → `{ token, shareUrl, expiresAt, itemCount }`. Shares the cart last saved with `PUT /cart`, so sync first. The link lasts 7 days. Put `shareUrl` in the share sheet; the app opens it with the token. 400 if the cart is empty.
+- `GET /food/user/cart/shared/:token` → `{ sharedBy, restaurant, restaurantAvailable, items: [{ itemId, name, quantity, variantId, variantName, price, otherPrice, image, foodType, isVeg, available }], availableCount, unavailableCount, subtotal, expiresAt }`. Prices are today's, not the sender's. 404 for an unknown or expired link (`message` says which).
+- `POST /food/user/cart/shared/:token/import` → `{ cart, added, skipped: ["dish names"] }`. **Replaces** the customer's cart with the available dishes, so ask before calling it if their cart has something in it. Show `skipped` as "not available right now".
 
 ### `PUT /food/user/cart`
 ```json
