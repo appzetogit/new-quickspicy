@@ -153,6 +153,12 @@ All return active-only, ordered lists.
 | GET | `/food/dining/categories/public` | dining categories |
 | GET | `/food/dining/restaurants/public` | dining restaurants |
 
+**Promotion banners can be a GIF or a video.** Each banner in `home-promotion/public` (query `zoneId` or `lat`/`lng`, and `placement=home|tracking`) has `mediaType`:
+
+- `image`: show `imageUrl`.
+- `gif`: `imageUrl` is animated (GIF or animated WebP). Use an image widget that animates; Flutter's `Image.network` does.
+- `video`: play `videoUrl` (MP4 or WebM) muted, looping, inline, with `video_player` or similar. `imageUrl` is the poster to show while it loads, or the video URL itself when the admin gave no poster, so only treat `imageUrl` as a picture when it differs from `videoUrl`. Banners are 5:3. On the web, a video slide stays up until the video ends instead of switching after 5 seconds.
+
 ---
 
 ## 5. Discovery (no auth)

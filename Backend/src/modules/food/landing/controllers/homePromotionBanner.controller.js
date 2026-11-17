@@ -16,9 +16,11 @@ export const listHomePromotionBannersController = async (req, res, next) => {
 
 export const createHomePromotionBannerController = async (req, res, next) => {
     try {
-        const file = req.file;
+        // "file": the image, GIF or video. "poster": an optional still for a video.
+        const file = req.files?.file?.[0] || req.file;
+        const poster = req.files?.poster?.[0] || null;
         const meta = req.body;
-        const banner = await bannerService.createHomePromotionBanner(file, meta);
+        const banner = await bannerService.createHomePromotionBanner(file, meta, { poster });
         res.status(201).json({ success: true, banner });
     } catch (error) {
         next(error);

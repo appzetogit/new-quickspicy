@@ -34,15 +34,21 @@ const PromotionBannerCarousel = ({ zoneId: propZoneId }) => {
     fetchBanners();
   }, [fetchBanners]);
 
+  const current = banners[currentIndex];
+  const isVideo = current?.mediaType === "video" && Boolean(current?.videoUrl);
+
   const startAutoSlide = useCallback(() => {
     if (autoSlideIntervalRef.current) clearInterval(autoSlideIntervalRef.current);
     if (banners.length <= 1) return;
+    // A video slide stays until the video ends (onEnded moves on), rather
+    // than being cut off after 5 seconds.
+    if (isVideo) return;
 
     autoSlideIntervalRef.current = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       setCurrentIndex((prev) => (prev + 1) % banners.length);
     }, 5000);
-  }, [banners.length]);
+  }, [banners.length, isVideo]);
 
   useEffect(() => {
     startAutoSlide();
@@ -99,11 +105,25 @@ const PromotionBannerCarousel = ({ zoneId: propZoneId }) => {
                 if (!banners[currentIndex]?.ctaLink) e.preventDefault();
               }}
             >
-              <img 
-                src={resolveMediaUrl(banners[currentIndex]?.imageUrl) || undefined} 
-                alt={banners[currentIndex]?.title || "Promotion"} 
-                className="w-full h-full object-cover"
-              />
+              {isVideo ? (
+                // Muted and inline, the only way a browser lets a video autoplay.
+                <video
+                  src={resolveMediaUrl(current.videoUrl) || undefined}
+                  poster={current.imageUrl !== current.videoUrl ? resolveMediaUrl(current.imageUrl) || undefined : undefined}
+                  autoPlay
+                  muted
+                  playsInline
+                  loop={banners.length <= 1}
+                  onEnded={() => setCurrentIndex((prev) => (prev + 1) % banners.length)}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <img
+                  src={resolveMediaUrl(current?.imageUrl) || undefined}
+                  alt={current?.title || "Promotion"}
+                  className="w-full h-full object-cover"
+                />
+              )}
             </a>
           </motion.div>
         </AnimatePresence>

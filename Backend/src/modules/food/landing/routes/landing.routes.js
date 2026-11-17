@@ -180,7 +180,7 @@ router.patch('/hero-banners/dining/:id/status', toggleDiningBannerStatusControll
 router.get('/hero-banners/home-promotion', listHomePromotionBannersController);
 router.post(
     '/hero-banners/home-promotion',
-    upload.single('file'),
+    upload.fields([{ name: 'file', maxCount: 1 }, { name: 'poster', maxCount: 1 }]),
     createHomePromotionBannerController
 );
 router.patch('/hero-banners/home-promotion/:id', updateHomePromotionBannerController);

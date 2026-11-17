@@ -3746,8 +3746,15 @@ model FoodDiningBanner {
 model HomePromotionBanner {
   id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
 
+  /// The picture: the image or animated GIF itself, or a video banner's
+  /// poster (the video's own url when no poster was uploaded).
   imageUrl     String
   publicId     String
+  /// 'image' | 'gif' | 'video'. Apps play videoUrl for 'video'.
+  mediaType    String  @default("image") @db.VarChar(8)
+  /// MP4 / WebM, for mediaType 'video'.
+  videoUrl     String?
+  videoPath    String?
   title        String?
   ctaLink      String?
   /// The restaurant the banner opens, by id, so renaming it cannot break the

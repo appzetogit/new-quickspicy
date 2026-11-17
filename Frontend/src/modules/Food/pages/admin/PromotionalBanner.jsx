@@ -6,6 +6,9 @@ import ImageCropDialog from "@food/components/admin/ImageCropDialog"
 
 /** The app shows promotional banners at 5:3 (promo_banner_carousel.dart). */
 const BANNER_ASPECT = 5 / 3
+/** Matches the server's MAX_VIDEO_BYTES (12MB). GIFs are kept smaller: the app downloads them whole. */
+const MAX_VIDEO_BYTES = 12 * 1024 * 1024
+const MAX_GIF_BYTES = 5 * 1024 * 1024
 
 const debugError = (...args) => {}
 
@@ -23,7 +26,9 @@ export default function PromotionalBanner() {
   const [editingBanner, setEditingBanner] = useState(null)
   // The picked image, waiting to be cropped to the banner shape.
   const [cropFile, setCropFile] = useState(null)
-  
+  // What the crop is for: the banner itself, or a video banner's poster.
+  const [cropFor, setCropFor] = useState("file")
+
   const [formData, setFormData] = useState({
     title: "",
     ctaLink: "",
@@ -33,7 +38,11 @@ export default function PromotionalBanner() {
     startDate: "",
     endDate: "",
     file: null,
-    preview: null
+    preview: null,
+    // image | gif | video
+    mediaType: "image",
+    poster: null,
+    posterPreview: null
   })
 
   // Get today's date for validation
@@ -81,15 +90,52 @@ export default function PromotionalBanner() {
     fetchZones()
   }, [fetchBanners, fetchRestaurants, fetchZones])
 
-  // Every banner is cropped to the shape the app shows before it is used.
+  // Still images are cropped to the shape the app shows. A GIF or a video is
+  // used as it is: cropping goes through a canvas, which would flatten a GIF
+  // to one frame and cannot cut a video at all.
   const handleFileChange = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ""
     if (!file) return
-    if (!String(file.type || "").startsWith("image/")) {
-      alert("Choose an image (JPEG, PNG or WebP)")
+    const type = String(file.type || "").toLowerCase()
+    if (type === "video/mp4" || type === "video/webm") {
+      if (file.size > MAX_VIDEO_BYTES) {
+        alert("Video must be 12MB or less")
+        return
+      }
+      setFormData(prev => ({ ...prev, file, mediaType: "video", poster: null, posterPreview: null, preview: URL.createObjectURL(file) }))
       return
     }
+    if (type.startsWith("video/")) {
+      alert("Only MP4 or WebM videos play in the app. Convert the video and try again.")
+      return
+    }
+    if (type === "image/gif") {
+      if (file.size > MAX_GIF_BYTES) {
+        alert("GIF must be 5MB or less")
+        return
+      }
+      setFormData(prev => ({ ...prev, file, mediaType: "gif", poster: null, posterPreview: null, preview: URL.createObjectURL(file) }))
+      return
+    }
+    if (!type.startsWith("image/")) {
+      alert("Choose an image (JPEG, PNG, WebP), a GIF, or an MP4 / WebM video")
+      return
+    }
+    setCropFor("file")
+    setCropFile(file)
+  }
+
+  // A video banner's optional poster: the still shown before the video plays.
+  const handlePosterChange = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    if (!String(file.type || "").startsWith("image/") || file.type === "image/gif") {
+      alert("The poster must be a still image (JPEG, PNG or WebP)")
+      return
+    }
+    setCropFor("poster")
     setCropFile(file)
   }
 
@@ -99,9 +145,16 @@ export default function PromotionalBanner() {
       alert("Image size must be 2MB or less")
       return
     }
+    if (cropFor === "poster") {
+      setFormData(prev => ({ ...prev, poster: file, posterPreview: URL.createObjectURL(file) }))
+      return
+    }
     setFormData(prev => ({
       ...prev,
       file,
+      mediaType: "image",
+      poster: null,
+      posterPreview: null,
       preview: URL.createObjectURL(file)
     }))
   }
@@ -109,7 +162,7 @@ export default function PromotionalBanner() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.file && !editingBanner) {
-      alert("Please select a banner image")
+      alert("Please select a banner image, GIF or video")
       return
     }
 
@@ -149,6 +202,7 @@ export default function PromotionalBanner() {
       setSubmitting(true)
       const data = new FormData()
       if (formData.file) data.append("file", formData.file)
+      if (formData.mediaType === "video" && formData.poster) data.append("poster", formData.poster)
       data.append("title", formData.title)
       data.append("ctaLink", formData.ctaLink)
       // The server stores the restaurant by id and builds the link from it,
@@ -221,7 +275,10 @@ export default function PromotionalBanner() {
       startDate: "",
       endDate: "",
       file: null,
-      preview: null
+      preview: null,
+      mediaType: "image",
+      poster: null,
+      posterPreview: null
     })
   }
 
@@ -237,7 +294,10 @@ export default function PromotionalBanner() {
       startDate: banner.startDate ? new Date(banner.startDate).toISOString().split('T')[0] : "",
       endDate: banner.endDate ? new Date(banner.endDate).toISOString().split('T')[0] : "",
       file: null,
-      preview: banner.imageUrl
+      mediaType: banner.mediaType || "image",
+      preview: resolveMediaUrl(banner.mediaType === "video" ? banner.videoUrl : banner.imageUrl),
+      poster: null,
+      posterPreview: null
     })
     setShowAddModal(true)
   }
@@ -262,7 +322,7 @@ export default function PromotionalBanner() {
       <ImageCropDialog
         file={cropFile}
         aspect={BANNER_ASPECT}
-        title="Crop banner"
+        title={cropFor === "poster" ? "Crop poster" : "Crop banner"}
         outputWidth={1200}
         onDone={handleCropped}
         onCancel={() => setCropFile(null)}
@@ -316,7 +376,21 @@ export default function PromotionalBanner() {
             {banners.map((banner) => (
               <div key={banner._id} className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                 <div className="relative aspect-[5/3] bg-slate-100 overflow-hidden">
-                  <img src={resolveMediaUrl(banner.imageUrl) || undefined} alt={banner.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                  {banner.mediaType === "video" && banner.videoUrl ? (
+                    <video
+                      src={resolveMediaUrl(banner.videoUrl) || undefined}
+                      poster={banner.imageUrl !== banner.videoUrl ? resolveMediaUrl(banner.imageUrl) || undefined : undefined}
+                      muted loop autoPlay playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <img src={resolveMediaUrl(banner.imageUrl) || undefined} alt={banner.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                  )}
+                  {(banner.mediaType === "video" || banner.mediaType === "gif") && (
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold uppercase tracking-wider">
+                      {banner.mediaType}
+                    </span>
+                  )}
                   <div className="absolute top-2 right-2 flex gap-2">
                     <button 
                       onClick={() => openEdit(banner)}
@@ -391,11 +465,15 @@ export default function PromotionalBanner() {
               <form onSubmit={handleSubmit} className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
-                    <label className="block text-sm font-semibold text-slate-700">Banner Image</label>
+                    <label className="block text-sm font-semibold text-slate-700">Banner image, GIF or video</label>
                     <div className="relative aspect-[5/3] rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden group cursor-pointer hover:border-blue-400 transition-colors">
                       {formData.preview ? (
                         <>
-                          <img src={formData.preview} className="w-full h-full object-cover" />
+                          {formData.mediaType === "video" ? (
+                            <video src={formData.preview} poster={formData.posterPreview || undefined} muted loop autoPlay playsInline className="w-full h-full object-cover" />
+                          ) : (
+                            <img src={formData.preview} className="w-full h-full object-cover" />
+                          )}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                             <Upload className="w-8 h-8 text-white" />
                           </div>
@@ -403,12 +481,27 @@ export default function PromotionalBanner() {
                       ) : (
                         <div className="text-center p-4">
                           <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Upload image · cropped to 5:3</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Upload image, GIF or video · 5:3</p>
                         </div>
                       )}
-                      <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      {!editingBanner && (
+                        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-400">JPEG, PNG or WebP. Max 2MB.</p>
+                    <p className="text-[10px] text-slate-400">
+                      {editingBanner
+                        ? "To change the picture or video, add a new banner and delete this one."
+                        : "Image: JPEG, PNG or WebP, max 2MB, cropped to 5:3. GIF: max 5MB. Video: MP4 or WebM, max 12MB. Make GIFs and videos 5:3 (e.g. 1200×720); they are not cropped."}
+                    </p>
+                    {!editingBanner && formData.mediaType === "video" && (
+                      <div className="flex items-center gap-3">
+                        <label className="relative px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer hover:border-blue-400">
+                          {formData.poster ? "Change poster image" : "Add poster image (optional)"}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePosterChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                        </label>
+                        {formData.posterPreview && <img src={formData.posterPreview} className="h-10 aspect-[5/3] object-cover rounded" />}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-4">

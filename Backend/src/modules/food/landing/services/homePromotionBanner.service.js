@@ -1,7 +1,7 @@
 import { parseDayBound } from '../../../../utils/timezone.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
-import { saveImageFile } from '../../../../services/storage.service.js';
+import { saveImageFile, saveVideoFile, deleteStoredFile } from '../../../../services/storage.service.js';
 import { makeBannerService } from './bannerService.factory.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import {
@@ -74,19 +74,54 @@ export const getPublicHomePromotionBanners = async (query = {}) => {
     return withoutOfflineRestaurants(list);
 };
 
-export const createHomePromotionBanner = async (file, meta = {}) => {
+/**
+ * The kind of banner a file makes. Videos are stored as they are (MP4 / WebM,
+ * no transcoding here); images and GIFs go through the image pipeline, which
+ * keeps a GIF's animation (as animated WebP when that is smaller).
+ */
+const mediaTypeOf = (file) => {
+    const mime = String(file?.mimetype || '').toLowerCase();
+    if (mime.startsWith('video/')) return 'video';
+    if (mime === 'image/gif') return 'gif';
+    return 'image';
+};
+
+/**
+ * @param file    the image, GIF or video
+ * @param meta    title, ctaLink / restaurantId, placement, zoneId, dates, sortOrder
+ * @param poster  optional still for a video banner, shown before it plays and
+ *                by apps that cannot play video
+ */
+export const createHomePromotionBanner = async (file, meta = {}, { poster = null } = {}) => {
     if (!file) return null;
     // Before the upload, so a bad restaurant link is a clear 400 and no
-    // orphaned image is left behind.
+    // orphaned file is left behind.
     const link = await resolveBannerLink({ ctaLink: meta.ctaLink, restaurantId: meta.restaurantId });
     const placement = toPlacement(meta.placement);
+    const mediaType = mediaTypeOf(file);
+    if (poster && mediaType !== 'video') throw new ValidationError('A poster is only for video banners');
 
+    const saved = [];
     try {
-        const saved = await saveImageFile(file, BANNER_FOLDER);
+        let picture;
+        let video = null;
+        if (mediaType === 'video') {
+            video = await saveVideoFile(file, BANNER_FOLDER);
+            saved.push(video.path);
+            picture = poster ? await saveImageFile(poster, BANNER_FOLDER) : video;
+            if (poster) saved.push(picture.path);
+        } else {
+            picture = await saveImageFile(file, BANNER_FOLDER);
+            saved.push(picture.path);
+        }
+
         return await prisma.homePromotionBanner.create({
             data: {
-                imageUrl: saved.url,
-                publicId: saved.path,
+                imageUrl: picture.url,
+                publicId: picture.path,
+                mediaType,
+                videoUrl: video?.url ?? null,
+                videoPath: video?.path ?? null,
                 title: meta.title,
                 ctaLink: link.ctaLink ?? meta.ctaLink,
                 restaurantId: link.restaurantId ?? null,
@@ -99,12 +134,21 @@ export const createHomePromotionBanner = async (file, meta = {}) => {
             },
         });
     } catch (error) {
+        // Nothing half-made left on disk.
+        await Promise.all(saved.map((p) => deleteStoredFile(p).catch(() => {})));
+        // A wrong format or a file too big is the admin's to fix: keep it a 400.
+        if (error instanceof ValidationError) throw error;
         throw new Error(`Banner creation failed: ${error.message}`);
     }
 };
 
 export const updateHomePromotionBanner = async (id, data = {}) => {
-    const { startDate, endDate, zoneId, ctaLink, restaurantId, placement, ...rest } = data;
+    const {
+        startDate, endDate, zoneId, ctaLink, restaurantId, placement,
+        // The media is set by the upload, never by a PATCH body.
+        imageUrl: _i, publicId: _p, mediaType: _m, videoUrl: _v, videoPath: _vp,
+        ...rest
+    } = data;
     const updates = { ...rest, ...(await resolveBannerLink({ ctaLink, restaurantId })) };
     if (placement !== undefined) updates.placement = toPlacement(placement);
 
@@ -122,6 +166,14 @@ export const updateHomePromotionBanner = async (id, data = {}) => {
         });
 };
 
-export const deleteHomePromotionBanner = banners.remove;
+/** Also removes a video banner's video; the factory only knows the picture. */
+export const deleteHomePromotionBanner = async (id) => {
+    const doc = await prisma.homePromotionBanner.findUnique({ where: { id: String(id) }, select: { videoPath: true, publicId: true } });
+    const result = await banners.remove(id);
+    if (result?.deleted && doc?.videoPath && doc.videoPath !== doc.publicId) {
+        await deleteStoredFile(doc.videoPath).catch(() => {});
+    }
+    return result;
+};
 export const toggleHomePromotionBannerStatus = banners.setActive;
 export const updateHomePromotionBannerOrder = banners.setOrder;
