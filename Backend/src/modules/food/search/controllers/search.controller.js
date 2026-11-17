@@ -7,7 +7,10 @@ import { sendResponse, sendError } from '../../../../utils/response.js';
 export const searchController = async (req, res, next) => {
     try {
         // A zoneId the app sends is ignored: search goes by distance.
-        const { q, lat, lng, radiusKm, categoryId, minRating, maxDeliveryTime, isVeg, page, limit } = req.query;
+        const {
+            q, lat, lng, radiusKm, categoryId, minRating, maxDeliveryTime, isVeg, page, limit,
+            verticalId, vertical,
+        } = req.query;
 
         const results = await searchUnified({
             q,
@@ -18,6 +21,9 @@ export const searchController = async (req, res, next) => {
             minRating,
             maxDeliveryTime,
             isVeg,
+            // Business vertical (Food, Home Food, ...): by id, or by name.
+            verticalId,
+            vertical,
             page: parseInt(page, 10) || 1,
             limit: parseInt(limit, 10) || 20,
         });

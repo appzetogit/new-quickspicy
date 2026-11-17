@@ -10,6 +10,7 @@ import { verticalFilterFromQuery } from '../../shared/verticals.js';
 import { getPublicApprovedRestaurantMenu } from '../../restaurant/services/restaurantMenu.service.js';
 import { updateCurrentUserProfile } from '../../user/services/userProfile.service.js';
 import { validateUserProfileUpdateDto } from '../../../../dtos/food/userProfileUpdate.dto.js';
+import { deriveRestaurantFields, fromRestaurantLocation } from '../../restaurant/restaurant.mapper.js';
 
 /**
  * Phase 1 foundations: business verticals, rider cohorts and Telugu text.
@@ -123,6 +124,40 @@ test('restaurants with no vertical count as Food; others only in their own', asy
     assert.equal((await restaurantsIn({})).size, created.restaurants.length);
     // An unknown vertical is "no results", not "ignore the filter".
     assert.equal(await restaurantsIn({ vertical: `nope ${stamp}` }), null);
+});
+
+test('the search endpoint filters by vertical end to end', async () => {
+    // The controller copies query parameters one by one, and one it does not
+    // copy is silently ignored -- which is how this filter first shipped broken.
+    // So this goes through the handler, with a restaurant that is really in
+    // reach, and checks the vertical decides whether it is found.
+    const { searchController } = await import('../../search/controllers/search.controller.js');
+    const lat = 15.7355, lng = 79.2697;
+    const name = `Zzq Search Vertical ${stamp}`;
+    const phone = uniquePhone('9');
+    const restaurant = await makeRestaurant({
+        restaurantName: name,
+        ownerPhone: phone,
+        ...deriveRestaurantFields({ restaurantName: name, ownerPhone: phone }),
+        ...fromRestaurantLocation({ latitude: lat, longitude: lng, city: 'Markapuram', state: 'Andhra Pradesh' }),
+        deliveryRadiusKm: 10,
+        isAcceptingOrders: true,
+    });
+    const { vertical } = await verticals.createVertical({ name: `Search Vertical ${stamp}` });
+    created.verticals.push(vertical.id);
+
+    const search = async (extra) => {
+        const seen = [];
+        const res = { status: () => res, json: (body) => seen.push(body) };
+        await searchController({ query: { q: name, lat: String(lat), lng: String(lng), ...extra } }, res, (err) => { throw err; });
+        return seen[0].data.restaurants.map((r) => r.id || r._id);
+    };
+
+    assert.ok((await search({})).includes(restaurant.id), 'found with no vertical asked for');
+    assert.deepEqual(await search({ verticalId: vertical.id }), [], 'not in that vertical yet');
+    assert.deepEqual(await search({ vertical: `no such vertical ${stamp}` }), [], 'unknown vertical: nothing');
+    await verticals.setRestaurantVerticals(restaurant.id, { verticalIds: [vertical.id] });
+    assert.ok((await search({ verticalId: vertical.id })).includes(restaurant.id), 'found once assigned');
 });
 
 test('assigning an unknown or switched-off vertical is refused', async () => {
