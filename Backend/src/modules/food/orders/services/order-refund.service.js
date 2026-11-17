@@ -39,16 +39,25 @@ export function paidParts(order) {
     let wallet = toPaise(order?.walletAmount);
     let online = toPaise(order?.onlineAmount);
     let cash = 0;
+    const cashCollected = (method === 'cash' || method === 'cod')
+        && order?.paymentStatus && ['paid', 'refunded'].includes(order.paymentStatus);
     if (wallet === 0 && online === 0) {
         if (method === 'wallet') wallet = total;
         else if (method === 'razorpay') online = total;
         // Cash counts once it was collected (paid on delivery). It can only go
         // back to the wallet, and only an admin refunds it -- a short item on
         // a COD order is made good as wallet credit.
-        else if ((method === 'cash' || method === 'cod') && order?.paymentStatus && ['paid', 'refunded'].includes(order.paymentStatus)) cash = total;
+        else if (cashCollected) cash = total;
+    } else if (cashCollected) {
+        // Wallet + cash on delivery: the wallet part was paid when the order was
+        // placed; the rider collected only the rest.
+        cash = Math.max(0, total - wallet - online);
     }
     return { wallet, online, cash };
 }
+
+/** Pay-on-delivery methods: nothing is paid until the rider collects it. */
+const PAY_ON_DELIVERY = ['cash', 'cod', 'razorpay_qr'];
 
 /** What Razorpay should have charged for this order, in paise. */
 export function onlineAmountDuePaise(order) {
@@ -294,10 +303,14 @@ export async function refundOrder({
     const planned = await prisma.$transaction(async (tx) => {
         const order = await lockOrder(tx, id);
         if (!order) throw new ValidationError('Order not found');
-        if (!['paid', 'refunded'].includes(order.paymentStatus)) {
+        // A pay-on-delivery order with a wallet part has that part paid from
+        // the moment it was placed, so it can be refunded before delivery too.
+        const payOnDelivery = PAY_ON_DELIVERY.includes(String(order.paymentMethod || '').toLowerCase());
+        const walletPaidUpFront = payOnDelivery && toPaise(order.walletAmount) > 0;
+        if (!['paid', 'refunded'].includes(order.paymentStatus) && !walletPaidUpFront) {
             return { order, legs: [], reason: order.paymentMethod === 'cash' ? 'cash_payment' : `payment_${order.paymentStatus}` };
         }
-        if (order.paymentMethod === 'cash' && !allowCash) {
+        if (order.paymentMethod === 'cash' && !allowCash && !walletPaidUpFront) {
             return { order, legs: [], reason: 'cash_payment' };
         }
 

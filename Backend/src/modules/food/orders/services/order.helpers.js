@@ -177,6 +177,22 @@ export function riderContact(order) {
   };
 }
 
+/**
+ * The cash a rider collects at the door: the total less whatever was paid up
+ * front (wallet, online). 0 for prepaid orders and once it has been collected.
+ */
+export function cashToCollect(order) {
+  const method = String(order?.payment?.method || order?.paymentMethod || "").toLowerCase();
+  if (!["cash", "cod", "razorpay_qr"].includes(method)) return 0;
+  const status = String(order?.payment?.status || order?.paymentStatus || "").toLowerCase();
+  if (status === "paid" || status === "refunded") return 0;
+  const toPaise = (v) => Math.round((Number(v) || 0) * 100);
+  const total = toPaise(order?.pricing?.total ?? order?.total);
+  const prepaid = toPaise(order?.walletAmount ?? order?.payment?.walletAmount)
+    + toPaise(order?.onlineAmount ?? order?.payment?.onlineAmount);
+  return Math.max(0, total - prepaid) / 100;
+}
+
 export function sanitizeOrderForDeliveryPartner(orderDoc) {
   const o = sanitizeOrderForExternal(orderDoc);
   const cookingNote = String(o.note || "").trim();
@@ -186,6 +202,10 @@ export function sanitizeOrderForDeliveryPartner(orderDoc) {
     cookingNote,
     deliveryInstructions,
     note: deliveryInstructions,
+    // What to collect at the door. Read this, not the total: part of a cash
+    // order may already be paid from the customer's wallet.
+    cashToCollect: cashToCollect(o),
+    paidFromWallet: Number(o.walletAmount ?? o.payment?.walletAmount) || 0,
   };
   const contact = riderContact(o);
   out.orderedBy = contact.orderedBy;

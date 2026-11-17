@@ -55,6 +55,15 @@ const deliveryInclude = {
   user: { select: { id: true, name: true, phone: true, email: true } },
 };
 
+/** The cash part of an order: its total less what was paid up front (wallet, online). */
+function cashCollectedOnDelivery(order) {
+  const toPaise = (v) => Math.round((Number(v) || 0) * 100);
+  const total = toPaise(order?.pricing?.total ?? order?.total ?? order?.amounts?.totalCustomerPaid);
+  const prepaid = toPaise(order?.walletAmount ?? order?.payment?.walletAmount)
+    + toPaise(order?.onlineAmount ?? order?.payment?.onlineAmount);
+  return Math.max(0, total - prepaid) / 100;
+}
+
 function mergeTransactionIntoOrder(order, tx) {
   if (!tx) return order;
   return {
@@ -127,7 +136,8 @@ function emitOrderUpdate(order, deliveryPartnerId, customerEvent = null) {
 
       if (order.payment?.method === 'cash' || order.paymentMethod === 'cash') {
         riderTitle = 'Payment collected!';
-        const amt = order.pricing?.total || order.amounts?.totalCustomerPaid || 0;
+        // The cash part only: a wallet part was paid when the order was placed.
+        const amt = cashCollectedOnDelivery(order);
         riderBody = `You have collected Rs ${amt} cash for Order #${orderNumber}.`;
       }
     }
@@ -145,7 +155,11 @@ function emitOrderUpdate(order, deliveryPartnerId, customerEvent = null) {
             paymentMethod: order.payment?.method || order.paymentMethod,
             customerName: riderContact(order).name,
             customerPhone: riderContact(order).phone,
-            amountCollected: String(order.pricing?.total || order.amounts?.totalCustomerPaid || 0),
+            amountCollected: String(
+              (order.payment?.method || order.paymentMethod) === 'cash'
+                ? cashCollectedOnDelivery(order)
+                : order.pricing?.total || order.amounts?.totalCustomerPaid || 0,
+            ),
           },
         },
       );

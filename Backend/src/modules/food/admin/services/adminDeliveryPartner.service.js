@@ -53,11 +53,12 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
             _sum: { riderEarning: true },
             _count: { _all: true },
         }),
-        // Cash the rider physically holds: COD orders they delivered.
+        // Cash the rider physically holds: COD orders they delivered, less any
+        // part the customer paid from their wallet when ordering.
         prisma.foodOrder.groupBy({
             by: ['dispatchDeliveryPartnerId'],
             where: { ...deliveredByPartner, paymentMethod: 'cash' },
-            _sum: { total: true },
+            _sum: { total: true, walletAmount: true, onlineAmount: true },
         }),
         prisma.foodDeliveryCashDeposit.groupBy({
             by: ['deliveryPartnerId'],
@@ -88,7 +89,10 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
     }
     for (const row of cash) {
         const stats = at(row.dispatchDeliveryPartnerId);
-        if (stats) stats.cashCollected = num(row._sum.total);
+        if (stats) {
+            stats.cashCollected = Math.max(0,
+                num(row._sum.total) - num(row._sum.walletAmount) - num(row._sum.onlineAmount));
+        }
     }
     for (const row of deposits) {
         const stats = at(row.deliveryPartnerId);

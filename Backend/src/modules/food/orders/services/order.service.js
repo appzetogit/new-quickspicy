@@ -237,6 +237,22 @@ export async function planWalletSplit(userId, total) {
   return { coversAll: false, walletPaise: Math.max(0, walletPaise) };
 }
 
+/**
+ * Wallet + cash on delivery: the wallet pays what it can when the order is
+ * placed, and the rider collects only the rest. Unlike the online split there
+ * is no ₹1 floor on the remainder -- cash has no gateway minimum -- so a wallet
+ * that covers it all simply makes it a wallet order.
+ *
+ * @returns {Promise<{coversAll: boolean, walletPaise: number, cashPaise: number}>}
+ */
+export async function planWalletCashSplit(userId, total) {
+  const totalPaise = Math.round(Number(total) * 100);
+  const { availableBalance } = await getBalance("user", String(userId));
+  const availablePaise = Math.max(0, Math.floor(Number(availableBalance) * 100 + 1e-6));
+  if (availablePaise >= totalPaise) return { coversAll: true, walletPaise: totalPaise, cashPaise: 0 };
+  return { coversAll: false, walletPaise: availablePaise, cashPaise: totalPaise - availablePaise };
+}
+
 let lastExpiredCleanupAt = 0;
 const EXPIRE_CLEANUP_INTERVAL_MS = 60_000;
 
@@ -326,7 +342,11 @@ async function applyCancellationRefund(order, { cancelledBy = 'system', refundAm
   const none = (extra) => ({ attempted: false, processed: false, paymentPatch: {}, legs: [], method, message: '', ...extra });
 
   if (method === 'cash' || method === 'cod' || method === 'razorpay_qr') {
-    return none({ reason: 'cash_payment' });
+    // Pay-on-delivery: nothing to refund unless part was paid from the wallet
+    // when it was placed. That part goes back to the wallet; the cash part was
+    // never collected (or, once it was, only an admin refunds it).
+    const walletPart = Number(order?.walletAmount ?? order?.payment?.walletAmount) || 0;
+    if (walletPart <= 0) return none({ reason: 'cash_payment' });
   }
 
   const result = await refundOrder({
@@ -530,12 +550,21 @@ export async function calculateOrder(userId, dto) {
     try {
       const { availableBalance } = await getBalance("user", String(userId));
       const split = await planWalletSplit(userId, total);
+      const cashSplit = await planWalletCashSplit(userId, total);
       result.wallet = {
         balance: Math.max(0, Number(availableBalance) || 0),
         canUse: split.walletPaise > 0,
         coversAll: split.coversAll,
         walletAmount: split.walletPaise / 100,
         onlineAmount: split.coversAll ? 0 : Math.round(total * 100 - split.walletPaise) / 100,
+        // The same with cash on delivery: the wallet part, and the cash the
+        // rider will collect. No ₹1 floor here, so it can differ from above.
+        withCash: {
+          canUse: cashSplit.walletPaise > 0,
+          coversAll: cashSplit.coversAll,
+          walletAmount: cashSplit.walletPaise / 100,
+          cashAmount: cashSplit.cashPaise / 100,
+        },
       };
     } catch (err) {
       logger.warn(`Wallet preview failed for user ${userId}: ${err?.message || err}`);
@@ -686,7 +715,7 @@ export async function createOrder(userId, rawDto) {
       });
       if (!cod.allowed) throw new ValidationError(cod.message);
     }
-    const isCash = paymentMethod === "cash";
+    let isCash = paymentMethod === "cash";
     let isWallet = paymentMethod === "wallet";
 
     const pricingResult = await calculateOrderPricing(
@@ -740,18 +769,39 @@ export async function createOrder(userId, rawDto) {
         : null,
     };
 
-    // Cash on delivery only below the admin's limit, whatever the app offered.
-    if (isCash) assertCodAllowedForTotal(normalizedPricing.total, await loadOrderLimits());
-
     if (!Number.isFinite(normalizedPricing.total) || normalizedPricing.total <= 0) {
       throw new ValidationError("Order total must be greater than zero");
     }
     normalizedPricing.total = Math.round(normalizedPricing.total * 100) / 100;
 
+    // Part wallet, part cash on delivery. As with the online split the server
+    // works it out from the balance it can see; the app only asks to use the
+    // wallet. A wallet that covers the whole order makes it a wallet order.
+    let codWalletPaise = 0;
+    if (isCash && dto.useWallet === true) {
+      const split = await planWalletCashSplit(userId, normalizedPricing.total);
+      if (split.coversAll) {
+        paymentMethod = "wallet";
+        isCash = false;
+        isWallet = true;
+      } else {
+        codWalletPaise = split.walletPaise;
+      }
+    }
+
+    // Cash on delivery only below the admin's limit, whatever the app offered.
+    // The limit is on the cash the rider carries, so the wallet part does not count.
+    if (isCash) {
+      assertCodAllowedForTotal(
+        (Math.round(normalizedPricing.total * 100) - codWalletPaise) / 100,
+        await loadOrderLimits(),
+      );
+    }
+
     // Part wallet, part online. The server decides the split from the balance
     // it can see; the app only asks to use the wallet. A wallet that covers the
     // whole order makes it a plain wallet order.
-    let walletPaise = isWallet ? Math.round(normalizedPricing.total * 100) : 0;
+    let walletPaise = isWallet ? Math.round(normalizedPricing.total * 100) : codWalletPaise;
     if (paymentMethod === "razorpay" && dto.useWallet === true) {
       const split = await planWalletSplit(userId, normalizedPricing.total);
       if (split.coversAll) {
@@ -763,11 +813,14 @@ export async function createOrder(userId, rawDto) {
     const totalPaise = Math.round(normalizedPricing.total * 100);
     const onlinePaise = paymentMethod === "razorpay" ? totalPaise - walletPaise : 0;
     const isSplit = paymentMethod === "razorpay" && walletPaise > 0;
+    const isCashSplit = isCash && walletPaise > 0;
 
     const payment = {
       method: paymentMethod,
       status: isCash ? "cod_pending" : isWallet ? "paid" : "created",
-      amountDue: normalizedPricing.total || 0,
+      // For cash on delivery this is what the rider collects: the total less
+      // any wallet part. Everything that reads the cash amount reads this.
+      amountDue: isCash ? (totalPaise - walletPaise) / 100 : normalizedPricing.total || 0,
       razorpay: {},
       qr: {},
     };
@@ -895,7 +948,7 @@ export async function createOrder(userId, rawDto) {
     let order = toOrder(created);
     let razorpayPayload = null;
 
-    if (isSplit) {
+    if (isSplit || isCashSplit) {
       // Take the wallet part now. The ledger refuses to overdraw, so a balance
       // spent in another tab since the split was worked out fails here.
       try {
@@ -908,10 +961,16 @@ export async function createOrder(userId, rawDto) {
           category: "order_payment",
           orderId: order.id,
           idempotencyKey: walletDebitKey(order.id),
-          metadata: { source: "order_payment", split: true, onlineAmount: onlinePaise / 100 },
+          metadata: isCashSplit
+            ? { source: "order_payment", split: true, cashAmount: (totalPaise - walletPaise) / 100 }
+            : { source: "order_payment", split: true, onlineAmount: onlinePaise / 100 },
         });
       } catch (err) {
-        await deletePendingPaymentOrder(order).catch(() => {});
+        // Nothing has been announced yet (no restaurant alert, no dispatch),
+        // so the order is simply removed. A cash order is not pending payment,
+        // which is all deletePendingPaymentOrder will remove.
+        if (isCashSplit) await purgeOrder(order.id).catch(() => {});
+        else await deletePendingPaymentOrder(order).catch(() => {});
         if (/Insufficient balance/i.test(err?.message || "")) {
           throw new ValidationError("Your wallet balance has changed. Please review your payment and try again.");
         }

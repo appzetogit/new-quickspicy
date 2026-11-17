@@ -51,14 +51,15 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
             where: { dispatchDeliveryPartnerId: partnerId, orderStatus: 'delivered' },
             _sum: { riderEarning: true },
         }),
-        // 2. Gross cash collected (COD orders)
+        // 2. Gross cash collected (COD orders). The wallet part of a wallet + cash
+        //    order was never in the rider's hand, so it is taken off.
         prisma.foodOrder.aggregate({
             where: {
                 dispatchDeliveryPartnerId: partnerId,
                 orderStatus: 'delivered',
                 paymentMethod: 'cash',
             },
-            _sum: { total: true },
+            _sum: { total: true, walletAmount: true, onlineAmount: true },
         }),
         // 3. Cash deposits (deduct from cash-in-hand)
         prisma.foodDeliveryCashDeposit.aggregate({
@@ -103,7 +104,10 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         num(withdrawalsByStatus.find((r) => r.status === status)?._sum?.amount);
 
     const aggTotalEarned = num(earningsAgg?._sum?.riderEarning);
-    const grossCashCollected = num(cashCollectedAgg?._sum?.total);
+    const grossCashCollected = Math.max(0,
+        num(cashCollectedAgg?._sum?.total)
+        - num(cashCollectedAgg?._sum?.walletAmount)
+        - num(cashCollectedAgg?._sum?.onlineAmount));
     const totalDepositedCash = num(cashDepositsAgg?._sum?.amount);
     const computedCashInHand = Math.max(0, grossCashCollected - totalDepositedCash);
     const aggTotalBonus = num(bonusAgg?._sum?.amount);
