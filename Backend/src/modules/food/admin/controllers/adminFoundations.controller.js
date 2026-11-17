@@ -3,6 +3,9 @@ import * as cohorts from '../services/adminRiderCohort.service.js';
 import * as translations from '../services/adminTranslation.service.js';
 import * as outlets from '../../restaurant/services/outlets.service.js';
 import { languageFromQuery } from '../../shared/language.js';
+import * as statements from '../services/payoutStatement.service.js';
+import { renderStatementPdf } from '../services/payoutStatementPdf.js';
+import * as riderDocs from '../../delivery/services/riderDocuments.service.js';
 
 /** Thin handlers: the same { success, message, data } envelope as the rest of /admin. */
 const handle = (status, message, run) => async (req, res, next) => {
@@ -48,3 +51,55 @@ export const updateTranslation = handle(200, 'Translation saved',
     (req) => translations.updateTranslation(req.params.entity, req.params.id, req.body || {}));
 export const bulkUpdateTranslations = handle(200, 'Translations saved',
     (req) => translations.bulkUpdateTranslations(req.body || {}));
+
+// ----- Phase 3: payout statements and rider documents -----
+
+const adminIdOf = (req) => req.user?.userId || null;
+
+/** Sends a statement as a PDF download (or inline with ?inline=1). */
+const sendStatementPdf = (load) => async (req, res, next) => {
+    try {
+        const statement = await load(req);
+        const pdf = await renderStatementPdf(statement);
+        const name = `quickspicy-${statement.entityType}-statement-${statement.weekKey}.pdf`;
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', `${req.query.inline ? 'inline' : 'attachment'}; filename="${name}"`);
+        // A payslip is personal; no shared cache should keep it.
+        res.set('Cache-Control', 'private, no-store');
+        return res.status(200).send(pdf);
+    } catch (error) {
+        return next(error);
+    }
+};
+
+// Admin
+export const listPayoutStatements = handle(200, 'Statements fetched', (req) => statements.listStatements(req.query));
+export const generatePayoutStatements = handle(200, 'Statements generated',
+    (req) => statements.generateWeeklyStatements(req.body || {}));
+export const getPayoutStatement = handle(200, 'Statement fetched', (req) => statements.getStatement(req.params.id));
+export const adjustPayoutStatement = handle(200, 'Statement adjusted',
+    (req) => statements.adjustStatement(req.params.id, req.body || {}));
+export const approvePayoutStatement = handle(200, 'Statement approved',
+    (req) => statements.approveStatement(req.params.id, adminIdOf(req)));
+export const markPayoutStatementPaid = handle(200, 'Statement marked paid',
+    (req) => statements.markStatementPaid(req.params.id, req.body || {}, adminIdOf(req)));
+export const voidPayoutStatement = handle(200, 'Statement voided',
+    (req) => statements.voidStatement(req.params.id, req.body || {}));
+export const payoutStatementPdf = sendStatementPdf((req) => statements.getStatement(req.params.id));
+
+// Rider / restaurant: their own
+const ownType = (req) => (req.user?.role === 'RESTAURANT' ? 'restaurant' : 'rider');
+export const listOwnPayoutStatements = handle(200, 'Statements fetched',
+    (req) => statements.listOwnStatements(ownType(req), req.user?.userId, req.query));
+export const getOwnPayoutStatement = handle(200, 'Statement fetched',
+    (req) => statements.getOwnStatement(ownType(req), req.user?.userId, req.params.id));
+export const ownPayoutStatementPdf = sendStatementPdf(
+    (req) => statements.getOwnStatement(ownType(req), req.user?.userId, req.params.id));
+
+// Rider documents
+export const getRiderDocuments = handle(200, 'Documents fetched', (req) => riderDocs.getRiderDocuments(req.params.id));
+export const reviewRiderDocument = handle(200, 'Document reviewed',
+    (req) => riderDocs.reviewRiderDocument(req.params.id, req.params.key, req.body || {}, adminIdOf(req)));
+export const getOwnDocuments = handle(200, 'Documents fetched', (req) => riderDocs.getOwnDocuments(req.user?.userId));
+export const reuploadOwnDocument = handle(200, 'Document uploaded', (req) => riderDocs.reuploadOwnDocument(
+    req.user?.userId, req.params.key, req.file || req.files?.[0], { number: req.body?.number }));

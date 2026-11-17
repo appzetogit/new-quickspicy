@@ -463,6 +463,13 @@ Rejected with a rupee-formatted message if `amount > netAvailable`, and the mess
 ### `GET /food/restaurant/withdrawals`
 → `data` = **a bare array** of withdrawals, newest first (not `{ withdrawals: [...] }`).
 
+### Weekly settlement statements
+- `GET /food/restaurant/payout-statements?page=&limit=` → `{ statements: [statement], pagination }`, newest week first.
+- `GET /food/restaurant/payout-statements/:id` → statement with `lines: [{ orderId, displayId, date, paymentMethod, sales, commission, amount }]`.
+- `GET /food/restaurant/payout-statements/:id/pdf` → the statement as a PDF (`?inline=1` to view). Send the Bearer token.
+
+Statement: `{ id, weekKey, periodStart, periodEnd, orders, grossSales, commission, earnings, adjustments, adjustmentNote, net, status, paidAt, payoutRef }`. A week runs Monday to Sunday, India time. `earnings` is the restaurant's share after commission; `net = earnings + adjustments`. `status` is `approved` (being paid) or `paid`; drafts are not shown. A push with `type: "payout_statement_paid"` arrives when it is paid.
+
 ---
 
 ## 8. Subscription (calendar-month postpaid)

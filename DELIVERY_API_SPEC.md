@@ -381,14 +381,16 @@ Query: `period` = `today` | `week` (default) | `month` | `all`, `date` (anchor, 
   "summary": {
     "totalEarnings": 5100, "totalOrders": 122,
     "totalHours": 0, "totalMinutes": 0,
-    "orderEarning": 5100, "incentive": 0, "otherEarnings": 0
+    "totalOnlineMinutes": 0,
+    "orderEarning": 4900, "tips": 200,
+    "incentive": 350, "otherEarnings": 0, "grandTotal": 5450
   },
   "period": "week",
   "date": "2026-07-24T…",
   "pagination": { "page": 1, "limit": 50, "total": 122 }
 }
 ```
-`totalHours` / `totalMinutes` / `incentive` are not computed yet — always 0. Don't surface them.
+`totalEarnings` = `orderEarning` + `tips` (order pay). `incentive` = incentives and bonuses credited in the period; `grandTotal` = `totalEarnings` + `incentive`. Online time comes from the duty log.
 
 ### `GET /food/delivery/trip-history`
 Query: `period` = `daily` (default) | `weekly` | `monthly`, `date`, `status` = `Completed` | `Cancelled` | `Pending` | `ALL TRIPS`, `limit` (default 50, max 1000).
@@ -441,6 +443,27 @@ Note the type label differs between endpoints: `earning_addon` in `/wallet`, `bo
 }
 ```
 `activeOffer` is just `offers[0]`, or `null`.
+
+Only offers meant for this rider are listed (an offer can be limited to zones or cohorts). Each offer also has:
+
+- `criteria` (`orders` | `online_hours`), `currentOnlineMinutes`, `targetOnlineMinutes`.
+- `recurrence` (`none` | `daily` | `weekly`), with `periodStart` / `periodEnd` for the run progress is counted over: the whole offer, or the current IST day / Monday–Sunday week. A weekly target restarts every Monday.
+- `autoCredit`: when true, the money goes to the wallet as soon as the target is met.
+- `targets`: one entry per order slab (a single entry if the offer has no slabs): `[{ tier, targetOrders, targetOnlineMinutes, amount, reached, status, creditedAt, rejectedReason }]`, where status is `in_progress | pending_approval | credited | rejected`. Show these as a ladder, e.g. "4 orders → ₹80, 8 orders → ₹200".
+- `status`, `targetOrders` and `targetAmount` describe the next slab still to earn (or the last one once all are done).
+
+### Weekly payslips
+- `GET /food/delivery/payout-statements?page=&limit=` → `{ statements: [statement], pagination }`, newest week first.
+- `GET /food/delivery/payout-statements/:id` → statement with `lines: [{ orderId, displayId, date, paymentMethod, amount, cash }]`.
+- `GET /food/delivery/payout-statements/:id/pdf` → the payslip as a PDF (`?inline=1` to view instead of download). Send the Bearer token, then save or share the file.
+
+Statement: `{ id, weekKey, periodStart, periodEnd, orders, earnings, incentives, cashCollected, cashDeposited, cashInHand, adjustments, adjustmentNote, net, status, paidAt, payoutRef }`. `status` is `approved` (being paid) or `paid`; drafts are not shown. `net = earnings + incentives − cashInHand + adjustments`. If `net` is negative, the rider holds more customer cash than they earned and owes the difference. A push with `type: "payout_statement_paid"` (and `statementId`) arrives when it is paid.
+
+### Documents
+- `GET /food/delivery/documents` → `{ documents: [doc], summary }`.
+  doc: `{ key, label, required, url, number, status, reason, expiresAt, canReupload }`, where status is `missing | pending | approved | rejected | expired`. `summary`: `{ approved, pending, rejected, expired, missing, allVerified }`.
+- `PUT /food/delivery/documents/:key`: `multipart/form-data` with the file in field `file`, plus an optional `number` (Aadhaar / PAN / licence number). Allowed only when `canReupload` is true (missing, rejected or expired). Returns the same shape as GET; the document becomes `pending` until an admin reviews it.
+- A rejection sends a push with `type: "document_rejected"`, `documentKey` and `reason`.
 
 ### `GET /food/delivery/cash-limit`
 ```json

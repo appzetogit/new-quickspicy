@@ -55,7 +55,8 @@ export const validateEarningAddonUpsertDto = (body) => {
     if (result.data.criteria === 'online_hours' && result.data.requiredOnlineMinutes < 1) {
         throw new ValidationError('Required online time must be at least 1 minute');
     }
-    if (result.data.criteria === 'orders' && result.data.requiredOrders < 1) {
+    const hasTiers = Array.isArray(body?.tiers) && body.tiers.length > 0;
+    if (result.data.criteria === 'orders' && result.data.requiredOrders < 1 && !hasTiers) {
         throw new ValidationError('Required orders must be at least 1');
     }
 
@@ -67,9 +68,15 @@ export const validateEarningAddonUpsertDto = (body) => {
         earningAmount: result.data.earningAmount,
         startDate,
         endDate,
-        maxRedemptions: result.data.maxRedemptions ?? null
+        maxRedemptions: result.data.maxRedemptions ?? null,
+        // Passed through only when sent; the service checks them (ids exist,
+        // slabs well formed) and leaves unsent ones as they are on update.
+        ...pick(body, ['description', 'zoneIds', 'cohortIds', 'recurrence', 'autoCredit', 'tiers'])
     };
 };
+
+const pick = (body, keys) =>
+    Object.fromEntries(keys.filter((k) => body && body[k] !== undefined).map((k) => [k, body[k]]));
 
 export const validateToggleEarningAddonStatusDto = (body) => {
     const status = body?.status ? String(body.status) : '';

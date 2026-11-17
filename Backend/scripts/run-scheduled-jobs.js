@@ -12,6 +12,8 @@ let expireOffersInterval = null;
 let fssaiExpiryInterval = null;
 let subscriptionBillingInterval = null;
 let orderWatchdogInterval = null;
+let incentiveSweepInterval = null;
+let payoutStatementInterval = null;
 
 const shutdown = async (signal) => {
     logger.info(`${signal} received, stopping scheduled jobs`);
@@ -19,6 +21,8 @@ const shutdown = async (signal) => {
     if (fssaiExpiryInterval) clearInterval(fssaiExpiryInterval);
     if (subscriptionBillingInterval) clearInterval(subscriptionBillingInterval);
     if (orderWatchdogInterval) clearInterval(orderWatchdogInterval);
+    if (incentiveSweepInterval) clearInterval(incentiveSweepInterval);
+    if (payoutStatementInterval) clearInterval(payoutStatementInterval);
 
     try {
         await disconnectDB();
@@ -105,6 +109,29 @@ const start = async () => {
             }
         };
 
+        // Incentives reached without a delivery to trigger the check (online-hours
+        // targets), and auto-credit for those that pay themselves. Rejected
+        // targets stay rejected, as after a delivery.
+        const runIncentiveSweep = async () => {
+            try {
+                const { checkEarningAddonCompletions } = await import('../src/modules/food/admin/services/adminEarningAddon.service.js');
+                const { completionsFound, autoCredited } = await checkEarningAddonCompletions('all', false, { afterDelivery: true });
+                if (completionsFound) logger.info(`Incentive sweep: ${completionsFound} granted, ${autoCredited} auto-credited`);
+            } catch (err) {
+                logger.error(`Incentive sweep error: ${err.message}`);
+            }
+        };
+
+        // Drafts of last week's payout statements, kept current until approved.
+        const runPayoutStatements = async () => {
+            try {
+                const { generateWeeklyStatements } = await import('../src/modules/food/admin/services/payoutStatement.service.js');
+                await generateWeeklyStatements({ entityType: 'all' });
+            } catch (err) {
+                logger.error(`Payout statement generation error: ${err.message}`);
+            }
+        };
+
         await runExpire();
         await runFssaiExpirySync();
         await runSubscriptionBilling();
@@ -114,6 +141,9 @@ const start = async () => {
         fssaiExpiryInterval = setInterval(runFssaiExpirySync, 60 * 60 * 1000);
         subscriptionBillingInterval = setInterval(runSubscriptionBilling, 6 * 60 * 60 * 1000);
         orderWatchdogInterval = setInterval(runOrderWatchdog, 5 * 60 * 1000);
+        incentiveSweepInterval = setInterval(runIncentiveSweep, 60 * 60 * 1000);
+        payoutStatementInterval = setInterval(runPayoutStatements, 6 * 60 * 60 * 1000);
+        void runPayoutStatements();
 
         logger.info('Scheduled jobs runner started');
     } catch (err) {

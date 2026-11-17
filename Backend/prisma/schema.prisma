@@ -972,8 +972,9 @@ model FoodDeliveryPartner {
   address  String?
   city     String?
   state    String?
-  /// The zone the admin put the rider in. For the admin list only: dispatch
-  /// goes by distance, not zone.
+  /// The rider's home zone. Dispatch goes by distance, except in zones set to
+  /// ridersFromZoneOnly, which only take riders whose home zone or cohort
+  /// zones include them.
   zoneId   String? @db.VarChar(24)
   /// Rider cohort (FoodRiderCohort). Groups riders for incentives, pay rules
   /// and zone eligibility; null means not in any cohort.
@@ -1028,6 +1029,10 @@ model FoodDeliveryPartner {
   customFields    Json @default("{}")
   /// Uploaded documents for admin-defined fields, keyed by field.key → URL.
   customDocuments Json @default("{}")
+  /// Admin verdict per document, keyed by document key (profilePhoto,
+  /// aadharPhoto, panPhoto, drivingLicensePhoto, or a custom field key):
+  /// { status: pending|approved|rejected, reason, expiresAt, reviewedAt, reviewedBy }.
+  documentReviews Json @default("{}")
 
   rating          Decimal @default(0) @db.Decimal(2, 1)
   totalRatings    Int     @default(0)
@@ -2311,6 +2316,11 @@ model FoodZone {
   /// 'auto' | 'manual' rider assignment for this zone; null = the global default.
   dispatchMode String? @db.VarChar(8)
 
+  /// When true, auto dispatch offers this zone's orders only to riders whose
+  /// home zone or (active) cohort zones include it, and the manual picker
+  /// needs an override for anyone else. False keeps dispatch by distance.
+  ridersFromZoneOnly Boolean @default(false)
+
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -3171,6 +3181,26 @@ model FoodEarningAddon {
 
   status EarningAddonStatus @default(active)
 
+  /// Who it is for. Empty = every rider. Zones: riders whose home zone or
+  /// cohort zones include one of them, counting orders from those zones only.
+  /// Cohorts: riders in one of them. Both set = both must hold.
+  zoneIds   String[] @default([])
+  cohortIds String[] @default([])
+
+  /// 'none' runs once over startDate..endDate; 'daily' / 'weekly' restart the
+  /// target every IST day / Monday-to-Sunday IST week inside those dates, and
+  /// a rider can earn it once per period.
+  recurrence String @default("none") @db.VarChar(8)
+
+  /// Credit the rider's wallet as soon as the target is met, instead of
+  /// queueing the grant for an admin to approve.
+  autoCredit Boolean @default(false)
+
+  /// Order-count slabs: [{ requiredOrders, earningAmount }], ascending. Each
+  /// slab reached pays its own amount (once per period). Empty = the single
+  /// target above. Only for criteria 'orders'.
+  tiers Json @default("[]")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3207,6 +3237,15 @@ model FoodEarningAddonHistory {
   cancelledAt  DateTime?
   cancelReason String    @default("")
 
+  /// Which run of the offer this grant is for: "" for a one-off offer,
+  /// "2026-11-16" (day / week start) for a recurring one, plus "#t2" for the
+  /// second slab of a tiered one. One grant per offer, rider and periodKey
+  /// (earning_addon_one_grant_per_partner).
+  periodKey   String    @default("") @db.VarChar(32)
+  periodStart DateTime?
+  periodEnd   DateTime?
+  tier        Int       @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3216,6 +3255,60 @@ model FoodEarningAddonHistory {
   @@index([deliveryPartnerId, completedAt(sort: Desc)])
   @@index([offerId, deliveryPartnerId, status])
   @@map("food_earning_addon_history")
+}
+
+/// A weekly statement of what a rider or restaurant earned and was paid.
+///
+/// Built from the same ledger figures as the admin balance sheet, for one
+/// Monday-to-Sunday IST week. draft (refreshed on each generate) -> approved
+/// (figures frozen) -> paid (the week's transactions settled through the
+/// balance sheet's payout, which records a Settlement). Marking it paid records
+/// a payment made outside the system; it never moves money itself.
+model FoodPayoutStatement {
+  id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+
+  /// 'rider' | 'restaurant'
+  entityType  String   @db.VarChar(16)
+  entityId    String   @db.VarChar(24)
+  periodStart DateTime
+  periodEnd   DateTime
+
+  orders        Int     @default(0)
+  /// Restaurant: item subtotal. Rider: 0.
+  grossSales    Decimal @default(0) @db.Decimal(14, 2)
+  commission    Decimal @default(0) @db.Decimal(14, 2)
+  /// Restaurant share / rider share of the orders.
+  earnings      Decimal @default(0) @db.Decimal(14, 2)
+  /// Rider incentives and bonuses in the week.
+  incentives    Decimal @default(0) @db.Decimal(14, 2)
+  cashCollected Decimal @default(0) @db.Decimal(14, 2)
+  cashDeposited Decimal @default(0) @db.Decimal(14, 2)
+  cashInHand    Decimal @default(0) @db.Decimal(14, 2)
+  /// Admin correction, signed, with adjustmentNote.
+  adjustments   Decimal @default(0) @db.Decimal(14, 2)
+  adjustmentNote String @default("")
+  /// earnings + incentives - cashInHand + adjustments. Negative = owed to us.
+  net           Decimal @default(0) @db.Decimal(14, 2)
+  /// Per-order lines at generation: [{ orderId, displayId, date, amount, cash }].
+  lines         Json    @default("[]")
+
+  /// draft | approved | paid | void
+  status       String    @default("draft") @db.VarChar(12)
+  approvedAt   DateTime?
+  approvedBy   String?   @db.VarChar(24)
+  paidAt       DateTime?
+  paidBy       String?   @db.VarChar(24)
+  payoutRef    String    @default("")
+  notes        String    @default("")
+  settlementId String?   @db.VarChar(24)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityType, entityId, periodStart])
+  @@index([status, periodStart])
+  @@index([entityType, entityId, periodStart(sort: Desc)])
+  @@map("food_payout_statements")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

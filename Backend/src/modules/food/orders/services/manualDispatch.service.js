@@ -5,6 +5,7 @@ import { logger } from '../../../../utils/logger.js';
 import { getIO, rooms } from '../../../../config/socket.js';
 import { addOrderJob } from '../../../../queues/producers/order.producer.js';
 import { runUnscoped } from '../../../../core/roles/adminScope.context.js';
+import { ridersOutsideZone } from '../../shared/riderServiceArea.js';
 import {
   buildDeliverySocketPayload,
   getRiderActiveOrderCounts,
@@ -378,7 +379,7 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
   if (!candidates.length) return { ...meta, riders: [] };
 
   const ids = candidates.map((c) => c.id);
-  const [activeCounts, { maxActiveOrdersPerRider }, cashBlocked, wallets, todayCounts] = await Promise.all([
+  const [activeCounts, { maxActiveOrdersPerRider }, cashBlocked, wallets, todayCounts, outsideArea] = await Promise.all([
     getRiderActiveOrderCounts(ids),
     getDispatchSettings(),
     orderCollectsCash(order) ? getCashBlockedPartnerIds(ids) : new Set(),
@@ -388,6 +389,9 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
       where: { dispatchDeliveryPartnerId: { in: ids }, orderStatus: 'delivered', deliveredAt: { gte: startOfTodayIst() } },
       _count: { _all: true },
     }),
+    // Riders whose home zone / cohort zones don't include a zone set to
+    // "riders from this zone only". Empty for every other zone.
+    ridersOutsideZone(zoneId || row.restaurant?.zoneId, ids),
   ]);
   const cash = new Map(wallets.map((w) => [w.entityId, Number(w.cashInHand) || 0]));
   const today = new Map(todayCounts.map((c) => [c.dispatchDeliveryPartnerId, c._count._all]));
@@ -398,6 +402,7 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
   const riders = candidates.map((p) => {
     const online = p.availabilityStatus === 'online';
     const isInside = Boolean(p.insideZone);
+    const servesZone = !outsideArea.has(p.id);
     // At peak time an admin may let a rider carry more than one order; a rider
     // under that limit can still be given this one.
     const activeOrders = activeCounts.get(p.id) || 0;
@@ -418,6 +423,7 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
       rating: Number(p.rating) || 0,
       online,
       insideZone: isInside,
+      servesZone,
       busy: atLimit,
       activeOrders,
       maxActiveOrders: maxActiveOrdersPerRider,
@@ -430,12 +436,13 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
       currentlyAssigned: row.dispatchDeliveryPartnerId === p.id && row.dispatchStatus === 'assigned',
       assignable: reasons.length === 0,
       // Outside the zone is allowed only with an override and a reason.
-      needsOverride: reasons.length === 0 && !isInside,
+      // So is a rider who doesn't serve a zone restricted to its own riders.
+      needsOverride: reasons.length === 0 && (!isInside || !servesZone),
       notAssignableReason: reasons.join(', '),
     };
   });
 
-  const rank = (r) => (r.assignable ? 0 : 2) + (r.insideZone ? 0 : 1);
+  const rank = (r) => (r.assignable ? 0 : 2) + (r.insideZone && r.servesZone ? 0 : 1);
   riders.sort(
     (a, b) => rank(a) - rank(b) || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9) || a.name.localeCompare(b.name),
   );
@@ -511,7 +518,11 @@ export async function assignRiderManually(orderId, partnerId, adminId, { force =
     throw new ValidationError(`Can't assign ${pick.name}: ${pick.notAssignableReason}`);
   }
   if ((!pick || pick.needsOverride) && !force) {
-    throw new ValidationError(`${pick?.name || 'This rider'} is outside the zone right now. Assign anyway with a reason.`);
+    throw new ValidationError(
+      pick && pick.insideZone && !pick.servesZone
+        ? `${pick.name} doesn't serve this zone (it takes its own riders only). Assign anyway with a reason.`
+        : `${pick?.name || 'This rider'} is outside the zone right now. Assign anyway with a reason.`,
+    );
   }
   if (force && !String(reason || '').trim()) {
     throw new ValidationError('Give a reason for assigning a rider from outside the zone');
@@ -677,6 +688,20 @@ export async function withdrawManualAssignment(orderId, adminId) {
 // ---- zone switches, sweeps and reminders -------------------------------------------
 
 /** A zone's own mode: 'auto', 'manual', or null to follow the global default. */
+/**
+ * "Riders from this zone only": auto dispatch then offers the zone's orders only
+ * to riders whose home zone or cohort zones include it, and the manual picker
+ * asks for an override to assign anyone else.
+ */
+export async function setZoneRidersFromZoneOnly(zoneId, value) {
+  const { count } = await prisma.foodZone.updateMany({
+    where: { id: String(zoneId) },
+    data: { ridersFromZoneOnly: Boolean(value) },
+  });
+  if (!count) throw new NotFoundError('Zone not found');
+  return { zoneId: String(zoneId), ridersFromZoneOnly: Boolean(value) };
+}
+
 export async function setZoneDispatchMode(zoneId, mode) {
   const value = mode === 'manual' || mode === 'auto' ? mode : null;
   const before = await getDispatchModeForZone(zoneId);
@@ -695,7 +720,7 @@ export async function listZoneDispatchModes() {
     loadModes(),
     prisma.foodZone.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, dispatchMode: true, cityRef: { select: { name: true } } },
+      select: { id: true, name: true, dispatchMode: true, ridersFromZoneOnly: true, cityRef: { select: { name: true } } },
       orderBy: { name: 'asc' },
     }),
   ]);
@@ -708,6 +733,7 @@ export async function listZoneDispatchModes() {
       city: z.cityRef?.name || '',
       dispatchMode: z.dispatchMode || null,
       effectiveMode: z.dispatchMode || global,
+      ridersFromZoneOnly: Boolean(z.ridersFromZoneOnly),
     })),
   };
 }

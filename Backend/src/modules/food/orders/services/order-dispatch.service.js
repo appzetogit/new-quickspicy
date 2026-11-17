@@ -16,6 +16,7 @@ import {
 } from './order.helpers.js';
 import { fetchDrivingRoute } from '../utils/googleMaps.js';
 import { parseGeoPoint } from '../../shared/geo.utils.js';
+import { ridersOutsideZone } from '../../shared/riderServiceArea.js';
 
 /** Everything a dispatch broadcast needs about the order. */
 const dispatchInclude = { ...orderInclude, restaurant: true, user: true };
@@ -512,10 +513,15 @@ export async function tryAutoAssign(orderId, options = {}) {
       );
     }
 
+    // A zone set to "riders from this zone only" skips riders whose home zone
+    // and cohort zones do not include it. Other zones go by distance alone.
+    const outsideZone = await ridersOutsideZone(row.zoneId || row.restaurant?.zoneId, candidateIds);
+
     // Nearest first (listNearbyOnlineDeliveryPartners sorts by distance).
     const free = partners.filter((p) => {
       const key = String(p.partnerId);
-      return !neverAgain.has(key) && !busy.has(key) && !holdingOffer.has(key) && !cashBlocked.has(key);
+      return !neverAgain.has(key) && !busy.has(key) && !holdingOffer.has(key) && !cashBlocked.has(key)
+        && !outsideZone.has(key);
     });
     const next = free.find((p) => !askedThisRound.has(String(p.partnerId)));
 

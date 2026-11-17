@@ -374,6 +374,17 @@ router.post('/withdrawals/balance-sheet/entries', adminController.createLedgerEn
 router.patch('/withdrawals/balance-sheet/entries/:id', adminController.updateLedgerEntry);
 router.delete('/withdrawals/balance-sheet/entries/:id', adminController.deleteLedgerEntry);
 
+// Weekly payout statements (riders and restaurants). Same mount and guard as
+// the balance sheet they are built from; mark-paid settles through it.
+router.get('/withdrawals/payout-statements', foundations.listPayoutStatements);
+router.post('/withdrawals/payout-statements/generate', foundations.generatePayoutStatements);
+router.get('/withdrawals/payout-statements/:id', foundations.getPayoutStatement);
+router.get('/withdrawals/payout-statements/:id/pdf', foundations.payoutStatementPdf);
+router.patch('/withdrawals/payout-statements/:id/adjustment', foundations.adjustPayoutStatement);
+router.post('/withdrawals/payout-statements/:id/approve', foundations.approvePayoutStatement);
+router.post('/withdrawals/payout-statements/:id/mark-paid', foundations.markPayoutStatementPaid);
+router.post('/withdrawals/payout-statements/:id/void', foundations.voidPayoutStatement);
+
 router.patch('/restaurants/:id/billing-mode', adminController.setRestaurantBillingMode);
 router.get('/commission-overview', async (req, res, next) => {
     try {
@@ -622,6 +633,8 @@ router.patch('/delivery/cohorts/:id', requireAdminPermission('delivery_managemen
 router.delete('/delivery/cohorts/:id', requireAdminPermission('delivery_management', 'delete'), foundations.deleteRiderCohort);
 router.post('/delivery/cohorts/:id/riders', requireAdminPermission('delivery_management', 'edit'), foundations.addRidersToCohort);
 router.patch('/delivery/:id/service-area', requireAdminPermission('delivery_management', 'edit'), foundations.setRiderServiceArea);
+router.get('/delivery/:id/documents', requireAdminPermission('delivery_management', 'view'), foundations.getRiderDocuments);
+router.patch('/delivery/:id/documents/:key', requireAdminPermission('delivery_management', 'edit'), foundations.reviewRiderDocument);
 router.get('/delivery/partners', adminController.getDeliveryPartners);
 // Live tracking map: each busy rider's order and where they are heading.
 router.get('/delivery/active-orders', adminController.getRiderActiveOrders);

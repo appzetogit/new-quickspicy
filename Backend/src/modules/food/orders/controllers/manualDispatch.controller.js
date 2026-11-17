@@ -8,6 +8,7 @@ import {
     listManualQueue,
     listZoneDispatchModes,
     setZoneDispatchMode,
+    setZoneRidersFromZoneOnly,
     withdrawManualAssignment,
 } from '../services/manualDispatch.service.js';
 
@@ -32,9 +33,21 @@ export const updateGlobalDispatch = wrap(async (req, res) => {
 
 /** One zone: 'auto', 'manual' or null (follow the platform default). City admins: their zones only. */
 export const updateZoneDispatch = wrap(async (req, res) => {
-    const mode = req.body?.dispatchMode ?? null;
-    if (![null, 'auto', 'manual'].includes(mode)) throw new ValidationError('Choose default, automatic or manual');
-    ok(res, await setZoneDispatchMode(requireId(req.params.zoneId, 'zone'), mode), 'Zone dispatch mode updated');
+    const body = req.body || {};
+    const zoneId = requireId(req.params.zoneId, 'zone');
+    const hasFlag = Object.prototype.hasOwnProperty.call(body, 'ridersFromZoneOnly');
+    if (hasFlag && typeof body.ridersFromZoneOnly !== 'boolean') {
+        throw new ValidationError('ridersFromZoneOnly must be true or false');
+    }
+    // dispatchMode keeps its old meaning (absent or null = platform default),
+    // except that a body carrying only ridersFromZoneOnly leaves the mode alone.
+    const setMode = !hasFlag || Object.prototype.hasOwnProperty.call(body, 'dispatchMode');
+    const mode = body.dispatchMode ?? null;
+    if (setMode && ![null, 'auto', 'manual'].includes(mode)) throw new ValidationError('Choose default, automatic or manual');
+
+    const result = setMode ? await setZoneDispatchMode(zoneId, mode) : { zoneId };
+    if (hasFlag) Object.assign(result, await setZoneRidersFromZoneOnly(zoneId, body.ridersFromZoneOnly));
+    ok(res, result, 'Zone dispatch settings updated');
 });
 
 export const getQueue = wrap(async (req, res) => ok(res, await listManualQueue()));

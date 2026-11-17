@@ -3,6 +3,10 @@ import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { logger } from '../../../../utils/logger.js';
 import { recordTransaction } from '../../../../core/payments/transaction.service.js';
+import { ValidationError } from '../../../../core/auth/errors.js';
+import {
+    normalizeRecurrence, offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, cleanTiers,
+} from '../../shared/incentiveRules.js';
 
 /**
  * Rider incentives ("earning addons"), extracted from admin.service.js.
@@ -15,8 +19,12 @@ import { recordTransaction } from '../../../../core/payments/transaction.service
  *
  * And the completion sweep looked for an existing grant before inserting one,
  * so two runs both found nothing and both granted. That is now a partial unique
- * index (earning_addon_one_grant_per_partner in constraints.sql); the lookup
- * stays as the fast path, the index is what makes it true.
+ * index (earning_addon_one_grant_per_partner in constraints.sql, per offer,
+ * rider and periodKey); the lookup stays as the fast path, the index is what
+ * makes it true.
+ *
+ * An offer can target zones and cohorts, repeat daily or weekly, pay in
+ * order-count slabs, and credit itself; the rules are in shared/incentiveRules.js.
  */
 
 const num = (value) => Number(value) || 0;
@@ -28,6 +36,11 @@ const serializeAddon = (addon, now = Date.now()) => {
     return {
         ...addon,
         earningAmount: num(addon.earningAmount),
+        zoneIds: addon.zoneIds || [],
+        cohortIds: addon.cohortIds || [],
+        recurrence: normalizeRecurrence(addon.recurrence),
+        autoCredit: Boolean(addon.autoCredit),
+        tiers: Array.isArray(addon.tiers) ? addon.tiers : [],
         isValid: Boolean(addon.status === 'active' && start && end && now >= start && now <= end),
         // 'expired' is a display state derived from the dates, not a stored one.
         status: end && now > end ? 'expired' : addon.status || 'inactive',
@@ -40,20 +53,59 @@ export async function getEarningAddons() {
     return { earningAddons: list.map((addon) => serializeAddon(addon, now)) };
 }
 
-const addonFields = (body = {}) => ({
-    title: body.title,
-    criteria: body.criteria === 'online_hours' ? 'online_hours' : 'orders',
-    requiredOrders: Number(body.requiredOrders) || 0,
-    requiredOnlineMinutes: Number(body.requiredOnlineMinutes) || 0,
-    earningAmount: Number(body.earningAmount) || 0,
-    startDate: body.startDate ? new Date(body.startDate) : undefined,
-    endDate: body.endDate ? new Date(body.endDate) : undefined,
-    maxRedemptions: body.maxRedemptions ?? null,
-});
+/** A list of ids that must all exist in `model`; undefined when not sent. */
+async function checkIds(value, model, label) {
+    if (value === undefined) return undefined;
+    if (value === null) return [];
+    if (!Array.isArray(value)) throw new ValidationError(`${label} must be a list`);
+    const ids = [...new Set(value.map((v) => String(v ?? '').trim()).filter(Boolean))];
+    const unknown = `Unknown ${label === 'zoneIds' ? 'zone' : 'cohort'}`;
+    if (ids.some((v) => !isId(v))) throw new ValidationError(unknown);
+    if (ids.length && (await prisma[model].count({ where: { id: { in: ids } } })) !== ids.length) {
+        throw new ValidationError(unknown);
+    }
+    return ids;
+}
+
+/**
+ * The fields an admin can set. Targeting, recurrence, auto-credit and slabs
+ * are only written when sent, so an older admin screen that does not know
+ * about them leaves them as they are.
+ */
+const addonFields = async (body = {}) => {
+    let tiers;
+    try {
+        tiers = cleanTiers(body.tiers);
+    } catch (message) {
+        throw new ValidationError(String(message));
+    }
+    if (tiers?.length && body.criteria === 'online_hours') {
+        throw new ValidationError('Order slabs only apply to order-count incentives');
+    }
+    if (body.recurrence !== undefined && !['none', 'daily', 'weekly'].includes(String(body.recurrence))) {
+        throw new ValidationError('recurrence must be none, daily or weekly');
+    }
+    return {
+        title: body.title,
+        ...(body.description !== undefined ? { description: String(body.description ?? '') } : {}),
+        criteria: body.criteria === 'online_hours' ? 'online_hours' : 'orders',
+        requiredOrders: Number(body.requiredOrders) || 0,
+        requiredOnlineMinutes: Number(body.requiredOnlineMinutes) || 0,
+        earningAmount: Number(body.earningAmount) || 0,
+        startDate: body.startDate ? new Date(body.startDate) : undefined,
+        endDate: body.endDate ? new Date(body.endDate) : undefined,
+        maxRedemptions: body.maxRedemptions ?? null,
+        zoneIds: await checkIds(body.zoneIds, 'foodZone', 'zoneIds'),
+        cohortIds: await checkIds(body.cohortIds, 'foodRiderCohort', 'cohortIds'),
+        recurrence: body.recurrence === undefined ? undefined : normalizeRecurrence(body.recurrence),
+        autoCredit: body.autoCredit === undefined ? undefined : body.autoCredit === true,
+        tiers,
+    };
+};
 
 export async function createEarningAddon(body = {}) {
     const created = await prisma.foodEarningAddon.create({
-        data: { ...addonFields(body), status: 'active' },
+        data: { ...(await addonFields(body)), status: 'active' },
     });
     return serializeAddon(created);
 }
@@ -63,7 +115,7 @@ export async function updateEarningAddon(id, body = {}) {
 
     const { count } = await prisma.foodEarningAddon.updateMany({
         where: { id: String(id) },
-        data: addonFields(body),
+        data: await addonFields(body),
     });
     if (!count) return null;
 
@@ -112,6 +164,11 @@ const serializeHistory = (h, index = 0, offset = 0) => ({
     earningAmount: num(h.earningAmount ?? h.offer?.earningAmount),
     totalEarning: num(h.totalEarning ?? h.earningAmount),
     status: h.status || 'pending',
+    // Which run (day / week) and slab of the offer this grant is for.
+    periodKey: h.periodKey || '',
+    periodStart: h.periodStart || null,
+    periodEnd: h.periodEnd || null,
+    tier: h.tier || 0,
     date: h.completedAt || h.createdAt,
     completedAt: h.completedAt || h.createdAt,
 });
@@ -284,11 +341,6 @@ export async function cancelEarningAddonHistory(historyId, reason) {
 }
 
 /**
- * Grant any incentive a partner has now qualified for.
- *
- * @param {string} deliveryPartnerId  a partner id, or 'all' to sweep everyone
- */
-/**
  * Minutes a rider spent online inside a window.
  *
  * Shifts are clipped to the window rather than counted whole, so one that
@@ -300,7 +352,7 @@ export async function cancelEarningAddonHistory(historyId, reason) {
  * never said when they stopped. They are flagged in the duty log so an admin
  * can see which hours those were before crediting.
  */
-async function onlineMinutesInWindow(partnerId, from, to) {
+export async function onlineMinutesInWindow(partnerId, from, to) {
     const sessions = await prisma.foodDeliveryPartnerSession.findMany({
         where: {
             deliveryPartnerId: partnerId,
@@ -326,46 +378,76 @@ async function onlineMinutesInWindow(partnerId, from, to) {
     return Math.round(ms / 60000);
 }
 
-/**
- * `afterDelivery` is the automatic check run when a rider completes a delivery.
- * It leaves alone any offer an admin already rejected for that rider; otherwise
- * the rider's very next delivery would put the rejected claim straight back in
- * the approval queue. The admin's own sweep can still re-grant it.
- */
-export async function checkEarningAddonCompletions(deliveryPartnerId, _force = false, { afterDelivery = false } = {}) {
-    const now = new Date();
+/** Zones of each active cohort among the given riders, by cohort id. */
+export async function cohortZonesFor(riders) {
+    const cohortIds = [...new Set(riders.map((r) => r.cohortId).filter(Boolean))];
+    if (!cohortIds.length) return new Map();
+    const cohorts = await prisma.foodRiderCohort.findMany({
+        where: { id: { in: cohortIds }, isActive: true },
+        select: { id: true, zoneIds: true },
+    });
+    return new Map(cohorts.map((c) => [c.id, c.zoneIds || []]));
+}
 
+/**
+ * Grant any incentive a rider has now qualified for.
+ *
+ * @param {string} deliveryPartnerId  a rider id, or 'all' to sweep everyone
+ *
+ * `afterDelivery` is the automatic check run when a rider completes a delivery.
+ * It leaves alone any target an admin already rejected for that rider in this
+ * period; otherwise the rider's very next delivery would put the rejected claim
+ * straight back in the approval queue. The admin's own sweep can still re-grant it.
+ *
+ * Per offer and rider: skip riders the offer is not for (zones / cohorts), work
+ * out the current run (the whole offer, or today / this week for a recurring
+ * one), count delivered orders (only in the offer's zones, if it has any) or
+ * online minutes in that run, and grant every target (or slab) newly reached.
+ * Grants on an autoCredit offer are credited straight away.
+ */
+export async function checkEarningAddonCompletions(deliveryPartnerId, _force = false, { afterDelivery = false, now = new Date() } = {}) {
     const activeOffers = await prisma.foodEarningAddon.findMany({
         where: { status: 'active', startDate: { lte: now }, endDate: { gte: now } },
     });
-    if (!activeOffers.length) return { completionsFound: 0 };
+    if (!activeOffers.length) return { completionsFound: 0, autoCredited: 0 };
 
-    let partnerIds = [];
-    if (deliveryPartnerId === 'all') {
-        const partners = await prisma.foodDeliveryPartner.findMany({
-            where: { status: 'approved' },
-            select: { id: true },
-        });
-        partnerIds = partners.map((p) => p.id);
-    } else if (isId(deliveryPartnerId)) {
-        partnerIds = [String(deliveryPartnerId)];
-    }
-    if (!partnerIds.length) return { completionsFound: 0 };
+    let where = null;
+    if (deliveryPartnerId === 'all') where = { status: 'approved' };
+    else if (isId(deliveryPartnerId)) where = { id: String(deliveryPartnerId) };
+    if (!where) return { completionsFound: 0, autoCredited: 0 };
+
+    const riders = await prisma.foodDeliveryPartner.findMany({
+        where,
+        select: { id: true, zoneId: true, cohortId: true },
+    });
+    if (!riders.length) return { completionsFound: 0, autoCredited: 0 };
+    const cohortZones = await cohortZonesFor(riders);
 
     let completionsFound = 0;
+    const toAutoCredit = [];
 
-    for (const partnerId of partnerIds) {
+    for (const rider of riders) {
+        const partnerId = rider.id;
         for (const offer of activeOffers) {
+            if (!riderTargeted(offer, rider, cohortZones.get(rider.cohortId) || [])) continue;
+            const period = offerPeriod(offer, now);
+            if (!period) continue;
+
+            const targets = offerTargets(offer).map((t) => ({ ...t, key: grantKey(period.key, t.tier) }));
             // Fast path. The unique index is what actually prevents a double
             // grant when two sweeps overlap.
-            const already = await prisma.foodEarningAddonHistory.count({
+            const existing = await prisma.foodEarningAddonHistory.findMany({
                 where: {
                     deliveryPartnerId: partnerId,
                     offerId: offer.id,
+                    periodKey: { in: targets.map((t) => t.key) },
                     status: { in: afterDelivery ? ['pending', 'credited', 'cancelled'] : ['pending', 'credited'] },
                 },
+                select: { periodKey: true },
             });
-            if (already) continue;
+            const taken = new Set(existing.map((e) => e.periodKey));
+            const open = targets.filter((t) => !taken.has(t.key));
+            if (!open.length) continue;
 
             // Counted by when the order was delivered, the same way the rider's
             // app shows progress. By createdAt, an order placed before the offer
@@ -374,63 +456,79 @@ export async function checkEarningAddonCompletions(deliveryPartnerId, _force = f
                 where: {
                     dispatchDeliveryPartnerId: partnerId,
                     orderStatus: 'delivered',
-                    deliveredAt: { gte: offer.startDate, lte: offer.endDate },
+                    deliveredAt: { gte: period.start, lte: period.end },
+                    ...(offer.zoneIds?.length ? { zoneId: { in: offer.zoneIds } } : {}),
                 },
             });
-
             const onlineMinutes =
                 offer.criteria === 'online_hours'
-                    ? await onlineMinutesInWindow(partnerId, offer.startDate, offer.endDate)
+                    ? await onlineMinutesInWindow(partnerId, period.start, period.end)
                     : 0;
 
-            if (offer.criteria === 'online_hours') {
-                if (onlineMinutes < (offer.requiredOnlineMinutes || 1)) continue;
-            } else if (orderCount < (offer.requiredOrders || 1)) continue;
+            for (const target of open) {
+                if (!targetMet(offer, target, { orders: orderCount, onlineMinutes })) continue;
+                try {
+                    const grant = await prisma.$transaction(async (tx) => {
+                        // maxRedemptions was stored and never checked, so a capped
+                        // offer could be granted without limit. The cap is part of
+                        // the increment, so the count cannot overshoot it.
+                        if (offer.maxRedemptions != null) {
+                            const { count } = await tx.foodEarningAddon.updateMany({
+                                where: { id: offer.id, currentRedemptions: { lt: offer.maxRedemptions } },
+                                data: { currentRedemptions: { increment: 1 } },
+                            });
+                            if (!count) return null; // Fully redeemed.
+                        } else {
+                            await tx.foodEarningAddon.update({
+                                where: { id: offer.id },
+                                data: { currentRedemptions: { increment: 1 } },
+                            });
+                        }
 
-            try {
-                await prisma.$transaction(async (tx) => {
-                    // maxRedemptions was stored and never checked, so a capped
-                    // offer could be granted without limit. The cap is part of
-                    // the increment, so the count cannot overshoot it.
-                    if (offer.maxRedemptions != null) {
-                        const { count } = await tx.foodEarningAddon.updateMany({
-                            where: {
-                                id: offer.id,
-                                currentRedemptions: { lt: offer.maxRedemptions },
+                        return tx.foodEarningAddonHistory.create({
+                            data: {
+                                offerId: offer.id,
+                                deliveryPartnerId: partnerId,
+                                ordersCompleted: orderCount,
+                                ordersRequired: target.requiredOrders,
+                                onlineMinutesCompleted: onlineMinutes,
+                                onlineMinutesRequired: target.requiredOnlineMinutes || 0,
+                                earningAmount: target.earningAmount,
+                                totalEarning: target.earningAmount,
+                                status: 'pending',
+                                completedAt: now,
+                                periodKey: target.key,
+                                periodStart: period.start,
+                                periodEnd: period.end,
+                                tier: target.tier,
                             },
-                            data: { currentRedemptions: { increment: 1 } },
+                            select: { id: true },
                         });
-                        if (!count) return; // Fully redeemed.
-                    } else {
-                        await tx.foodEarningAddon.update({
-                            where: { id: offer.id },
-                            data: { currentRedemptions: { increment: 1 } },
-                        });
-                    }
-
-                    await tx.foodEarningAddonHistory.create({
-                        data: {
-                            offerId: offer.id,
-                            deliveryPartnerId: partnerId,
-                            ordersCompleted: orderCount,
-                            ordersRequired: offer.requiredOrders,
-                            onlineMinutesCompleted: onlineMinutes,
-                            onlineMinutesRequired: offer.requiredOnlineMinutes || 0,
-                            earningAmount: offer.earningAmount,
-                            totalEarning: offer.earningAmount,
-                            status: 'pending',
-                            completedAt: now,
-                        },
                     });
-
-                    completionsFound += 1;
-                });
-            } catch (error) {
-                // A concurrent sweep got there first; the unique index caught it.
-                if (error?.code !== 'P2002') throw error;
+                    if (grant) {
+                        completionsFound += 1;
+                        if (offer.autoCredit) toAutoCredit.push(grant.id);
+                    }
+                } catch (error) {
+                    // A concurrent sweep got there first; the unique index caught it.
+                    if (error?.code !== 'P2002') throw error;
+                }
             }
         }
     }
 
-    return { completionsFound };
+    // After the grants are committed. creditEarningAddonHistory claims the row
+    // out of pending itself, so an auto-credit racing an admin's pays once.
+    let autoCredited = 0;
+    for (const historyId of toAutoCredit) {
+        try {
+            const result = await creditEarningAddonHistory(historyId, 'Auto-credited: target met');
+            if (result?.status === 'credited') autoCredited += 1;
+        } catch (error) {
+            // Left pending for an admin rather than lost.
+            logger.error(`Auto-credit of incentive ${historyId} failed: ${error?.message || error}`);
+        }
+    }
+
+    return { completionsFound, autoCredited };
 }

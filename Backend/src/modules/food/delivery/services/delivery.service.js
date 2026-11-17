@@ -8,6 +8,8 @@ import { logger } from '../../../../utils/logger.js';
 import { collectDynamicRegistration } from './driverRegistrationField.service.js';
 import { saveRiderActiveOrdersPosition } from './riderPosition.service.js';
 import { TERMINAL_ORDER_STATUSES } from '../../orders/services/order.helpers.js';
+import { offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, normalizeRecurrence } from '../../shared/incentiveRules.js';
+import { onlineMinutesInWindow, cohortZonesFor } from '../../admin/services/adminEarningAddon.service.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -705,16 +707,26 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
             : {}),
     };
 
-    const [totalOrders, agg, sessions] = await Promise.all([
+    const [totalOrders, agg, sessions, bonusAgg] = await Promise.all([
         prisma.foodOrder.count({ where }),
         prisma.foodOrder.aggregate({ where, _sum: { riderEarning: true, tipAmount: true } }),
         prisma.foodDeliveryPartnerSession.findMany({
             where: sessionWhere,
             select: { wentOnlineAt: true, wentOfflineAt: true },
         }),
+        // Incentives and bonuses credited in the window (earning addons write
+        // a bonus row when credited).
+        prisma.deliveryBonusTransaction.aggregate({
+            where: {
+                deliveryPartnerId: partnerId,
+                ...(range ? { createdAt: { gte: range.start, lte: range.end } } : {}),
+            },
+            _sum: { amount: true },
+        }),
     ]);
 
     const totalEarnings = num(agg?._sum?.riderEarning);
+    const incentive = Math.round(num(bonusAgg?._sum?.amount) * 100) / 100;
     // riderEarning already contains the tip, so the delivery part is what is
     // left after taking it out. Adding them would count every tip twice.
     const totalTips = num(agg?._sum?.tipAmount);
@@ -751,8 +763,11 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
             /// up to totalEarnings instead of overlapping it.
             orderEarning: deliveryEarning,
             tips: totalTips,
-            incentive: 0,
+            /// Incentives / bonuses credited in the period. Not part of
+            /// totalEarnings (order pay + tips); grandTotal adds them.
+            incentive,
             otherEarnings: 0,
+            grandTotal: Math.round((totalEarnings + incentive) * 100) / 100,
         },
         period,
         date: date.toISOString(),
@@ -943,111 +958,124 @@ export const getDeliveryPocketDetails = async (deliveryPartnerId, query = {}) =>
     };
 };
 
+/**
+ * The incentives this rider can earn right now, with their progress.
+ *
+ * Uses the same rules as the completion sweep (shared/incentiveRules.js): only
+ * offers aimed at the rider's zones / cohort, progress counted over the current
+ * run (the whole offer, or today / this week for a recurring one), orders only
+ * from the offer's zones when it has any, and one row per slab when tiered.
+ */
 export const getActiveEarningAddonsForPartner = async (deliveryPartnerId) => {
     if (!isId(deliveryPartnerId)) throw new ValidationError('Delivery partner not found');
     const partnerId = String(deliveryPartnerId);
     const now = new Date();
 
-    const addons = await prisma.foodEarningAddon.findMany({
-        where: { status: 'active', startDate: { lte: now }, endDate: { gte: now } },
-        orderBy: [{ endDate: 'asc' }, { createdAt: 'asc' }],
-    });
+    const [addons, rider] = await Promise.all([
+        prisma.foodEarningAddon.findMany({
+            where: { status: 'active', startDate: { lte: now }, endDate: { gte: now } },
+            orderBy: [{ endDate: 'asc' }, { createdAt: 'asc' }],
+        }),
+        prisma.foodDeliveryPartner.findUnique({
+            where: { id: partnerId },
+            select: { id: true, zoneId: true, cohortId: true },
+        }),
+    ]);
+    if (!rider) throw new ValidationError('Delivery partner not found');
+    const cohortZones = (await cohortZonesFor([rider])).get(rider.cohortId) || [];
 
     const liveAddons = (addons || []).filter((addon) => {
-        if (!addon) return false;
+        if (!addon || !riderTargeted(addon, rider, cohortZones)) return false;
         const maxRedemptions = Number(addon.maxRedemptions);
         if (!Number.isFinite(maxRedemptions) || maxRedemptions <= 0) return true;
         return Number(addon.currentRedemptions || 0) < maxRedemptions;
     });
 
-    // Where this rider stands on each offer once the target is reached:
-    // recorded and waiting for an admin, paid, or turned down.
+    // Where this rider stands on each target once reached: recorded and
+    // waiting for an admin, paid, or turned down.
     const claims = liveAddons.length
         ? await prisma.foodEarningAddonHistory.findMany({
               where: { deliveryPartnerId: partnerId, offerId: { in: liveAddons.map((a) => a.id) } },
               orderBy: { createdAt: 'desc' },
-              select: { offerId: true, status: true, creditedAt: true, cancelReason: true },
+              select: { offerId: true, periodKey: true, status: true, creditedAt: true, cancelReason: true },
           })
         : [];
-    const claimFor = (offerId) => claims.find((c) => c.offerId === offerId) || null;
+    const claimFor = (offerId, key) => claims.find((c) => c.offerId === offerId && (c.periodKey || '') === key) || null;
+    const claimStatus = (claim) => {
+        if (!claim) return null;
+        if (claim.status === 'credited') return 'credited';
+        if (claim.status === 'cancelled') return 'rejected';
+        return 'pending_approval';
+    };
 
     const offers = await Promise.all(
         liveAddons.map(async (addon) => {
+            const period = offerPeriod(addon, now);
             const startDate = addon.startDate ? new Date(addon.startDate) : null;
             const endDate = addon.endDate ? new Date(addon.endDate) : null;
 
             const where = {
                 dispatchDeliveryPartnerId: partnerId,
                 orderStatus: 'delivered',
-                ...(startDate && endDate ? { deliveredAt: { gte: startDate, lte: endDate } } : {}),
+                deliveredAt: { gte: period.start, lte: period.end },
+                ...(addon.zoneIds?.length ? { zoneId: { in: addon.zoneIds } } : {}),
             };
 
-            const [currentOrders, earningsAgg, offerSessions] = await Promise.all([
+            const [currentOrders, earningsAgg, currentOnlineMinutes] = await Promise.all([
                 prisma.foodOrder.count({ where }),
                 prisma.foodOrder.aggregate({ where, _sum: { riderEarning: true } }),
                 // Only for hours-based offers; an orders-based one does not
                 // need the duty log and should not pay for the query.
-                addon.criteria === 'online_hours' && startDate && endDate
-                    ? prisma.foodDeliveryPartnerSession.findMany({
-                          where: {
-                              deliveryPartnerId: partnerId,
-                              wentOnlineAt: { lte: endDate },
-                              OR: [
-                                  { wentOfflineAt: null },
-                                  { wentOfflineAt: { gte: startDate } },
-                              ],
-                          },
-                          select: { wentOnlineAt: true, wentOfflineAt: true },
-                      })
-                    : [],
+                addon.criteria === 'online_hours'
+                    ? onlineMinutesInWindow(partnerId, period.start, period.end)
+                    : 0,
             ]);
 
-            // Clipped to the offer window, so a shift that began before it
-            // or is still running only counts the part that falls inside.
-            const nowMs = Date.now();
-            const windowStart = startDate ? new Date(startDate).getTime() : 0;
-            const windowEnd = endDate ? new Date(endDate).getTime() : nowMs;
-            const currentOnlineMinutes = Math.round(
-                offerSessions.reduce((sum, session) => {
-                    const openedAt = Math.max(
-                        new Date(session.wentOnlineAt).getTime(),
-                        windowStart,
-                    );
-                    const closedAt = Math.min(
-                        session.wentOfflineAt
-                            ? new Date(session.wentOfflineAt).getTime()
-                            : nowMs,
-                        windowEnd,
-                    );
-                    return sum + Math.max(0, closedAt - openedAt);
-                }, 0) / 60000,
-            );
+            const targets = offerTargets(addon).map((t) => {
+                const key = grantKey(period.key, t.tier);
+                const claim = claimFor(addon.id, key);
+                return {
+                    tier: t.tier,
+                    targetOrders: t.requiredOrders,
+                    targetOnlineMinutes: t.requiredOnlineMinutes,
+                    amount: t.earningAmount,
+                    reached: targetMet(addon, t, { orders: currentOrders, onlineMinutes: currentOnlineMinutes }),
+                    // in_progress | pending_approval | credited | rejected
+                    status: claimStatus(claim) || 'in_progress',
+                    creditedAt: claim?.creditedAt || null,
+                    rejectedReason: claim?.status === 'cancelled' ? claim.cancelReason || '' : '',
+                };
+            });
+            // The headline target: the first slab not yet earned, else the last.
+            const headline = targets.find((t) => t.status === 'in_progress') || targets[targets.length - 1];
 
             return {
                 id: addon.id,
                 title: addon.title || 'Earnings Guarantee',
                 description: addon.description || '',
-                targetAmount: num(addon.earningAmount),
+                targetAmount: headline.amount,
                 criteria: addon.criteria || 'orders',
-                targetOrders: num(addon.requiredOrders),
+                targetOrders: headline.targetOrders,
                 currentOrders: num(currentOrders),
-                targetOnlineMinutes: num(addon.requiredOnlineMinutes),
+                targetOnlineMinutes: headline.targetOnlineMinutes,
                 currentOnlineMinutes,
                 currentEarnings: num(earningsAgg?._sum?.riderEarning),
                 startDate,
                 endDate,
                 validTill: endDate ? endDate.toISOString() : null,
+                // The run progress is counted over: the whole offer, or the
+                // current IST day / Monday-to-Sunday week.
+                recurrence: normalizeRecurrence(addon.recurrence),
+                periodStart: period.start,
+                periodEnd: period.end,
+                autoCredit: Boolean(addon.autoCredit),
+                // One entry per slab (a single entry when not tiered).
+                targets,
                 isLive: true,
                 // in_progress | pending_approval | credited | rejected
-                status: (() => {
-                    const claim = claimFor(addon.id);
-                    if (!claim) return 'in_progress';
-                    if (claim.status === 'credited') return 'credited';
-                    if (claim.status === 'cancelled') return 'rejected';
-                    return 'pending_approval';
-                })(),
-                creditedAt: claimFor(addon.id)?.creditedAt || null,
-                rejectedReason: claimFor(addon.id)?.status === 'cancelled' ? claimFor(addon.id)?.cancelReason || '' : '',
+                status: headline.status,
+                creditedAt: headline.creditedAt,
+                rejectedReason: headline.rejectedReason,
             };
         }),
     );

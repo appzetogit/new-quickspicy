@@ -8,7 +8,7 @@ import { uploadRateLimiter } from '../../../uploads/middleware/upload.middleware
 import * as orderController from '../../orders/controllers/order.controller.js';
 import { registerDeliveryPartnerController, updateDeliveryPartnerProfileController, updateDeliveryPartnerBankDetailsController, listSupportTicketsController, createSupportTicketController, getSupportTicketByIdController, listOrderEmergencyRequestsController, createOrderEmergencyRequestController, getOrderEmergencyRequestController, updateDeliveryPartnerDetailsController, updateDeliveryPartnerProfilePhotoBase64Controller, updateAvailabilityController, getWalletController, createWithdrawalRequestController, createCashDepositOrderController, verifyCashDepositPaymentController, getEarningsController, getTripHistoryController, getPocketDetailsController, getEmergencyHelpController, getCashLimitController, getDeliveryReferralStatsController, getActiveEarningAddonsController, deleteDeliveryPartnerAccountController } from '../controllers/delivery.controller.js';
 import { getPublicFormSchemaController } from '../controllers/driverRegistrationField.controller.js';
-import { getMyServiceArea } from '../../admin/controllers/adminFoundations.controller.js';
+import { getMyServiceArea, listOwnPayoutStatements, getOwnPayoutStatement, ownPayoutStatementPdf, getOwnDocuments, reuploadOwnDocument } from '../../admin/controllers/adminFoundations.controller.js';
 
 const router = express.Router();
 
@@ -116,5 +116,15 @@ router.get('/cash-limit', authMiddleware, requireRoles('DELIVERY_PARTNER'), getC
 router.get('/referrals/stats', authMiddleware, requireRoles('DELIVERY_PARTNER'), getDeliveryReferralStatsController);
 // The rider's own zones (home zone + cohort zones), with boundaries, for the map.
 router.get('/service-area', authMiddleware, requireRoles('DELIVERY_PARTNER'), getMyServiceArea);
+
+// Weekly payslips (approved and paid statements only).
+router.get('/payout-statements', authMiddleware, requireRoles('DELIVERY_PARTNER'), listOwnPayoutStatements);
+router.get('/payout-statements/:id', authMiddleware, requireRoles('DELIVERY_PARTNER'), getOwnPayoutStatement);
+router.get('/payout-statements/:id/pdf', authMiddleware, requireRoles('DELIVERY_PARTNER'), ownPayoutStatementPdf);
+
+// Per-document verification, and re-uploading a missing / rejected / expired one
+// (multipart, file field "file", optional "number").
+router.get('/documents', authMiddleware, requireRoles('DELIVERY_PARTNER'), getOwnDocuments);
+router.put('/documents/:key', authMiddleware, requireRoles('DELIVERY_PARTNER'), uploadRateLimiter, upload.single('file'), reuploadOwnDocument);
 
 export default router;

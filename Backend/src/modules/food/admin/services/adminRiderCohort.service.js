@@ -8,8 +8,8 @@ import { isId } from '../../../../utils/helpers.js';
  *
  * A rider has one home zone (FoodDeliveryPartner.zoneId) and at most one cohort.
  * The zones they may serve are their home zone plus their cohort's zones.
- * Dispatch does not enforce that yet -- that is the zone-based dispatch step --
- * so this is the data and the admin tooling it will read.
+ * Dispatch enforces it only in zones set to ridersFromZoneOnly (see
+ * shared/riderServiceArea.js); elsewhere riders are still offered by distance.
  */
 
 const ZONE_SUMMARY = { id: true, name: true, isActive: true };

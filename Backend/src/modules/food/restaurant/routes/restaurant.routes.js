@@ -5,7 +5,7 @@ import {
     isDeliverySelfOnboardingOpen,
 } from '../../../../core/auth/onboardingGate.js';
 import { deleteOwnAccountController } from '../../../../core/auth/accountDeletion.service.js';
-import { listPublicVerticals } from '../../admin/controllers/adminFoundations.controller.js';
+import { listPublicVerticals, listOwnPayoutStatements, getOwnPayoutStatement, ownPayoutStatementPdf } from '../../admin/controllers/adminFoundations.controller.js';
 import { getOtherOutletsController, getVideoFeedController } from '../controllers/outletsAndFeed.controller.js';
 import { logoutAllRestaurantDevices } from '../../../../core/auth/auth.service.js';
 import { upload } from '../../../../middleware/upload.js';
@@ -181,6 +181,11 @@ router.get('/verticals/public', cacheResponse(600, 'verticals'), listPublicVerti
 
 // Restaurant dashboard/profile (Bearer token + RESTAURANT role)
 router.get('/current', authMiddleware, requireRestaurant, getCurrentRestaurantController);
+
+// Weekly settlement statements (approved and paid only).
+router.get('/payout-statements', authMiddleware, requireRestaurant, listOwnPayoutStatements);
+router.get('/payout-statements/:id', authMiddleware, requireRestaurant, getOwnPayoutStatement);
+router.get('/payout-statements/:id/pdf', authMiddleware, requireRestaurant, ownPayoutStatementPdf);
 // Signs this restaurant out on every phone, this one included.
 router.post('/logout-all-devices', authMiddleware, requireRestaurant, async (req, res, next) => {
     try {

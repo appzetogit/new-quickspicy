@@ -118,7 +118,7 @@ ALTER TABLE "food_delivery_commission_rules"
 -- earn it again.
 DROP INDEX IF EXISTS "earning_addon_one_grant_per_partner";
 CREATE UNIQUE INDEX "earning_addon_one_grant_per_partner"
-  ON "food_earning_addon_history" ("offerId", "deliveryPartnerId")
+  ON "food_earning_addon_history" ("offerId", "deliveryPartnerId", "periodKey")
   WHERE ("status" <> 'cancelled');
 
 -- ─── one default address per customer ────────────────────────────────────────
