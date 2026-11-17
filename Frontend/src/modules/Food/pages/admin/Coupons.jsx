@@ -620,8 +620,10 @@ export default function Coupons() {
                     value={formData.couponCode}
                     onChange={(e) => handleFormChange("couponCode", e.target.value)}
                     placeholder="e.g. NEWUSER50"
-                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className={`w-full px-3 py-2.5 text-sm rounded-lg border ${errors.couponCode ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
                   />
+                  {/* Validated with the rest, and it disables Create, so it must be shown too. */}
+                  {errors.couponCode && <p className="mt-1 text-xs text-red-600">{errors.couponCode}</p>}
                 </div>
 
                 <div>

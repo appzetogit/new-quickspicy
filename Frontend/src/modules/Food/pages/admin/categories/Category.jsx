@@ -648,7 +648,11 @@ export default function Category() {
                           >
                             <option value="global">Global (all zones)</option>
                             {zonesLoading && <option value="" disabled>Loading zones...</option>}
-                            {zones.map((zone) => {
+                            {zones
+                              // Switched-off zones are not offered, except the one this
+                              // category already has, so editing it does not move it.
+                              .filter((zone) => zone?.isActive !== false || String(zone?._id || zone?.id || "") === String(formData.zoneId || ""))
+                              .map((zone) => {
                               const id = String(zone?._id || zone?.id || "")
                               const label = zone?.name || zone?.zoneName || zone?.serviceLocation || id
                               return (
