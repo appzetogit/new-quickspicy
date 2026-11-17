@@ -1,6 +1,36 @@
 import { onValue, ref, set, update } from 'firebase/database';
 import { firebaseRealtimeDb, ensureFirebaseInitialized } from '@food/firebase';
 
+/**
+ * Starts Firebase for live tracking, or says why it cannot.
+ *
+ * Without the Firebase keys in the build (VITE_FIREBASE_API_KEY and
+ * VITE_FIREBASE_DATABASE_URL), initialising throws auth/invalid-api-key, and
+ * that took the whole page down (admin live tracking, the zone rider map, the
+ * customer's tracking screen). Now the map still renders, just without live
+ * positions, and the page's onError hears why.
+ */
+const NOT_CONFIGURED = 'Live tracking is off: Firebase is not configured for this site yet.';
+let warned = false;
+function realtimeReady(onError, path) {
+  const env = import.meta.env || {};
+  let problem = '';
+  if (!env.VITE_FIREBASE_API_KEY || !env.VITE_FIREBASE_DATABASE_URL) {
+    problem = NOT_CONFIGURED;
+  } else {
+    try {
+      ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+      if (firebaseRealtimeDb) return true;
+      problem = 'Live tracking could not start.';
+    } catch (error) {
+      problem = `Live tracking could not start: ${error?.message || error}`;
+    }
+  }
+  if (!warned) { warned = true; console.warn(problem); }
+  if (typeof onError === 'function') onError(new Error(problem), path);
+  return false;
+}
+
 function sanitizeRealtimeKey(value) {
   return String(value || '').trim().replace(/[.#$/[\]]/g, '_');
 }
@@ -61,10 +91,9 @@ function normalizeDeliveryNode(node = {}) {
 
 export function subscribeOrderTracking(orderId, onChange, onError) {
   if (!orderId || typeof onChange !== 'function') return () => {};
-  // Enable Auth so RTDB security rules can work (existing session),
-  // but do NOT enable GoogleAuthProvider to avoid identitytoolkit calls
-  // on pages that don't need sign-in.
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  // Auth is started so RTDB security rules see an existing session; no
+  // GoogleAuthProvider, to avoid identitytoolkit calls on pages that don't sign in.
+  if (!realtimeReady(onError, getOrderTrackingPath(orderId))) return () => {};
   const path = getOrderTrackingPath(orderId);
   const unsub = onValue(
     ref(firebaseRealtimeDb, path),
@@ -82,7 +111,7 @@ export function subscribeOrderTracking(orderId, onChange, onError) {
 
 export function subscribeDeliveryLocation(deliveryId, onChange, onError) {
   if (!deliveryId || typeof onChange !== 'function') return () => {};
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  if (!realtimeReady(onError, getDeliveryLocationPath(deliveryId))) return () => {};
   const path = getDeliveryLocationPath(deliveryId);
   const unsub = onValue(
     ref(firebaseRealtimeDb, path),
@@ -100,7 +129,7 @@ export function subscribeDeliveryLocation(deliveryId, onChange, onError) {
 
 export function subscribeAllDeliveryLocations(onChange, onError) {
   if (typeof onChange !== 'function') return () => {};
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  if (!realtimeReady(onError, 'delivery_boys')) return () => {};
   const nodes = {
     delivery: {},
     delivery_boys: {},
@@ -131,7 +160,7 @@ export function subscribeAllDeliveryLocations(onChange, onError) {
 
 export function subscribeRestaurantLocation(restaurantId, onChange, onError) {
   if (!restaurantId || typeof onChange !== 'function') return () => {};
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  if (!realtimeReady(onError, getRestaurantLocationPath(restaurantId))) return () => {};
   const path = getRestaurantLocationPath(restaurantId);
   const unsub = onValue(
     ref(firebaseRealtimeDb, path),
@@ -159,7 +188,7 @@ export async function writeDeliveryLocation({
   timestamp = Date.now(),
 }) {
   if (!deliveryId) return false;
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  if (!realtimeReady()) return false;
   const payload = {
     lat: toFiniteNumber(lat),
     lng: toFiniteNumber(lng),
@@ -182,7 +211,7 @@ export async function writeDeliveryLocation({
  */
 export async function writeOrderTracking(orderId, payload = {}) {
   if (!orderId) return false;
-  ensureFirebaseInitialized({ enableAuth: true, enableGoogleProvider: false, enableRealtimeDb: true });
+  if (!realtimeReady()) return false;
   const toWrite = {
     ...payload,
     lat: toFiniteNumber(payload.lat),
