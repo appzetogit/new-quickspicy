@@ -178,8 +178,9 @@ test('cancelling before delivery hands back exactly the wallet part, once', asyn
     assert.equal(row.refundLegs[0].source, 'wallet');
     assert.equal(paise(row.refundLegs[0].amount), 10000, 'not the cash part: it was never collected');
 
-    // Nothing more can come back from an admin "refund the rest" either.
-    await processRefundAdmin(id, null, null);
+    // Nothing more can come back from an admin "refund the rest" either: the
+    // cash part was never collected, so there is nothing left on the order.
+    await assert.rejects(() => processRefundAdmin(id, null, null), /Nothing is left to refund/);
     assert.equal(await walletOf(userId), 100, 'no second refund');
 });
 
