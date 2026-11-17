@@ -133,7 +133,7 @@ const serializeVideo = (video) => {
     };
 };
 
-const readVideos = (list) =>
+export const readVideos = (list) =>
     (Array.isArray(list) ? list : []).map(serializeVideo).filter(Boolean);
 
 export const listRestaurantVideos = async (restaurantId) => {

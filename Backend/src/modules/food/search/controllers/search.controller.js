@@ -9,7 +9,7 @@ export const searchController = async (req, res, next) => {
         // A zoneId the app sends is ignored: search goes by distance.
         const {
             q, lat, lng, radiusKm, categoryId, minRating, maxDeliveryTime, isVeg, page, limit,
-            verticalId, vertical,
+            verticalId, vertical, openOnly,
         } = req.query;
 
         const results = await searchUnified({
@@ -24,6 +24,8 @@ export const searchController = async (req, res, next) => {
             // Business vertical (Food, Home Food, ...): by id, or by name.
             verticalId,
             vertical,
+            // Hide restaurants that are closed or offline right now.
+            openOnly,
             page: parseInt(page, 10) || 1,
             limit: parseInt(limit, 10) || 20,
         });

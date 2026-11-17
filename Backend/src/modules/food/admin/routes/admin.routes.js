@@ -663,6 +663,9 @@ router.post('/verticals', requireAdminPermission('restaurant_management', 'creat
 router.patch('/verticals/:id', requireAdminPermission('restaurant_management', 'edit'), foundations.updateVertical);
 router.delete('/verticals/:id', requireAdminPermission('restaurant_management', 'delete'), foundations.deleteVertical);
 router.put('/restaurants/:id/verticals', requireAdminPermission('restaurant_management', 'edit'), foundations.setRestaurantVerticals);
+// Outlets: link restaurants as branches of one brand, or take one out.
+router.put('/restaurants/:id/outlets', requireAdminPermission('restaurant_management', 'edit'), foundations.linkOutlets);
+router.delete('/restaurants/:id/outlets', requireAdminPermission('restaurant_management', 'edit'), foundations.unlinkOutlet);
 
 // ----- Telugu translations of dishes, categories and verticals -----
 router.get('/translations', requireAdminPermission('food_management', 'view'), foundations.listTranslations);

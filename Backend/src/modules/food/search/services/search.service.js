@@ -207,6 +207,8 @@ export const searchUnified = async (query = {}, options = {}) => {
         }),
     ))
         .map((restaurant) => withOpenStatus(restaurant))
+        // ?openOnly=true: only restaurants that can take an order right now.
+        .filter((restaurant) => query.openOnly !== 'true' || restaurant.isOpenNow)
         .sort((x, y) => openFirst(x, y) || x.distanceScore - y.distanceScore);
 
     const finalResult = {

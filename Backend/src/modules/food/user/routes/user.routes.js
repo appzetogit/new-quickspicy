@@ -34,6 +34,12 @@ import {
 } from '../controllers/supportTicket.controller.js';
 import { syncUserCartController } from '../controllers/userCart.controller.js';
 import {
+    orderAgainController,
+    shareCartController,
+    previewSharedCartController,
+    importSharedCartController,
+} from '../controllers/userDiscovery.controller.js';
+import {
     getFavoritesController,
     addFavoriteRestaurantController,
     removeFavoriteRestaurantController,
@@ -90,5 +96,11 @@ router.post('/favorites/foods/:foodId', addFavoriteFoodController);
 router.delete('/favorites/foods/:foodId', removeFavoriteFoodController);
 
 router.put('/cart', syncUserCartController);
+// Share cart: make a link, open one, copy it into your own cart.
+router.post('/cart/share', shareCartController);
+router.get('/cart/shared/:token', previewSharedCartController);
+router.post('/cart/shared/:token/import', importSharedCartController);
+// Dishes and restaurants from past delivered orders that can still be ordered.
+router.get('/order-again', orderAgainController);
 
 export default router;

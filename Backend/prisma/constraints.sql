@@ -440,3 +440,5 @@ CREATE INDEX IF NOT EXISTS "food_restaurants_verticalIds_gin" ON "food_restauran
 CREATE UNIQUE INDEX IF NOT EXISTS "food_verticals_one_default" ON "food_verticals"("isDefault") WHERE "isDefault";
 CREATE INDEX IF NOT EXISTS "food_categories_verticalId_idx" ON "food_categories"("verticalId");
 CREATE INDEX IF NOT EXISTS "food_delivery_partners_cohortId_idx" ON "food_delivery_partners"("cohortId");
+-- Outlets: find a restaurant's sibling outlets by group.
+CREATE INDEX IF NOT EXISTS "food_restaurants_outletGroupId_idx" ON "food_restaurants"("outletGroupId") WHERE "outletGroupId" IS NOT NULL;

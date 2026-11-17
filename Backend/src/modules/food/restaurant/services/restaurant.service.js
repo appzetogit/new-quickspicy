@@ -17,6 +17,7 @@ import { slugifyRestaurantName } from '../../shared/restaurantSlug.js';
 import { restaurantIdForFormerSlug } from './restaurantLookup.helper.js';
 import { openFirst } from '../../shared/openFirst.js';
 import { verticalFilterFromQuery } from '../../shared/verticals.js';
+import { otherOutletCounts } from './outlets.service.js';
 import {
     calculateDistanceKm,
     normalizeRestaurantLocation,
@@ -1729,7 +1730,7 @@ const PUBLIC_CARD_SELECT = {
     openingTime: true, closingTime: true, openDays: true,
     latitude: true, longitude: true, formattedAddress: true,
     addressLine1: true, addressLine2: true, state: true, pincode: true, landmark: true,
-    verticalIds: true,
+    verticalIds: true, outletGroupId: true,
 };
 
 /** Up to ten recommended dishes per restaurant, in one query for the whole page. */
@@ -1783,6 +1784,8 @@ const toPublicCard = (r) => ({
     slug: r.nameSlug || slugifyRestaurantName(r.restaurantName),
     // Business verticals; empty means the default one (Food).
     verticalIds: Array.isArray(r.verticalIds) ? r.verticalIds : [],
+    // Branches of the same brand share this; see /restaurants/:id/outlets.
+    outletGroupId: r.outletGroupId || null,
 });
 
 const TOP_WINDOW_DAYS = 30;
@@ -1926,9 +1929,13 @@ export const listApprovedRestaurants = async (query = {}) => {
 
     // Open status first: every list puts restaurants that can take an order now
     // ahead of the closed ones, never mixed.
-    const cards = (await attachOutletTimingsToRestaurants(
+    const withStatus = (await attachOutletTimingsToRestaurants(
         inRange.map((r) => ({ ...toPublicCard(r), distanceInKm: distanceById.get(r.id) ?? null })),
     )).map((r) => withOpenStatus(r));
+    // ?openOnly=true: leave out restaurants that cannot take an order right now
+    // (closed by their hours or switched offline). By default they are listed
+    // last, after the open ones.
+    const cards = query.openOnly === 'true' ? withStatus.filter((r) => r.isOpenNow) : withStatus;
 
     const byDistance = (a, b) =>
         (distanceById.get(a.id) ?? Infinity) - (distanceById.get(b.id) ?? Infinity);
@@ -1958,11 +1965,17 @@ export const listApprovedRestaurants = async (query = {}) => {
     const pageRows = sorted.slice(skip, skip + limit);
     const withRecommended = await attachRecommendedItems(pageRows);
     const withOffers = await attachPublicOffersToRestaurants(withRecommended);
+    // Other outlets of the same brand; 0 means hide the "other outlets" button.
+    const outletCounts = await otherOutletCounts(pageRows);
     return {
         restaurants: withOffers.map((r) => {
             const card = normalizePublicRestaurantGeo(r, lat, lng);
             // distanceKm is the name the apps read; distanceInKm stays for older builds.
-            return { ...card, distanceKm: card.distanceInKm ?? distanceById.get(r.id) ?? null };
+            return {
+                ...card,
+                distanceKm: card.distanceInKm ?? distanceById.get(r.id) ?? null,
+                outletCount: outletCounts.get(r.id) || 0,
+            };
         }),
         total: sorted.length,
         page,

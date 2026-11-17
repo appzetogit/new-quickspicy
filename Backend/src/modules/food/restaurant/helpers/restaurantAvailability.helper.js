@@ -161,6 +161,17 @@ const evaluateSchedule = (restaurant, now) => {
   const isOpen = unrestricted || Boolean(todayWindow) || Boolean(carriedWindow);
   const active = todayWindow || carriedWindow || today.windows[0] || null;
 
+  // Minutes left in the window it is open in now. Null when there is no end to
+  // count down to: no hours set, or an all-day window.
+  let minutesUntilClose = null;
+  if (todayWindow && todayWindow.open !== todayWindow.close) {
+    minutesUntilClose = todayWindow.close > todayWindow.open
+      ? todayWindow.close - nowMinutes
+      : 1440 - nowMinutes + todayWindow.close; // overnight: closes after midnight
+  } else if (!todayWindow && carriedWindow) {
+    minutesUntilClose = carriedWindow.close - nowMinutes;
+  }
+
   return {
     isOpen,
     todayClosedDay: today.closedDay,
@@ -169,8 +180,18 @@ const evaluateSchedule = (restaurant, now) => {
     openingTime: active?.openingTime || null,
     closingTime: active?.closingTime || null,
     dayName: carriedWindow && !todayWindow ? yesterday.dayName : dayName,
+    minutesUntilClose: minutesUntilClose === null ? null : Math.max(0, minutesUntilClose),
   };
 };
+
+/**
+ * How close to closing counts as "closing soon". 30 minutes unless
+ * CLOSING_SOON_MINUTES says otherwise.
+ */
+export const CLOSING_SOON_MINUTES = (() => {
+  const n = Number(process.env.CLOSING_SOON_MINUTES);
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.round(n), 240) : 30;
+})();
 
 export function getOutletScheduleStatus(restaurant, now = new Date()) {
   if (!restaurant) {
@@ -194,6 +215,7 @@ export function getOutletScheduleStatus(restaurant, now = new Date()) {
     openingTime: schedule.openingTime,
     closingTime: schedule.closingTime,
     dayName: schedule.dayName,
+    minutesUntilClose: scheduleOpen ? schedule.minutesUntilClose : null,
     reason: scheduleOpen
       ? 'within-hours'
       : schedule.todayClosedDay
@@ -358,6 +380,17 @@ export function withOpenStatus(restaurant, now = new Date()) {
     nextOpeningAt: next ? toRestaurantIsoString(next) : null,
     // The same moment under the name the newer app builds read.
     nextOpenAt: next ? toRestaurantIsoString(next) : null,
+    // "Closing soon": open now and within CLOSING_SOON_MINUTES of the end of
+    // its current window. closesInMinutes is null when there is no end to
+    // count down to (closed, no hours set, or open all day).
+    closesInMinutes: status.isEffectivelyOnline ? status.minutesUntilClose ?? null : null,
+    closingSoon: Boolean(
+      status.isEffectivelyOnline
+      && status.minutesUntilClose !== null
+      && status.minutesUntilClose !== undefined
+      && status.minutesUntilClose <= CLOSING_SOON_MINUTES,
+    ),
+    closingSoonThresholdMinutes: CLOSING_SOON_MINUTES,
   };
 }
 

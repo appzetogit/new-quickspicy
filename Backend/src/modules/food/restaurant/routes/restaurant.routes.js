@@ -6,6 +6,7 @@ import {
 } from '../../../../core/auth/onboardingGate.js';
 import { deleteOwnAccountController } from '../../../../core/auth/accountDeletion.service.js';
 import { listPublicVerticals } from '../../admin/controllers/adminFoundations.controller.js';
+import { getOtherOutletsController, getVideoFeedController } from '../controllers/outletsAndFeed.controller.js';
 import { logoutAllRestaurantDevices } from '../../../../core/auth/auth.service.js';
 import { upload } from '../../../../middleware/upload.js';
 import { imageUpload, uploadRateLimiter } from '../../../uploads/middleware/upload.middleware.js';
@@ -167,6 +168,11 @@ router.get('/restaurants/:id', cacheResponse(60, 'restaurant_detail'), getApprov
 router.get('/restaurants/:id/menu', cacheResponse(60, 'restaurant_menu'), getPublicRestaurantMenuController);
 router.get('/public/foods', cacheResponse(300, 'public_foods'), listPublicFoodsController);
 router.get('/restaurants/:id/outlet-timings', cacheResponse(600, 'restaurant_timings'), getOutletTimingsByRestaurantIdController);
+// Other outlets of the same brand, nearest first (outletCount on the list card says if there are any).
+router.get('/restaurants/:id/outlets', cacheResponse(60, 'restaurant_outlets'), getOtherOutletsController);
+// Dish and storefront videos from restaurants that deliver to the customer.
+// Cached per user: it is personalised for signed-in customers.
+router.get('/videos/feed', optionalAuth, cacheResponse(60, 'video_feed', { varyByUser: true }), getVideoFeedController);
 router.get('/offers', optionalAuth, listPublicOffersController);
 // Public: categories list (zone-aware; returns zone categories + global)
 router.get('/categories/public', cacheResponse(600, 'categories'), listCategoriesController);

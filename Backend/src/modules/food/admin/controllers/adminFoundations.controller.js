@@ -1,6 +1,7 @@
 import * as verticals from '../services/adminVertical.service.js';
 import * as cohorts from '../services/adminRiderCohort.service.js';
 import * as translations from '../services/adminTranslation.service.js';
+import * as outlets from '../../restaurant/services/outlets.service.js';
 import { languageFromQuery } from '../../shared/language.js';
 
 /** Thin handlers: the same { success, message, data } envelope as the rest of /admin. */
@@ -36,6 +37,10 @@ export const setRiderServiceArea = handle(200, 'Rider service area updated',
     (req) => cohorts.setRiderServiceArea(req.params.id, req.body || {}));
 /** Rider app: the logged-in rider's own zones. */
 export const getMyServiceArea = handle(200, 'Service area fetched', (req) => cohorts.getRiderServiceArea(req.user?.userId));
+
+// ----- Outlets of one brand -----
+export const linkOutlets = handle(200, 'Outlets linked', (req) => outlets.linkOutlets(req.params.id, req.body || {}));
+export const unlinkOutlet = handle(200, 'Outlet unlinked', (req) => outlets.unlinkOutlet(req.params.id));
 
 // ----- Translations -----
 export const listTranslations = handle(200, 'Translations fetched', (req) => translations.listTranslations(req.query));

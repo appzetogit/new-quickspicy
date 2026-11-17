@@ -769,14 +769,17 @@ model FoodRestaurant {
   /// Mongo alongside a duplicate `address` key; both are this one column.
   formattedAddress String?
 
-  cuisines    String[]
+  cuisines      String[]
   /// Business verticals (FoodVertical ids) the restaurant trades under, e.g.
   /// Food and Home Food. Empty means the default vertical (Food), so every
   /// restaurant that predates verticals keeps showing where it always did.
-  verticalIds String[] @default([])
-  openingTime String?
-  closingTime String?
-  openDays    String[]
+  verticalIds   String[] @default([])
+  /// Outlets of one brand share this id (the id of the outlet that started
+  /// the group). Null means a standalone restaurant.
+  outletGroupId String?  @db.VarChar(24)
+  openingTime   String?
+  closingTime   String?
+  openDays      String[]
 
   /// Manual Online/Offline toggle. false = force offline regardless of outlet timings.
   isAcceptingOrders    Boolean @default(true)
@@ -4048,4 +4051,28 @@ model FoodRiderCohort {
 
   @@index([isActive, sortOrder])
   @@map("food_rider_cohorts")
+}
+
+/// A cart someone shared by link. A snapshot: who opens the link gets the
+/// dishes at today's prices, and only those still available.
+model FoodSharedCart {
+  id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+
+  /// What goes in the link. Random, unguessable, url-safe.
+  token          String   @unique @db.VarChar(24)
+  sharedByUserId String   @db.VarChar(24)
+  restaurantId   String   @db.VarChar(24)
+  restaurantName String   @default("")
+  /// [{ itemId, name, quantity, variantId, variantName }] -- no prices: those
+  /// are read fresh when the link is opened.
+  items          Json     @default("[]")
+  itemCount      Int      @default(0)
+  importCount    Int      @default(0)
+  expiresAt      DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([sharedByUserId, createdAt])
+  @@index([expiresAt])
+  @@map("food_shared_carts")
 }
