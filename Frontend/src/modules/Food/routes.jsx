@@ -26,6 +26,13 @@ const AdminForgotPassword = lazy(() => import("@food/pages/admin/auth/AdminForgo
 // Delivery Module
 const DeliveryRouter = lazy(() => import("../DeliveryV2"))
 
+/** /food/admin/orders?x=1 -> /admin/orders?x=1 */
+function FoodAdminPathRedirect() {
+  const location = useLocation()
+  const rest = location.pathname.replace(/^\/food\/admin/, "") || ""
+  return <Navigate to={`/admin${rest}${location.search}${location.hash}`} replace />
+}
+
 function UserPathRedirect() {
   const location = useLocation()
   // Correctly handle the /food/user -> /food redirect regardless of where it starts
@@ -124,6 +131,10 @@ export default function App() {
             path="delivery/*"
             element={<DeliveryRouter />}
           />
+
+          {/* The admin panel lives at /admin. /food/admin/... used to fall through
+              to the catch-all below and land on the customer home instead. */}
+          <Route path="admin/*" element={<FoodAdminPathRedirect />} />
 
           {/* Legacy Redirects & Fallbacks - use absolute path to avoid /user appended in a loop */}
           <Route path="/" element={<Navigate to="/food/user" replace />} />
