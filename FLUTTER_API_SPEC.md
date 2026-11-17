@@ -158,7 +158,9 @@ All return active-only, ordered lists.
 ## 5. Discovery (no auth)
 
 ### `GET /food/restaurant/restaurants`
-Query: `page` (default 1), `limit` (default 100, max 1000), `city`, `area`, `cuisine`, `hasOffers=true`, `zoneId`, `lat`, `lng`, `radiusKm` (or legacy `maxDistance`), `sortBy` = `nearest` | `rating` / `rating-high` | `rating-low` | `price-low` | `price-high` | `deliveryTime` | `newest`.
+Query: `page` (default 1), `limit` (default 100, max 1000), `city`, `area`, `cuisine`, `hasOffers=true`, `zoneId`, `lat`, `lng`, `radiusKm` (or legacy `maxDistance`), `verticalId` (or `vertical=<name>`, see `verticals/public` below), `sortBy` = `nearest` | `rating` / `rating-high` | `rating-low` | `price-low` | `price-high` | `deliveryTime` | `newest`.
+
+Every card now carries `verticalIds: ["…"]` — empty means the default vertical (Food).
 
 ```json
 {
@@ -225,6 +227,8 @@ Accepts an ObjectId **or** a name slug. Approved restaurants only; `pendingLocat
 ```
 Only approved, available items reach the public menu. 404 for a non-approved restaurant.
 
+Query: `lang` (`en` default, `te`). With `lang=te`, section `name`, item `name` and `description` are Telugu where translated (English otherwise). Each item also has `nameEn`, `nameTe`, `descriptionTe` and `verticalId` (`null` = same as the restaurant).
+
 ### `GET /food/restaurant/restaurants/:id/addons`
 → `{ addons: [ … ] }` — approved add-ons for that restaurant.
 
@@ -253,8 +257,24 @@ Cross-restaurant dish feed. Query: `limit` (default 500, max 1000), `zoneId`, `c
 ```
 `total` is the length of the returned page, **not** the collection count — there is no pagination here.
 
+### `GET /food/restaurant/verticals/public`
+Business verticals for the home screen's section tabs ("Food", "Home Food", …). Query: `lang` (`en` default, `te`).
+```json
+{ "verticals": [
+  { "id": "…", "name": "ఆహారం", "nameEn": "Food", "nameTe": "ఆహారం", "slug": "food",
+    "description": "…", "image": null, "isDefault": true, "sortOrder": 0 },
+  { "id": "…", "name": "Home Food", "nameEn": "Home Food", "nameTe": "", "slug": "home food",
+    "isDefault": false, "sortOrder": 1 }
+] }
+```
+Open the app on the `isDefault` one. Pass the chosen vertical's `id` as `verticalId` to the restaurant list, search and categories. Restaurants carry `verticalIds` on their cards; **an empty list means the default vertical** (Food). An unknown or switched-off `verticalId` returns an empty list, never "all restaurants".
+
 ### `GET /food/restaurant/categories/public`
-Zone-aware approved category list.
+Categories that have an orderable dish near the customer. Query: `lat`, `lng`, `verticalId` (or `vertical=<name>`), `lang`, `search`.
+Each category has `name` (in the requested language), `nameEn`, `nameTe` and `verticalId` (`null` = shown in every vertical).
+
+### Language (English / Telugu)
+Send `lang=te` (from the user's `preferredLanguage`, §6) on **verticals, categories and the restaurant menu**. `name` / `description` then come back in Telugu where translated; anything not yet translated stays English, never blank. The English is always there too as `nameEn` (and `descriptionEn` on verticals). Use the query parameter, not an `Accept-Language` header: these endpoints are cached by URL, and the header is ignored.
 
 ### `GET /food/restaurant/offers` — optional auth
 Query: `restaurantId`, `subtotal`. Send the Bearer token when logged in — the response then excludes coupons the user has exhausted and first-order coupons they no longer qualify for.
@@ -279,7 +299,7 @@ Query: `restaurantId`, `subtotal`. Send the Bearer token when logged in — the 
 `groupedByOffer` is always empty — dead field, ignore it.
 
 ### `GET /food/search/unified`
-Query: `q`, `lat`, `lng`, `radiusKm` (default 20), `categoryId`, `minRating`, `maxDeliveryTime`, `isVeg`, `zoneId`, `strictZone`, `page` (1), `limit` (20).
+Query: `q`, `lat`, `lng`, `radiusKm` (default 20), `categoryId`, `minRating`, `maxDeliveryTime`, `isVeg`, `verticalId` (or `vertical=<name>`), `page` (1), `limit` (20). `zoneId` / `strictZone` are ignored: search goes by distance.
 
 ```json
 {
@@ -314,10 +334,11 @@ Use those to render the "matched on dish" subtitle. Results are restaurant-shape
   "profileImage": "…",              // ≤2000
   "dateOfBirth": "1998-04-21",      // strictly YYYY-MM-DD
   "anniversary": "2022-11-30",
-  "gender": "male"                  // male | female | other | prefer-not-to-say
+  "gender": "male",                 // male | female | other | prefer-not-to-say
+  "preferredLanguage": "te"         // en | te — the app's language; send it as ?lang= (§5)
 }
 ```
-All optional. → `{ user }`
+All optional. → `{ user }` (includes `preferredLanguage`, default `"en"`).
 
 ### `POST /food/user/profile/profile-image` — multipart, field `file`
 → `{ profileImage: "<url>", user }`

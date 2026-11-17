@@ -139,6 +139,18 @@ Stub. Always returns `{ "success": true, "message": "Submitted" }` — no `data`
 
 Location freshness drives the offer radius (20 km cap), so keep pinging this while online.
 
+### `GET /food/delivery/service-area`
+The rider's own zones for the map: their home zone plus the zones of their cohort (both set by admin).
+```json
+{
+  "homeZone": { "id": "…", "name": "MARKAPURAM BRANCH", "serviceLocation": "Markapuram",
+                "coordinates": [{ "latitude": 15.75, "longitude": 79.27 }, …], "isHomeZone": true },
+  "cohort":   { "id": "…", "name": "Night Shift", "description": "", "isActive": true },
+  "zones":    [ /* homeZone first, then the cohort's zones, same shape */ ]
+}
+```
+`homeZone` / `cohort` are `null` when not assigned; `zones` is then empty. Draw `zones[].coordinates` as polygons and highlight `isHomeZone`. A switched-off cohort contributes no zones. Order dispatch does **not** use zones yet (it still goes by distance), so this is display-only for now.
+
 ---
 
 ## 4. Orders
