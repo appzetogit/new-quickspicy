@@ -360,6 +360,28 @@ if (cachedSettings) {
 }
 
 let inFlightSettingsPromise = null;
+// The localStorage copy is only a fast first paint. Without a refresh, a
+// returning visitor kept whatever name and logo they first saw for good: an
+// admin renaming the company never reached them.
+let revalidatedThisLoad = false;
+
+/** Adopt fresher settings: memory, localStorage, title and favicon. */
+const adoptSettings = (settings) => {
+  // Only a real settings object. A misrouted request can hand back an HTML page,
+  // and caching that would replace good settings with garbage.
+  if (!settings || typeof settings !== "object" || Array.isArray(settings) || !settings.companyName) return;
+  const changed = JSON.stringify(settings) !== JSON.stringify(cachedSettings);
+  cachedSettings = settings;
+  if (!changed) return;
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {}
+  updateFavicon(settings.favicon?.url);
+  updateTitle(settings.companyName);
+  try {
+    window.dispatchEvent(new Event('businessSettingsUpdated'));
+  } catch (e) {}
+};
 
 /**
  * Load business settings from backend (public endpoint - no auth required)
@@ -373,7 +395,15 @@ export const loadBusinessSettings = async ({ force = false } = {}) => {
 
     if (!force && cachedSettings) {
       const fromService = getCachedBusinessSettings();
-      if (fromService) return fromService;
+      if (fromService) {
+        adoptSettings(fromService);
+        return fromService;
+      }
+      // Answer from the cache now; refresh it in the background once per load.
+      if (!revalidatedThisLoad) {
+        revalidatedThisLoad = true;
+        loadBusinessSettings({ force: true }).catch(() => {});
+      }
       return cachedSettings;
     }
 
@@ -386,11 +416,9 @@ export const loadBusinessSettings = async ({ force = false } = {}) => {
       const mergedSettings = snapshot.businessSettings || cachedSettings;
 
       if (mergedSettings) {
-        cachedSettings = mergedSettings;
-        try {
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(mergedSettings));
-        } catch (e) {}
-
+        revalidatedThisLoad = true;
+        adoptSettings(mergedSettings);
+        // first load (nothing cached before): title and favicon still need setting
         updateFavicon(mergedSettings.favicon?.url);
         updateTitle(mergedSettings.companyName);
         return mergedSettings;
