@@ -1,0 +1,471 @@
+import fs from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
+import axios from 'axios';
+import sharp from 'sharp';
+import { config } from '../config/env.js';
+import { ValidationError } from '../core/auth/errors.js';
+
+const ALLOWED_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif'
+]);
+
+const WEBP_MIME = 'image/webp';
+const GIF_MIME = 'image/gif';
+const MAX_GIF_BYTES = 3_000_000;
+const ANIMATED_MAX_WIDTH = 720;
+const FOLDER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/_-]*$/;
+
+export const sanitizeUploadFolder = (folder) => {
+    const normalized = String(folder || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!normalized) {
+        throw new ValidationError('Folder is required');
+    }
+    if (normalized.includes('..') || normalized.startsWith('.')) {
+        throw new ValidationError('Invalid folder path');
+    }
+    if (!FOLDER_PATTERN.test(normalized)) {
+        throw new ValidationError('Folder may only contain letters, numbers, /, _, and -');
+    }
+    return normalized;
+};
+
+const buildFilename = (extension) => {
+    const stamp = Date.now();
+    const random = crypto.randomBytes(8).toString('hex');
+    return `${stamp}-${random}${extension}`;
+};
+
+export const fixMediaUrlProtocol = (url) => String(url || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^(https?):\/(?!\/)/i, '$1://')
+    .replace(/^(https?:\/\/)(https?:\/\/)+/i, '$1');
+
+/** Hosts that serve our own upload bucket, for the signed-url check below. */
+const isOwnBucketHost = (hostname) => {
+    const bucket = process.env.UPLOAD_S3_BUCKET || '';
+    if (!bucket) return false;
+    const region = process.env.UPLOAD_S3_REGION || process.env.AWS_REGION || 'ap-south-1';
+    return hostname === `${bucket}.s3.${region}.amazonaws.com`
+        || hostname === `${bucket}.s3.amazonaws.com`;
+};
+
+/**
+ * A url of ours with its signature taken off, or the value untouched.
+ *
+ * Split out of normalizeMediaUrlForStorage so the request middleware can apply
+ * this one rule without also rewriting /uploads/ paths, which would change the
+ * meaning of fields that are not media at all.
+ *
+ * Only our own bucket: an external signed url is someone else's contract and
+ * stripping its query would break it.
+ */
+export const stripOwnBucketSignature = (value) => {
+    if (typeof value !== 'string' || !value.startsWith('http')) return value;
+    if (!value.includes('X-Amz-Signature')) return value;
+    try {
+        const parsed = new URL(value);
+        if (!isOwnBucketHost(parsed.hostname)) return value;
+        return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+        return value;
+    }
+};
+
+export const buildPublicUrl = (relativePath) => {
+    const cleanPath = String(relativePath || '').replace(/^\/+/, '');
+    const base = fixMediaUrlProtocol(String(config.uploadBaseUrl || '').replace(/\/+$/, ''));
+
+    // Never persist localhost URLs — frontend/nginx resolve /uploads/... per environment
+    if (
+        !base
+        || base === '/uploads'
+        || /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?(\/uploads)?$/i.test(base)
+    ) {
+        return `/uploads/${cleanPath}`;
+    }
+
+    return `${base}/${cleanPath}`;
+};
+
+/**
+ * Normalize any media URL before saving.
+ * Strips localhost origins; fixes protocol typos (https:/ → https://); and
+ * drops the query string from a signed url belonging to our own bucket.
+ *
+ * That last one is not cosmetic. Responses leave here with S3 urls signed for
+ * an hour, so any edit form that loads an entity and posts it back carries a
+ * signed url in the body. Persisting it freezes the signature: mediaSigning
+ * skips re-signing anything that already has X-Amz-Signature -- correctly, so
+ * that one response never signs twice -- and the row then serves a url that
+ * 403s forever once the hour is up. Storing the bare object url is the
+ * invariant the signing service documents, and this is where it is enforced.
+ */
+export const normalizeMediaUrlForStorage = (url) => {
+    const trimmed = fixMediaUrlProtocol(url);
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('/uploads/')) {
+        return trimmed;
+    }
+
+    try {
+        const parsed = new URL(trimmed);
+        if (/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname) && parsed.pathname.startsWith('/uploads/')) {
+            return parsed.pathname;
+        }
+        if (parsed.pathname.startsWith('/uploads/')) {
+            return fixMediaUrlProtocol(parsed.toString());
+        }
+        const unsigned = stripOwnBucketSignature(trimmed);
+        if (unsigned !== trimmed) return unsigned;
+    } catch {
+        /* not a full URL */
+    }
+
+    return trimmed;
+};
+
+const getAbsolutePath = (relativePath) => {
+    const root = path.resolve(config.uploadStorageRoot);
+    const absolute = path.resolve(root, relativePath);
+    if (!absolute.startsWith(`${root}${path.sep}`) && absolute !== root) {
+        throw new ValidationError('Invalid file path');
+    }
+    return absolute;
+};
+
+const getWebpQuality = () => {
+    const raw = Number(config.uploadWebpQuality);
+    if (!Number.isFinite(raw)) return 80;
+    return Math.min(100, Math.max(1, Math.round(raw)));
+};
+
+const getWebpMaxWidth = () => {
+    const raw = Number(config.uploadWebpMaxWidth);
+    if (!Number.isFinite(raw) || raw < 1) return 1600;
+    return Math.round(raw);
+};
+
+/**
+ * Convert JPEG/PNG/WebP to optimized WebP for storage.
+ * GIF becomes animated WebP (under 3 MB only). PNG with alpha uses lossless WebP.
+ * Defaults are phone-sized: 1600px wide at quality 80.
+ */
+export const optimizeImageForStorage = async (inputBuffer, mimeType) => {
+    const normalizedMime = String(mimeType || '').toLowerCase();
+
+    if (normalizedMime === GIF_MIME) {
+        // A GIF banner is effectively a video, and the app downloads the whole
+        // file before showing a frame: a 22 MB one held the home screen up for
+        // seconds. Big ones are refused with a plain reason; the rest become
+        // animated WebP, sized for a phone, at a fraction of the bytes.
+        if (inputBuffer.length > MAX_GIF_BYTES) {
+            const mb = (inputBuffer.length / 1e6).toFixed(1);
+            throw new ValidationError(
+                `This GIF is ${mb} MB. Animated images must be under ${MAX_GIF_BYTES / 1e6} MB - make it shorter or smaller (about 480px wide), or use a still image.`
+            );
+        }
+        const animated = sharp(inputBuffer, { animated: true, failOn: 'none' });
+        const meta = await animated.metadata();
+        const outputBuffer = await animated
+            .resize({ width: Math.min(meta.width || ANIMATED_MAX_WIDTH, ANIMATED_MAX_WIDTH), withoutEnlargement: true })
+            .webp({ quality: 60, effort: 4 })
+            .toBuffer();
+        // Keep whichever is smaller: a few GIFs are already tighter than WebP.
+        return outputBuffer.length < inputBuffer.length
+            ? { buffer: outputBuffer, mimeType: WEBP_MIME, extension: '.webp' }
+            : { buffer: inputBuffer, mimeType: GIF_MIME, extension: '.gif' };
+    }
+
+    if (!['image/jpeg', 'image/jpg', 'image/png', WEBP_MIME].includes(normalizedMime)) {
+        throw new ValidationError('Unsupported image type');
+    }
+
+    const maxWidth = getWebpMaxWidth();
+    const quality = getWebpQuality();
+
+    const metadata = await sharp(inputBuffer, { failOn: 'none' }).metadata();
+    const needsResize = Boolean(metadata.width && metadata.width > maxWidth);
+
+    if (normalizedMime === WEBP_MIME && !needsResize) {
+        return {
+            buffer: inputBuffer,
+            mimeType: WEBP_MIME,
+            extension: '.webp'
+        };
+    }
+
+    let pipeline = sharp(inputBuffer, { failOn: 'none' }).rotate();
+
+    if (needsResize) {
+        pipeline = pipeline.resize({
+            width: maxWidth,
+            withoutEnlargement: true
+        });
+    }
+
+    const hasAlpha = Boolean(metadata.hasAlpha);
+    const webpOptions = hasAlpha
+        ? { lossless: true, effort: 4 }
+        : { quality, effort: 4, smartSubsample: true };
+
+    const outputBuffer = await pipeline.webp(webpOptions).toBuffer();
+
+    return {
+        buffer: outputBuffer,
+        mimeType: WEBP_MIME,
+        extension: '.webp'
+    };
+};
+
+/**
+ * Object storage driver.
+ *
+ * Everything above this line -- validation, the sharp pipeline, filename and
+ * folder rules -- is storage agnostic and stays that way. Only the two calls
+ * that actually touch bytes differ between disk and S3, so those are the only
+ * things that branch.
+ *
+ * Credentials come from the EC2 instance role via the default provider chain,
+ * the same way the database does. No access keys are stored anywhere.
+ */
+const useS3 = String(process.env.UPLOAD_DRIVER || '').toLowerCase() === 's3';
+
+let s3Client = null;
+const getS3 = async () => {
+    if (s3Client) return s3Client;
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    s3Client = new S3Client({ region: process.env.UPLOAD_S3_REGION || process.env.AWS_REGION || 'ap-south-1' });
+    return s3Client;
+};
+
+const s3Key = (relativePath) => {
+    const prefix = String(process.env.UPLOAD_S3_PREFIX || '').replace(/^\/+|\/+$/g, '');
+    const clean = String(relativePath).replace(/^\/+/, '');
+    return prefix ? `${prefix}/${clean}` : clean;
+};
+
+const putObject = async (relativePath, buffer, mimeType) => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const client = await getS3();
+    await client.send(new PutObjectCommand({
+        Bucket: process.env.UPLOAD_S3_BUCKET,
+        Key: s3Key(relativePath),
+        Body: buffer,
+        ContentType: mimeType,
+        // Filenames carry a timestamp and random suffix, so a given key's bytes
+        // never change. Safe to cache for a year.
+        CacheControl: 'public, max-age=31536000, immutable',
+    }));
+};
+
+const removeObject = async (relativePath) => {
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+    const client = await getS3();
+    await client.send(new DeleteObjectCommand({
+        Bucket: process.env.UPLOAD_S3_BUCKET,
+        Key: s3Key(relativePath),
+    }));
+};
+
+/** Create upload root (and optional subfolder) if missing. */
+export const ensureUploadStorageReady = async (folder = '') => {
+    const root = path.resolve(config.uploadStorageRoot);
+    await fs.mkdir(root, { recursive: true });
+
+    if (folder) {
+        const safeFolder = sanitizeUploadFolder(folder);
+        await fs.mkdir(getAbsolutePath(safeFolder), { recursive: true });
+    }
+
+    return root;
+};
+
+export const saveImageFile = async (file, folder) => {
+    if (!file?.buffer?.length) {
+        throw new ValidationError('File is required');
+    }
+
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+        throw new ValidationError('Only JPEG, PNG, WebP, and GIF images are allowed');
+    }
+
+    const safeFolder = sanitizeUploadFolder(folder);
+    const optimized = await optimizeImageForStorage(file.buffer, mimeType);
+    const filename = buildFilename(optimized.extension);
+    const relativePath = path.posix.join(safeFolder, filename);
+    const absolutePath = getAbsolutePath(relativePath);
+
+    if (useS3) {
+        await putObject(relativePath, optimized.buffer, optimized.mimeType);
+    } else {
+        await ensureUploadStorageReady(safeFolder);
+        await fs.writeFile(absolutePath, optimized.buffer);
+    }
+
+    return {
+        url: buildPublicUrl(relativePath),
+        path: relativePath,
+        filename,
+        mimeType: optimized.mimeType,
+        size: optimized.buffer.length
+    };
+};
+
+/**
+ * Video formats a browser can play without a plugin or a transcode step.
+ *
+ * Deliberately short. Anything outside this list either needs transcoding
+ * before it will play (.mov from an iPhone, .avi, .mkv) or is a container we
+ * would be guessing about, and this server has no transcoder.
+ */
+const ALLOWED_VIDEO_MIME_TYPES = new Map([
+    ['video/mp4', '.mp4'],
+    ['video/webm', '.webm'],
+]);
+
+/**
+ * The ceiling for one video.
+ *
+ * Well under the 25MB upload limit, because a video goes through
+ * multer.memoryStorage() like everything else -- the whole file is held in
+ * process memory while it uploads, and the box has 2GB. A restaurant
+ * storefront clip does not need to be longer than this buys.
+ */
+const MAX_VIDEO_BYTES = Number(process.env.MAX_VIDEO_BYTES) || 12 * 1024 * 1024;
+
+export const MAX_VIDEO_MB = Math.floor(MAX_VIDEO_BYTES / (1024 * 1024));
+
+/**
+ * Store a video as it is.
+ *
+ * Unlike an image it is not re-encoded -- there is no transcoder here, and
+ * re-wrapping a container without one produces a file that plays on the
+ * machine that made it and nowhere else. So the format has to be right on the
+ * way in, which is why the allow-list is two entries rather than "video/*".
+ *
+ * The mime type is checked rather than the extension: a file called .mp4 is a
+ * claim, and the browser will believe the Content-Type we store it under.
+ */
+export const saveVideoFile = async (file, folder) => {
+    if (!file?.buffer?.length) {
+        throw new ValidationError('File is required');
+    }
+
+    const mimeType = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
+    const extension = ALLOWED_VIDEO_MIME_TYPES.get(mimeType);
+    if (!extension) {
+        throw new ValidationError(
+            'Only MP4 and WebM videos are supported. Convert the file and try again.',
+        );
+    }
+
+    if (file.buffer.length > MAX_VIDEO_BYTES) {
+        throw new ValidationError(`That video is larger than ${MAX_VIDEO_MB}MB`);
+    }
+
+    const safeFolder = sanitizeUploadFolder(folder);
+    const filename = buildFilename(extension);
+    const relativePath = path.posix.join(safeFolder, filename);
+
+    if (useS3) {
+        await putObject(relativePath, file.buffer, mimeType);
+    } else {
+        await ensureUploadStorageReady(safeFolder);
+        await fs.writeFile(getAbsolutePath(relativePath), file.buffer);
+    }
+
+    return {
+        url: buildPublicUrl(relativePath),
+        path: relativePath,
+        filename,
+        mimeType,
+        size: file.buffer.length,
+    };
+};
+
+export const saveImageBuffer = async (buffer, folder, options = {}) => {
+    return saveImageFile(
+        {
+            buffer,
+            mimetype: options.mimeType || 'image/jpeg',
+            originalname: options.originalname || 'upload.jpg'
+        },
+        folder
+    );
+};
+
+export const deleteStoredFile = async (relativePath) => {
+    const safePath = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!safePath) return false;
+
+    if (useS3) {
+        try {
+            await removeObject(safePath);
+            return true;
+        } catch (error) {
+            // S3 treats deleting an absent key as success, so a NoSuchKey here
+            // means something else went wrong and should not be swallowed.
+            if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) return false;
+            throw error;
+        }
+    }
+
+    const absolutePath = getAbsolutePath(safePath);
+    try {
+        await fs.unlink(absolutePath);
+        return true;
+    } catch (error) {
+        if (error?.code === 'ENOENT') return false;
+        throw error;
+    }
+};
+
+const inferMimeFromUrl = (url) => {
+    const ext = path.extname(new URL(url).pathname).toLowerCase();
+    const map = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif'
+    };
+    return map[ext] || 'image/jpeg';
+};
+
+export const isHostedUploadUrl = (url) => {
+    const normalized = String(url || '').trim();
+    if (!normalized) return false;
+    const base = String(config.uploadBaseUrl || '').replace(/\/+$/, '');
+    if (base && normalized.startsWith(base)) return true;
+    return /\/uploads\//i.test(normalized);
+};
+
+export const saveImageFromUrl = async (imageUrl, folder) => {
+    const url = String(imageUrl || '').trim();
+    if (!url) {
+        throw new ValidationError('Image URL is required');
+    }
+
+    const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: config.uploadMaxFileSizeBytes,
+        maxBodyLength: config.uploadMaxFileSizeBytes
+    });
+
+    const buffer = Buffer.from(response.data);
+    const mimeType = String(response.headers['content-type'] || inferMimeFromUrl(url)).split(';')[0].trim().toLowerCase();
+
+    return saveImageBuffer(buffer, folder, {
+        mimeType,
+        originalname: path.basename(new URL(url).pathname) || 'remote.jpg'
+    });
+};

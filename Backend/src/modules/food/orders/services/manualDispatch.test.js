@@ -1,0 +1,337 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { prisma } from '../../../../config/prisma.js';
+import { uniquePhone, uniqueTag } from '../../../../utils/testIds.js';
+import { testPatch } from '../../../../utils/testGeo.js';
+import { createOrder } from './order.service.js';
+import { tryAutoAssign, processDispatchTimeout, getDispatchSettings, updateDispatchSettings } from './order-dispatch.service.js';
+import {
+    assignRiderManually,
+    assignExternalRider,
+    clearDispatchModeCache,
+    listEligibleRiders,
+    listManualQueue,
+    setZoneDispatchMode,
+    withdrawManualAssignment,
+} from './manualDispatch.service.js';
+import { acceptOrderDelivery, listOrdersAvailableDelivery, rejectOrderDelivery } from './order-delivery.service.js';
+
+/**
+ * Manual rider assignment: in a manual zone nothing is offered to riders, an
+ * admin assigns a rider from the zone, and a decline or no answer sends the
+ * order back to the admin's queue.
+ */
+const HERE = testPatch(14);
+const ELSEWHERE = testPatch(15);
+const created = { zones: [], restaurants: [], users: [], foods: [], partners: [] };
+let tag;
+let zoneId;
+let restaurantId;
+let foodId;
+let userId;
+const riders = {};
+
+const address = () => ({
+    label: 'Home', fullName: 'Test Customer', street: '1 Test Street', city: 'Indore', state: 'MP',
+    zipCode: '452001', phone: uniquePhone('5'), latitude: HERE.lat + 0.005, longitude: HERE.lng,
+});
+
+const makeRider = async (key, { at = HERE, online = true } = {}) => {
+    const r = await prisma.foodDeliveryPartner.create({
+        data: {
+            name: `${tag} ${key}`,
+            phone: uniquePhone('8'),
+            status: 'approved',
+            availabilityStatus: online ? 'online' : 'offline',
+            lastLat: at.lat + 0.002,
+            lastLng: at.lng,
+            lastLocationAt: new Date(),
+        },
+    });
+    created.partners.push(r.id);
+    riders[key] = r;
+    return r;
+};
+
+/** A cash order the restaurant has confirmed, then handed to dispatch. */
+const confirmedOrder = async () => {
+    const { order } = await createOrder(userId, {
+        restaurantId,
+        items: [{ itemId: foodId, quantity: 1 }],
+        address: address(),
+        paymentMethod: 'cash',
+    });
+    const id = order._id || order.id;
+    await prisma.foodOrder.update({ where: { id }, data: { orderStatus: 'confirmed' } });
+    await tryAutoAssign(id);
+    return id;
+};
+
+const orderRow = (id) => prisma.foodOrder.findUnique({ where: { id }, include: { dispatchOffers: true } });
+
+test.before(async () => {
+    tag = uniqueTag('Dsp');
+    const zone = await prisma.foodZone.create({ data: { name: `${tag} Zone`, coordinates: HERE.ring, isActive: true } });
+    created.zones.push(zone.id);
+    zoneId = zone.id;
+    const restaurant = await prisma.foodRestaurant.create({
+        data: {
+            restaurantName: `${tag} Kitchen`, ownerName: 'Owner', ownerPhone: uniquePhone('9'), status: 'approved',
+            zoneId, latitude: HERE.lat, longitude: HERE.lng, isAcceptingOrders: true, outsideHoursOverride: true,
+        },
+    });
+    created.restaurants.push(restaurant.id);
+    restaurantId = restaurant.id;
+    const food = await prisma.foodItem.create({
+        data: { restaurantId, name: `${tag} Rice`, price: 150, approvalStatus: 'approved', isAvailable: true },
+    });
+    created.foods.push(food.id);
+    foodId = food.id;
+    const user = await prisma.foodUser.create({ data: { name: `${tag} User`, phone: uniquePhone('5') } });
+    created.users.push(user.id);
+    userId = user.id;
+
+    await makeRider('amit');
+    await makeRider('bala');
+    await makeRider('chetan', { at: ELSEWHERE });
+    await makeRider('dev', { online: false });
+
+    await setZoneDispatchMode(zoneId, 'manual');
+});
+
+test.after(async () => {
+    await updateDispatchSettings('auto', null);
+    const orders = await prisma.foodOrder.findMany({ where: { restaurantId: { in: created.restaurants } }, select: { id: true } });
+    const ids = orders.map((o) => o.id);
+    await prisma.orderDispatchOffer.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.deliveryOrderEmergencyRequest.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.foodTransaction.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.orderStatusHistory.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.foodOrder.deleteMany({ where: { id: { in: ids } } });
+    await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: created.partners } } });
+    await prisma.foodItem.deleteMany({ where: { id: { in: created.foods } } });
+    await prisma.foodUser.deleteMany({ where: { id: { in: created.users } } });
+    await prisma.foodRestaurant.deleteMany({ where: { id: { in: created.restaurants } } });
+    await prisma.foodZone.deleteMany({ where: { id: { in: created.zones } } });
+    await prisma.$disconnect();
+});
+
+let orderA;
+
+test('a manual zone offers nothing to riders; the order waits for an admin', async () => {
+    orderA = await confirmedOrder();
+    const row = await orderRow(orderA);
+    assert.equal(row.dispatchStatus, 'unassigned');
+    assert.equal(row.dispatchOffers.length, 0, 'no rider was offered it');
+    assert.ok(row.awaitingManualAt, 'it is in the admin queue');
+
+    const queue = await listManualQueue();
+    assert.ok(queue.orders.some((o) => o.id === orderA));
+});
+
+test('riders can neither see nor grab an unassigned manual order', async () => {
+    const list = await listOrdersAvailableDelivery(riders.amit.id, {});
+    const ids = (list.docs || list.orders || list.items || list.data || list).map?.((o) => o._id || o.id) || [];
+    assert.ok(!ids.includes(orderA), 'not in the available list');
+    await assert.rejects(() => acceptOrderDelivery(orderA, riders.amit.id), /assigned by the dispatcher/);
+});
+
+test('the picker lists online riders in the zone first and flags the rest', async () => {
+    const { riders: list } = await listEligibleRiders(orderA);
+    const names = list.map((r) => r.name);
+    assert.ok(names.includes(riders.amit.name) && names.includes(riders.bala.name));
+    assert.ok(!names.includes(riders.dev.name), 'offline hidden by default');
+    const amit = list.find((r) => r.id === riders.amit.id);
+    assert.equal(amit.insideZone, true);
+    assert.equal(amit.assignable, true);
+
+    const all = await listEligibleRiders(orderA, { includeOffline: true });
+    const dev = all.riders.find((r) => r.id === riders.dev.id);
+    assert.equal(dev.assignable, false);
+    assert.match(dev.notAssignableReason, /Offline/);
+});
+
+test('the picker searches by name or phone on the server and pages offline riders', async () => {
+    const byName = await listEligibleRiders(orderA, { includeOffline: true, search: riders.dev.name.toUpperCase() });
+    assert.deepEqual(byName.riders.map((r) => r.id), [riders.dev.id]);
+    const byPhone = await listEligibleRiders(orderA, { search: riders.amit.phone.slice(-6) });
+    assert.deepEqual(byPhone.riders.map((r) => r.id), [riders.amit.id]);
+    // LIKE wildcards in the search are taken literally.
+    assert.equal((await listEligibleRiders(orderA, { includeOffline: true, search: '%' })).riders.length, 0);
+
+    const first = await listEligibleRiders(orderA, { includeOffline: true });
+    assert.equal(first.onlineCapped, false);
+    assert.deepEqual(first.offline, { page: 1, pageSize: 20, hasMore: false });
+    const second = await listEligibleRiders(orderA, { includeOffline: true, offlinePage: 2 });
+    assert.ok(!second.riders.some((r) => !r.online), 'nothing past the last page');
+    assert.equal((await listEligibleRiders(orderA)).offline, null);
+});
+
+test('an offline or out-of-zone rider is refused without an override', async () => {
+    await assert.rejects(() => assignRiderManually(orderA, riders.dev.id, null), /Offline/);
+    await assert.rejects(() => assignRiderManually(orderA, riders.chetan.id, null), /zone/);
+});
+
+test('assign -> rider declines -> back in the queue, marked as declined by them', async () => {
+    const res = await assignRiderManually(orderA, riders.amit.id, null);
+    assert.equal(res.assignedTo.id, riders.amit.id);
+    let row = await orderRow(orderA);
+    assert.equal(row.dispatchStatus, 'assigned');
+    assert.equal(row.dispatchDeliveryPartnerId, riders.amit.id);
+
+    // Only the assigned rider can take it.
+    await assert.rejects(() => acceptOrderDelivery(orderA, riders.bala.id), /not assigned to you/);
+
+    await rejectOrderDelivery(orderA, riders.amit.id);
+    await new Promise((r) => setTimeout(r, 300));
+    row = await orderRow(orderA);
+    assert.equal(row.dispatchStatus, 'unassigned');
+    assert.equal(row.dispatchOffers.length, 1, 'still no automatic offers');
+    assert.equal(row.dispatchOffers[0].action, 'rejected');
+
+    const queued = (await listManualQueue()).orders.find((o) => o.id === orderA);
+    assert.deepEqual(queued.declinedBy.map((d) => d.id), [riders.amit.id]);
+});
+
+test('two admins assigning at once: only one wins', async () => {
+    const results = await Promise.allSettled([
+        assignRiderManually(orderA, riders.bala.id, null),
+        assignRiderManually(orderA, riders.amit.id, null),
+    ]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+});
+
+test('the assigned rider accepts; the order leaves the queue', async () => {
+    const row = await orderRow(orderA);
+    const assignee = row.dispatchDeliveryPartnerId;
+    await acceptOrderDelivery(orderA, assignee);
+    const after = await orderRow(orderA);
+    assert.equal(after.dispatchStatus, 'accepted');
+    assert.equal(after.awaitingManualAt, null);
+    assert.ok(!(await listManualQueue()).orders.some((o) => o.id === orderA));
+
+    // That rider is now busy and can't be given another order.
+    const another = await confirmedOrder();
+    await assert.rejects(() => assignRiderManually(another, assignee, null), /another delivery/);
+
+    // At peak time an admin lets riders carry two: the same rider can now be
+    // given the second order, accept it, and then has both on their list.
+    const before = await getDispatchSettings();
+    await updateDispatchSettings(before.dispatchMode, null, { maxActiveOrdersPerRider: 2 });
+    try {
+        const { riders } = await listEligibleRiders(another);
+        const sameRider = riders.find((r) => r.id === assignee);
+        assert.equal(sameRider?.activeOrders, 1);
+        await assignRiderManually(another, assignee, null);
+        await acceptOrderDelivery(another, assignee);
+        const { getActiveTripsDelivery } = await import('./order-delivery.service.js');
+        const trips = await getActiveTripsDelivery(assignee);
+        assert.deepEqual(trips.map((t) => String(t._id || t.id)).sort(), [orderA, another].map(String).sort());
+
+        // A third is refused: two is the limit.
+        const third = await confirmedOrder();
+        await assert.rejects(() => assignRiderManually(third, assignee, null), /Already carrying 2 orders/);
+    } finally {
+        await updateDispatchSettings(before.dispatchMode, null, { maxActiveOrdersPerRider: before.maxActiveOrdersPerRider });
+    }
+});
+
+test('no answer in time sends the order back to the queue', async () => {
+    const id = await confirmedOrder();
+    const { riders: list } = await listEligibleRiders(id);
+    const pick = list.find((r) => r.assignable);
+    await assignRiderManually(id, pick.id, null);
+    await processDispatchTimeout(id, pick.id);
+    const row = await orderRow(id);
+    assert.equal(row.dispatchStatus, 'unassigned');
+    assert.ok(row.dispatchOffers.some((o) => o.partnerId === pick.id && o.action === 'timeout'));
+});
+
+test('an admin can take an assignment back', async () => {
+    const id = await confirmedOrder();
+    const { riders: list } = await listEligibleRiders(id);
+    const pick = list.find((r) => r.assignable);
+    await assignRiderManually(id, pick.id, null);
+    await withdrawManualAssignment(id, null);
+    const row = await orderRow(id);
+    assert.equal(row.dispatchStatus, 'unassigned');
+    assert.ok(row.dispatchOffers.some((o) => o.partnerId === pick.id && o.action === 'withdrawn'));
+});
+
+test('switching the zone back to automatic offers the waiting orders to riders', async () => {
+    const id = await confirmedOrder();
+    // A rider is offered one order at a time, so earlier waiting orders would
+    // take the riders first. Close them; this one is the order under test.
+    await prisma.foodOrder.updateMany({
+        where: { restaurantId, id: { not: id }, orderStatus: { notIn: ['delivered', 'cancelled_by_admin'] } },
+        data: { orderStatus: 'cancelled_by_admin', awaitingManualAt: null },
+    });
+    await setZoneDispatchMode(zoneId, 'auto');
+    await new Promise((r) => setTimeout(r, 1500));
+    const row = await orderRow(id);
+    assert.equal(row.awaitingManualAt, null);
+    assert.ok(row.dispatchOffers.some((o) => o.action === 'offered'), 'offered to nearby riders');
+    await setZoneDispatchMode(zoneId, 'manual');
+});
+
+test('an outside rider (Rapido) can take an order; customers see them as the rider', async () => {
+    const id = await confirmedOrder();
+    await assert.rejects(() => assignExternalRider(id, 'admin-test', { name: 'Ravi', phone: '12345' }), /10-digit/);
+    const res = await assignExternalRider(id, 'admin-test', { provider: 'Rapido', name: 'Ravi Kumar', phone: '+91 98765 43210' });
+    assert.equal(res.assignedTo.phone, '9876543210');
+
+    const row = await orderRow(id);
+    assert.equal(row.dispatchStatus, 'accepted');
+    assert.equal(row.dispatchDeliveryPartnerId, null);
+    assert.equal(row.externalRiderName, 'Ravi Kumar');
+    assert.ok(row.dispatchOffers.every((o) => o.action !== 'offered'), 'nobody else is still asked');
+
+    const { toOrder, orderInclude } = await import('../order.mapper.js');
+    const shaped = toOrder(await prisma.foodOrder.findUnique({ where: { id }, include: orderInclude }));
+    assert.equal(shaped.dispatch.deliveryPartnerId.name, 'Ravi Kumar');
+    assert.equal(shaped.dispatch.deliveryPartnerId.provider, 'Rapido');
+
+    await assert.rejects(() => assignExternalRider(id, 'admin-test', { name: 'X Y', phone: '9876543211' }), /already accepted/);
+});
+
+test('a rider asks to give up an order; the admin approves and it goes back out', async () => {
+    const {
+        createOrderEmergencyRequest,
+        listOrderEmergencyRequestsAdmin,
+        deassignAndResendEmergencyOrder,
+    } = await import('../../delivery/services/orderEmergencyRequest.service.js');
+    const id = await confirmedOrder();
+    const rider = await makeRider(`Reassign${Date.now()}`);
+    await assignRiderManually(id, rider.id, null);
+    await acceptOrderDelivery(id, rider.id);
+
+    await assert.rejects(() => createOrderEmergencyRequest(rider.id, { orderId: id, reason: 'flat' }), /at least 10/);
+    const request = await createOrderEmergencyRequest(rider.id, { orderId: id, reason: 'Vehicle breakdown: tyre burst' });
+    assert.equal(String(request.orderId?._id || request.orderId?.id || request.orderId), id);
+    await assert.rejects(
+        () => createOrderEmergencyRequest(rider.id, { orderId: id, reason: 'Vehicle breakdown again' }),
+        /already exists/,
+    );
+
+    const { requests } = await listOrderEmergencyRequestsAdmin({ status: 'open' });
+    const listed = requests.find((r) => String(r._id || r.id) === String(request._id || request.id));
+    assert.ok(listed, 'the admin sees the open request');
+
+    await deassignAndResendEmergencyOrder(request._id || request.id, null);
+    const row = await orderRow(id);
+    assert.notEqual(row.dispatchDeliveryPartnerId === rider.id && row.dispatchStatus === 'accepted', true,
+        'the rider no longer holds the order');
+    assert.ok(row.dispatchOffers.some((o) => o.partnerId === rider.id && o.action === 'deassigned') || row.dispatchDeliveryPartnerId !== rider.id);
+});
+
+test('the global setting is saved (it used to always save auto)', async () => {
+    await updateDispatchSettings('manual', null, { manualAcceptWindowSeconds: 90 });
+    clearDispatchModeCache();
+    const s = await getDispatchSettings();
+    assert.equal(s.dispatchMode, 'manual');
+    assert.equal(s.manualAcceptWindowSeconds, 90);
+    await updateDispatchSettings('auto', null, { manualAcceptWindowSeconds: 120 });
+    assert.equal((await getDispatchSettings()).dispatchMode, 'auto');
+});

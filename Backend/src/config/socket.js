@@ -1,0 +1,577 @@
+import { Server } from 'socket.io';
+import { config } from './env.js';
+import { logger } from '../utils/logger.js';
+import { verifyAccessToken } from '../core/auth/token.util.js';
+import { getFirebaseDB } from './firebase.js';
+import { createRiderFixTracker } from '../modules/food/delivery/services/riderFix.js';
+import { saveRiderPosition } from '../modules/food/delivery/services/riderPosition.service.js';
+
+// One for the process, so a rider who reconnects is judged against where they
+// really were, not a fresh socket that has never seen them.
+const riderFixes = createRiderFixTracker();
+
+let io = null;
+
+/**
+ * The orders a rider is carrying right now, cached on their socket for 20 s
+ * so a GPS fix every 2 s does not query the database each time.
+ */
+const RIDER_ORDERS_TTL_MS = 20000;
+async function activeOrderIdsForRider(socket, riderId) {
+    const cached = socket.data?.activeOrders;
+    if (cached && Date.now() - cached.at < RIDER_ORDERS_TTL_MS) return cached.ids;
+    const { prisma } = await import('./prisma.js');
+    const { TERMINAL_ORDER_STATUSES } = await import('../modules/food/orders/services/order.helpers.js');
+    const rows = await prisma.foodOrder.findMany({
+        where: {
+            dispatchDeliveryPartnerId: String(riderId),
+            dispatchStatus: 'accepted',
+            orderStatus: { notIn: TERMINAL_ORDER_STATUSES },
+        },
+        select: { id: true },
+        take: 10,
+    });
+    const ids = rows.map((row) => row.id);
+    socket.data = { ...(socket.data || {}), activeOrders: { ids, at: Date.now() } };
+    return ids;
+}
+
+function logDeliverySocket(message, extra = {}) {
+    const suffix = Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+    logger.info(`[DeliverySocket] ${message}${suffix}`);
+}
+
+function getTokenFromHandshake(socket) {
+    const authToken = socket?.handshake?.auth?.token;
+    if (typeof authToken === 'string' && authToken.trim()) return authToken.trim();
+    const header = socket?.handshake?.headers?.authorization || socket?.handshake?.headers?.Authorization;
+    if (typeof header === 'string' && header.startsWith('Bearer ')) return header.substring(7).trim();
+    const queryToken = socket?.handshake?.query?.token;
+    if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
+    return null;
+}
+
+function maskToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const trimmed = token.trim();
+    if (!trimmed) return null;
+    return `${trimmed.slice(0, 12)}...${trimmed.slice(-6)}`;
+}
+
+const roomNames = {
+    restaurant: (id) => `restaurant:${String(id)}`,
+    user: (id) => `user:${String(id)}`,
+    delivery: (id) => `delivery:${String(id)}`,
+    tracking: (orderId) => `tracking:${String(orderId)}`,
+    admin: () => 'admin:all',
+    // Order alerts for the admin panel, by city: a super admin hears every
+    // order, a city sub-admin only the zones of their own cities.
+    adminOrdersAll: () => 'admin:orders:all',
+    adminOrdersZone: (zoneId) => `admin:orders:zone:${String(zoneId)}`
+};
+
+/** Put an admin's socket in the order-alert rooms their cities allow. */
+async function joinAdminOrderRooms(socket, adminId) {
+    try {
+        const [{ prisma }, { loadAdminScope }] = await Promise.all([
+            import('./prisma.js'),
+            import('../core/roles/adminScope.service.js'),
+        ]);
+        const admin = await prisma.foodAdmin.findUnique({
+            where: { id: String(adminId) },
+            select: { id: true, adminType: true, isActive: true, isDeleted: true },
+        });
+        if (!admin || admin.isDeleted || admin.isActive === false) return;
+        const scope = await loadAdminScope(admin);
+        if (!scope) {
+            socket.join(roomNames.adminOrdersAll());
+            return;
+        }
+        for (const zoneId of scope.zoneIds) socket.join(roomNames.adminOrdersZone(zoneId));
+    } catch (err) {
+        logger.warn(`Admin order rooms not joined for ${adminId}: ${err?.message || err}`);
+    }
+}
+
+/**
+ * Initializes Socket.IO with the provided HTTP server.
+ * When REDIS_ENABLED=true and REDIS_URL is set, attaches Redis adapter for horizontal scaling.
+ * @param {import('http').Server} server
+ * @returns {Promise<Server>}
+ */
+export const initSocket = async (server) => {
+    io = new Server(server, {
+        cors: {
+            // Same list as the HTTP API. Empty means any origin.
+            origin: config.corsOrigins.length ? config.corsOrigins : '*',
+            methods: ['GET', 'POST']
+        }
+    });
+
+    // Socket auth middleware (Bearer token).
+    io.use((socket, next) => {
+        try {
+            const token = getTokenFromHandshake(socket);
+            if (!token) {
+                logger.warn(`Socket auth failed: token missing for socket ${socket.id}`);
+                logger.warn(`[DeliverySocket] Handshake auth missing`, {
+                    socketId: socket.id,
+                    origin: socket?.handshake?.headers?.origin || null,
+                    host: socket?.handshake?.headers?.host || null,
+                    userAgent: socket?.handshake?.headers?.['user-agent'] || null,
+                    hasAuthToken: Boolean(socket?.handshake?.auth?.token),
+                    hasAuthorizationHeader: Boolean(
+                        socket?.handshake?.headers?.authorization || socket?.handshake?.headers?.Authorization
+                    ),
+                    hasQueryToken: Boolean(socket?.handshake?.query?.token),
+                });
+                return next(new Error('AUTH_MISSING'));
+            }
+            logger.info(`[DeliverySocket] Handshake token received`, {
+                socketId: socket.id,
+                origin: socket?.handshake?.headers?.origin || null,
+                host: socket?.handshake?.headers?.host || null,
+                transport: socket?.handshake?.query?.transport || null,
+                tokenPreview: maskToken(token),
+            });
+            const decoded = verifyAccessToken(token);
+            socket.user = { userId: decoded.userId, role: decoded.role };
+            logger.info(`Socket auth success: ${decoded.role}:${decoded.userId} for socket ${socket.id}`);
+            return next();
+        } catch (err) {
+            logger.error(`Socket auth failed for socket ${socket.id}: ${err.message}`);
+            logger.error(`[DeliverySocket] Handshake auth invalid`, {
+                socketId: socket.id,
+                origin: socket?.handshake?.headers?.origin || null,
+                host: socket?.handshake?.headers?.host || null,
+                transport: socket?.handshake?.query?.transport || null,
+                tokenPreview: maskToken(getTokenFromHandshake(socket)),
+                errorMessage: err.message,
+                errorName: err.name || null,
+            });
+            return next(new Error('AUTH_INVALID'));
+        }
+    });
+
+    if (config.redisEnabled && config.redisUrl) {
+        try {
+            const { createAdapter } = await import('@socket.io/redis-adapter');
+            const { createClient } = await import('redis');
+            const pubClient = createClient({ url: config.redisUrl });
+            const subClient = pubClient.duplicate();
+            pubClient.on('error', (err) => logger.error(`Socket.IO Redis pub client: ${err.message}`));
+            subClient.on('error', (err) => logger.error(`Socket.IO Redis sub client: ${err.message}`));
+            await Promise.all([pubClient.connect(), subClient.connect()]);
+            io.adapter(createAdapter(pubClient, subClient));
+            logger.info('Socket.IO Redis adapter attached for horizontal scaling');
+        } catch (err) {
+            logger.warn(`Socket.IO Redis adapter skipped (using in-memory): ${err.message}`);
+        }
+    }
+
+    io.on('connection', (socket) => {
+        const userId = socket.user?.userId;
+        const role = socket.user?.role;
+        logger.info(`Socket client connected: ${socket.id} (${role || 'UNKNOWN'}:${userId || '-'})`);
+
+        // Auto-join role rooms (lets us emit without a custom join).
+        if (userId && role) {
+            if (role === 'RESTAURANT') socket.join(roomNames.restaurant(userId));
+            if (role === 'USER') socket.join(roomNames.user(userId));
+            if (role === 'DELIVERY_PARTNER') {
+                socket.join(roomNames.delivery(userId));
+                logDeliverySocket('Auto-joined delivery room on connect', {
+                    socketId: socket.id,
+                    deliveryPartnerId: String(userId),
+                    room: roomNames.delivery(userId),
+                });
+            }
+            if (role === 'ADMIN') {
+                socket.join(roomNames.admin());
+                void joinAdminOrderRooms(socket, userId);
+            }
+        }
+
+        // ─── Chat: typing indicator relay (messages themselves go over REST) ───
+        socket.on('chat:typing', (data) => {
+            const toRole = String(data?.toRole || '').toUpperCase();
+            const toId = data?.toId;
+            let room = null;
+            if (toRole === 'ADMIN') room = roomNames.admin();
+            else if (toRole === 'USER') room = roomNames.user(toId);
+            else if (toRole === 'RESTAURANT') room = roomNames.restaurant(toId);
+            else if (toRole === 'DELIVERY_PARTNER') room = roomNames.delivery(toId);
+            if (!room) return;
+            socket.to(room).emit('chat:typing', {
+                conversationId: data?.conversationId || null,
+                fromRole: role,
+                fromId: String(userId),
+                typing: Boolean(data?.typing)
+            });
+        });
+
+        // Explicit join (used by existing restaurant client hook).
+        socket.on('join-restaurant', (restaurantId) => {
+            if (socket.user?.role !== 'RESTAURANT') return;
+            // Security: only join your own restaurant room.
+            if (String(socket.user?.userId) !== String(restaurantId)) return;
+            socket.join(roomNames.restaurant(restaurantId));
+            socket.emit('restaurant-room-joined', { room: roomNames.restaurant(restaurantId), restaurantId: String(restaurantId) });
+        });
+
+        // Explicit join (used by existing delivery client hook).
+        socket.on('join-delivery', (deliveryPartnerId) => {
+            if (socket.user?.role !== 'DELIVERY_PARTNER') {
+                logDeliverySocket('Rejected join-delivery for non-delivery role', {
+                    socketId: socket.id,
+                    role: socket.user?.role || 'UNKNOWN',
+                    requestedDeliveryPartnerId: String(deliveryPartnerId || ''),
+                });
+                return;
+            }
+            // Security: only join your own delivery room.
+            if (String(socket.user?.userId) !== String(deliveryPartnerId)) {
+                logDeliverySocket('Rejected join-delivery due to user mismatch', {
+                    socketId: socket.id,
+                    authDeliveryPartnerId: String(socket.user?.userId || ''),
+                    requestedDeliveryPartnerId: String(deliveryPartnerId || ''),
+                });
+                return;
+            }
+            const room = roomNames.delivery(deliveryPartnerId);
+            socket.join(room);
+            const roomSize = io?.sockets?.adapter?.rooms?.get(room)?.size || 0;
+            logDeliverySocket('Delivery room joined', {
+                socketId: socket.id,
+                deliveryPartnerId: String(deliveryPartnerId),
+                room,
+                roomSize,
+            });
+            socket.emit('delivery-room-joined', { room, deliveryPartnerId: String(deliveryPartnerId) });
+        });
+
+        // ─── Live Tracking Events ───────────────────────────────────────
+
+        // Users / restaurants subscribe to an order's real-time tracking room.
+        socket.on('join-tracking', async (orderId) => {
+            if (!orderId) return;
+            const role = socket.user?.role;
+            if (role !== 'USER' && role !== 'RESTAURANT' && role !== 'DELIVERY_PARTNER') return;
+
+            // Role alone is NOT authorization: this room carries the rider's live GPS, so
+            // only the customer, the restaurant, and the assigned rider for THIS order may
+            // subscribe. Without this any authenticated user could track any order.
+            try {
+                const [{ prisma }, { buildOrderIdentityFilter }] = await Promise.all([
+                    import('./prisma.js'),
+                    import('../modules/food/orders/services/order.helpers.js'),
+                ]);
+                const identity = buildOrderIdentityFilter(orderId);
+                if (!identity) return;
+                const order = await prisma.foodOrder.findFirst({
+                    where: identity,
+                    select: { userId: true, restaurantId: true, dispatchDeliveryPartnerId: true },
+                });
+                if (!order) return;
+
+                const me = String(userId || '');
+                const isParticipant =
+                    (role === 'USER' && String(order.userId || '') === me) ||
+                    (role === 'RESTAURANT' && String(order.restaurantId || '') === me) ||
+                    (role === 'DELIVERY_PARTNER' &&
+                        String(order.dispatchDeliveryPartnerId || '') === me);
+
+                if (!isParticipant) {
+                    logger.warn(
+                        `join-tracking denied: ${role}:${me} is not a participant of order ${orderId}`,
+                    );
+                    return;
+                }
+            } catch (err) {
+                logger.warn(`join-tracking authorization failed: ${err?.message || err}`);
+                return;
+            }
+
+            const room = roomNames.tracking(orderId);
+            socket.join(room);
+            logger.info(`Socket ${socket.id} (${role}:${userId}) joined tracking room ${room}`);
+            socket.emit('tracking-room-joined', { room, orderId: String(orderId) });
+        });
+
+        // Delivery partner emits live GPS location for an active order.
+        // Broadcasts to the tracking room so users see the bike move in real time.
+        const _lastLocationBroadcast = {};
+        socket.on('update-location', async (data) => {
+            if (socket.user?.role !== 'DELIVERY_PARTNER') return;
+            if (!data || !data.orderId) return;
+
+            const lat = Number(data.lat);
+            const lng = Number(data.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+
+            const heading = Number.isFinite(Number(data.heading)) ? Number(data.heading) : 0;
+            const speed = Number.isFinite(Number(data.speed)) ? Number(data.speed) : 0;
+            const accuracy = Number.isFinite(Number(data.accuracy)) ? Number(data.accuracy) : null;
+
+            const now = Date.now();
+
+            // Drop fixes a bike could not have produced -- a 150 m accuracy
+            // reading under a flyover, a jump across town in two seconds --
+            // before they reach the customer's map, Firebase or the database.
+            // Checked before the throttle, so a rejected fix never uses up a
+            // broadcast slot that the next good one needs.
+            const verdict = riderFixes.accept(data.orderId, { lat, lng, accuracy, at: now });
+            if (!verdict.ok) {
+                logger.debug(`Rider fix dropped for order ${data.orderId}: ${verdict.reason} (accuracy ${accuracy ?? 'n/a'})`);
+                return;
+            }
+
+            // Throttle: max one broadcast per 2s per orderId
+            const lastTS = _lastLocationBroadcast[data.orderId] || 0;
+            if (now - lastTS < 2000) return;
+            _lastLocationBroadcast[data.orderId] = now;
+
+            const payload = {
+                orderId: String(data.orderId),
+                deliveryPartnerId: String(userId),
+                lat,
+                lng,
+                boy_lat: lat, // Add boy_lat/lng for compatibility
+                boy_lng: lng,
+                riderLocation: [lat, lng], // Add array format for safety
+                heading,
+                speed,
+                accuracy,
+                timestamp: now
+            };
+
+            logDeliverySocket('Location update received', {
+                socketId: socket.id,
+                deliveryPartnerId: String(userId),
+                orderId: String(data.orderId),
+                lat,
+                lng,
+                status: data.status || 'on_the_way',
+            });
+
+            // Broadcast to tracking room (all users watching this order)
+            const trackingRoom = roomNames.tracking(data.orderId);
+            socket.to(trackingRoom).emit('location-update', payload);
+
+            // Also emit to the specific user room if userId is provided
+            if (data.userId) {
+                socket.to(roomNames.user(data.userId)).emit('location-update', payload);
+            }
+
+            if (data.restaurantId) {
+                socket.to(roomNames.restaurant(data.restaurantId)).emit('location-update', payload);
+            }
+
+            // ─── Scalable Persistence (BullMQ + Redis "Hot" Buffering) ───
+            try {
+                const { getTrackingQueue } = await import('../queues/index.js');
+                const { getRedisClient } = await import('../config/redis.js');
+                const trackingQueue = getTrackingQueue();
+                const redis = getRedisClient();
+
+                if (trackingQueue && redis) {
+                    const coordString = JSON.stringify({ lat, lng, timestamp: now });
+                    
+                    // 1. Immediately buffer the newest location in high-speed Redis Hash (HOT storage)
+                    await Promise.all([
+                        redis.hSet('rider:locations:hot', String(userId), coordString),
+                        redis.hSet('order:locations:hot', String(data.orderId), coordString)
+                    ]);
+
+                    // 2. Schedule a deferred MongoDB write (COLD storage)
+                    // jobId debulks updates: if a job is already waiting, BullMQ ignores the new add()
+                    // Delay (30s) ensures we don't spam MongoDB while the rider is moving fast
+                    const syncJobId = `sync:loc:${data.orderId}`;
+                    trackingQueue.add('sync-hot-locations', 
+                        { userId, orderId: data.orderId }, 
+                        { jobId: syncJobId, delay: 30000, removeOnComplete: true }
+                    ).catch(e => logger.error(`BullMQ sync schedule failed: ${e.message}`));
+                } else if (riderFixes.shouldSave(data.orderId, now)) {
+                    // No queue to do it: save directly, a few times a minute.
+                    saveRiderPosition({ orderId: data.orderId, riderId: userId, lat, lng, at: new Date(now) })
+                        .catch((e) => logger.error(`Rider position save failed: ${e.message}`));
+                }
+            } catch (err) {
+                logger.error(`Real-time persistence layer error: ${err.message}`);
+            }
+
+            // ─── Firebase Realtime Database Sync (Cost Optimization) ───
+            try {
+                const db = getFirebaseDB();
+                if (db) {
+                    // 1. Update order-specific tracking node
+                    const orderRef = db.ref(`active_orders/${data.orderId}`);
+                    orderRef.update({
+                        lat,
+                        lng,
+                        boy_lat: lat,
+                        boy_lng: lng,
+                        heading,
+                        speed,
+                        accuracy,
+                        last_updated: now,
+                        status: data.status || 'on_the_way'
+                    }).catch(e => logger.error(`Firebase orderRef update error: ${e.message}`));
+
+                    // 2. Update global delivery boy status node
+                    const boyRef = db.ref(`delivery_boys/${userId}`);
+                    boyRef.update({
+                        lat,
+                        lng,
+                        accuracy,
+                        last_updated: now,
+                        status: 'online'
+                    }).catch(e => logger.error(`Firebase boyRef update error: ${e.message}`));
+                }
+            } catch (err) {
+                // Silently skip if Firebase not initialized yet
+                logger.debug(`Firebase RTDB sync skipped: ${err.message}`);
+            }
+
+            // ─── Peak-time batching: the same bike carries the rider's other orders ───
+            // The app reports one order at a time; every other order the rider
+            // holds gets the same fix so its customer sees the bike move too.
+            try {
+                const siblings = (await activeOrderIdsForRider(socket, userId)).filter(
+                    (id) => id !== String(data.orderId),
+                );
+                if (!siblings.length) return;
+                const { getRedisClient } = await import('../config/redis.js');
+                const redis = getRedisClient();
+                const db = getFirebaseDB();
+                const coordString = JSON.stringify({ lat, lng, timestamp: now });
+                for (const siblingId of siblings) {
+                    socket.to(roomNames.tracking(siblingId)).emit('location-update', { ...payload, orderId: siblingId });
+                    if (redis) redis.hSet('order:locations:hot', siblingId, coordString).catch(() => {});
+                    if (riderFixes.shouldSave(siblingId, now)) {
+                        saveRiderPosition({ orderId: siblingId, riderId: userId, lat, lng, at: new Date(now) })
+                            .catch((e) => logger.error(`Rider position save failed: ${e.message}`));
+                    }
+                    if (db) {
+                        db.ref(`active_orders/${siblingId}`)
+                            .update({ lat, lng, boy_lat: lat, boy_lng: lng, heading, speed, accuracy, last_updated: now })
+                            .catch((e) => logger.error(`Firebase orderRef update error: ${e.message}`));
+                    }
+                }
+            } catch (err) {
+                logger.debug(`Sibling order location fan-out skipped: ${err.message}`);
+            }
+        });
+
+        // Leave tracking room on user navigation away.
+        socket.on('leave-tracking', (orderId) => {
+            if (!orderId) return;
+            const room = roomNames.tracking(orderId);
+            socket.leave(room);
+        });
+
+        socket.on('disconnect', () => {
+            logger.info(`Socket client disconnected: ${socket.id}`);
+        });
+
+        // 🆕 Resync State on Reconnect
+        socket.on('resync', async () => {
+          try {
+            if (role === 'DELIVERY_PARTNER') {
+              logDeliverySocket('Resync requested', {
+                socketId: socket.id,
+                deliveryPartnerId: String(userId || ''),
+              });
+            }
+            const { resyncState } = await import('../modules/food/orders/services/order.service.js');
+            const state = await resyncState(userId, role);
+            if (state.activeOrder) {
+              const eventName = role === 'USER' ? 'order_state' : 'active_order';
+              socket.emit(eventName, state.activeOrder);
+              if (role === 'DELIVERY_PARTNER') {
+                logDeliverySocket('Resync emitted active order', {
+                  socketId: socket.id,
+                  deliveryPartnerId: String(userId || ''),
+                  orderId: String(
+                    state.activeOrder?.orderId ||
+                    state.activeOrder?.orderMongoId ||
+                    ''
+                  ),
+                  eventName,
+                });
+              }
+              
+              // Re-emit OTP if user is in drop phase
+              if (role === 'USER' && state.activeOrder.handoverOtp) {
+                socket.emit('delivery_drop_otp', {
+                  orderId: state.activeOrder.orderId,
+                  otp: state.activeOrder.handoverOtp,
+                  message: 'Share this OTP with your delivery partner.'
+                });
+              }
+            }
+            socket.emit('resync_complete', { timestamp: Date.now() });
+            if (role === 'DELIVERY_PARTNER') {
+              logDeliverySocket('Resync complete', {
+                socketId: socket.id,
+                deliveryPartnerId: String(userId || ''),
+                hasActiveOrder: Boolean(state.activeOrder),
+              });
+            }
+          } catch (err) {
+            logger.error(`Resync failed for ${role}:${userId} — ${err.message}`);
+          }
+        });
+    });
+
+    logger.info('Socket.IO infrastructure initialized');
+    return io;
+};
+
+/**
+ * Returns the initialized Socket.IO instance.
+ * @returns {Server | null}
+ */
+/**
+ * Socket.IO for a process with no socket server of its own -- the BullMQ
+ * worker and the scheduler.
+ *
+ * Without it getIO() was null there, so everything those processes emit was
+ * dropped: a rider's offer timing out, an order expiring, a stalled order
+ * cancelled. The admin panel only saw those changes on a manual refresh. This
+ * server listens on nothing; through the Redis adapter its broadcasts reach
+ * the clients connected to the socket process.
+ */
+export const initSocketEmitter = async () => {
+    if (io) return io;
+    if (!(config.redisEnabled && config.redisUrl)) {
+        logger.warn('Socket emitter not started: Redis is off, so live updates from this process are not sent');
+        return null;
+    }
+    try {
+        const { createAdapter } = await import('@socket.io/redis-adapter');
+        const { createClient } = await import('redis');
+        const pubClient = createClient({ url: config.redisUrl });
+        const subClient = pubClient.duplicate();
+        pubClient.on('error', (err) => logger.error(`Socket emitter Redis pub client: ${err.message}`));
+        subClient.on('error', (err) => logger.error(`Socket emitter Redis sub client: ${err.message}`));
+        await Promise.all([pubClient.connect(), subClient.connect()]);
+        const emitter = new Server();
+        emitter.adapter(createAdapter(pubClient, subClient));
+        io = emitter;
+        logger.info('Socket emitter ready: live updates from this process go out through Redis');
+    } catch (err) {
+        logger.warn(`Socket emitter not started: ${err.message}`);
+    }
+    return io;
+};
+
+export const getIO = () => {
+    if (!io) {
+        logger.warn('Socket.IO not initialized');
+    }
+    return io;
+};
+
+export const rooms = roomNames;

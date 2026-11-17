@@ -1,0 +1,886 @@
+import { assertOrderingNotPaused } from '../../admin/services/businessSettings.service.js';
+import { prisma } from '../../../../config/prisma.js';
+import { isId } from '../../../../utils/helpers.js';
+import { ValidationError } from '../../../../core/auth/errors.js';
+import {
+  calculateDistanceKm,
+  normalizeDeliveryAddress,
+  parseGeoPoint,
+} from '../../shared/geo.utils.js';
+import { fetchDrivingRoute } from '../utils/googleMaps.js';
+import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
+import { getRestaurantAvailabilityStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
+import { resolveOrderCartItems } from '../helpers/order-cart-items.helper.js';
+import { checkOfferEligibility, computeOfferDiscount } from '../../shared/offerRules.js';
+import { getTipSettings } from '../../admin/services/tip.service.js';
+import { assertItemQuantities, loadOrderLimits } from '../../shared/orderLimits.js';
+
+/**
+ * Whether a tip given at checkout is allowed. Pure, so it is tested without a
+ * database; the after-delivery path applies the same two rules.
+ */
+export const checkCheckoutTip = (amount, settings = {}) => {
+  const tip = Number(amount) || 0;
+  if (tip <= 0) return { ok: true };
+  if (settings.tipsEnabled === false) return { ok: false, message: 'Tipping is switched off' };
+  const ceiling = Number(settings.tipMaxAmount);
+  if (Number.isFinite(ceiling) && ceiling > 0 && tip > ceiling) {
+    return { ok: false, message: `The most you can tip is \u20b9${ceiling}` };
+  }
+  return { ok: true };
+};
+
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+/**
+ * GST on the delivery fee: never charged.
+ *
+ * GST applies to the food only (client decision, admin issue #28). Neither the
+ * delivery fee nor the platform fee carries GST, whatever an old
+ * `deliveryFeeGstRate` left in the fee settings says. The column and
+ * `deliveryFeeGst` on orders stay so past bills still read correctly.
+ */
+export function resolveDeliveryFeeGstRate() {
+  return 0;
+}
+
+export function computeDeliveryFeeGst(deliveryFee, ratePercent = 0) {
+  const base = Math.max(0, Number(deliveryFee) || 0);
+  const rate = Number(ratePercent);
+  if (base <= 0 || !Number.isFinite(rate) || rate <= 0) return 0;
+  return round2((base * rate) / 100);
+}
+
+const applyDeliveryModePricing = (pricing, deliveryMode, quickSurcharge = 0) => {
+  const surcharge = Math.max(0, Number(quickSurcharge) || 0);
+  const mode = deliveryMode === 'quick' ? 'quick' : 'basic';
+  if (mode !== 'quick' || surcharge <= 0) {
+    return {
+      ...pricing,
+      deliveryMode: mode,
+      quickDeliveryFee: 0,
+    };
+  }
+  const platformFee = round2((Number(pricing.platformFee) || 0) + surcharge);
+  const total = round2((Number(pricing.total) || 0) + surcharge);
+  return {
+    ...pricing,
+    platformFee,
+    total,
+    deliveryMode: mode,
+    quickDeliveryFee: surcharge,
+  };
+};
+
+export async function loadRestaurantForOrdering(restaurantId) {
+  if (!isId(restaurantId)) {
+    throw new ValidationError('Restaurant not found');
+  }
+
+  const doc = await prisma.foodRestaurant.findUnique({
+    where: { id: String(restaurantId) },
+    select: {
+      id: true,
+      status: true,
+      restaurantName: true,
+      zoneId: true,
+      // Flat lat/lng rather than a nested location object — parseGeoPoint reads
+      // these off the entity directly, so distance calculations are unchanged.
+      latitude: true,
+      longitude: true,
+      isAcceptingOrders: true,
+      outsideHoursOverride: true,
+      openingTime: true,
+      closingTime: true,
+      openDays: true,
+      // The card advertises "Free delivery above ₹N"; pricing has to honour it.
+      freeDeliveryAbove: true,
+      // This restaurant's own delivery radius, if it overrides the platform's.
+      deliveryRadiusKm: true,
+    },
+  });
+
+  if (!doc) throw new ValidationError('Restaurant not found');
+  if (doc.status !== 'approved') throw new ValidationError('Restaurant not available');
+
+  const [withTimings] = await attachOutletTimingsToRestaurants([doc], {
+    useDefaults: false,
+  });
+  return withTimings;
+}
+
+export function assertRestaurantOpenForOrdering(restaurant, at = new Date()) {
+  const availability = getRestaurantAvailabilityStatus(restaurant, at);
+  if (availability.isOpen) return availability;
+
+  if (availability.reason === 'not-accepting-orders') {
+    throw new ValidationError('Restaurant is currently offline. Please try again later.');
+  }
+
+  throw new ValidationError('Restaurant is currently closed. Please try again later.');
+}
+
+export const ROAD_CAP_FACTOR = 1.5;
+
+/**
+ * Which distance to charge on: the driving distance, but never more than 1.5x
+ * the straight line.
+ *
+ * Google's driving route can be far longer than the trip really is -- one-way
+ * streets, a detour to a bridge, a pin dropped on the wrong side of a road. A
+ * Bhiwandi order 0.48 km away was charged for 2.06 km. Real detours are still
+ * paid for, 4x surprises are not. This used to be a Fee Settings choice (road /
+ * capped / straight, and the cap); it was removed, and any value still saved
+ * there is ignored. Falls back to whichever distance is known.
+ */
+export function chooseChargedDistanceKm({ roadKm, straightKm } = {}) {
+  const road = Number.isFinite(Number(roadKm)) && roadKm !== null ? Number(roadKm) : null;
+  const straight = Number.isFinite(Number(straightKm)) && straightKm !== null ? Number(straightKm) : null;
+
+  if (road === null) return straight;
+  if (straight === null) return road;
+  return Math.round(Math.min(road, straight * ROAD_CAP_FACTOR) * 100) / 100;
+}
+
+/**
+ * Single source of truth for restaurant ↔ customer trip distance.
+ * Prefer Google driving/road km (matches delivery partner Rest→User UI);
+ * fall back to Haversine when Directions is unavailable.
+ */
+export async function getDeliveryDistanceKm(restaurant, deliveryAddress) {
+  const straightLineKm = calculateDistanceKm(restaurant, deliveryAddress);
+
+  const restaurantPoint = parseGeoPoint(restaurant);
+  const customerPoint = parseGeoPoint(deliveryAddress);
+  if (!restaurantPoint || !customerPoint) {
+    return straightLineKm;
+  }
+
+  try {
+    const route = await fetchDrivingRoute(
+      { lat: restaurantPoint.lat, lng: restaurantPoint.lng },
+      { lat: customerPoint.lat, lng: customerPoint.lng },
+    );
+    if (route?.distanceKm != null && Number.isFinite(Number(route.distanceKm))) {
+      return Number(route.distanceKm);
+    }
+  } catch {
+    // Fall through to Haversine.
+  }
+
+  return straightLineKm;
+}
+
+// Single money-rounding rule (2 decimals) so preview and charged totals always match.
+
+const deliveryFeeBands = (feeSettings = {}) =>
+  (Array.isArray(feeSettings.deliveryFeeRanges) ? feeSettings.deliveryFeeRanges : []).filter(
+    (range) => Number.isFinite(Number(range?.fee)) && Number(range.fee) >= 0,
+  );
+
+/**
+ * The fee to charge when the distance bands cannot decide.
+ *
+ * Configured bands always win now. The flat `deliveryFee` used to take priority
+ * over them, which is how a fee higher than every band ended up on carts whose
+ * distance was not known yet — a number no band would ever have produced. The
+ * flat fee is only a fallback for the case it was meant for: no bands set up at
+ * all.
+ *
+ * With bands present the cheapest one is the honest pre-address estimate; the
+ * real distance replaces it as soon as an address is picked.
+ */
+function resolveBaseDeliveryFee(feeSettings = {}) {
+  const bands = deliveryFeeBands(feeSettings);
+  if (bands.length > 0) {
+    return Math.min(...bands.map((range) => Number(range.fee)));
+  }
+
+  const flat = Number(feeSettings.deliveryFee);
+  return Number.isFinite(flat) && flat >= 0 ? flat : 0;
+}
+
+/**
+ * A trip longer than every configured band still has to be priced. Charging the
+ * cheapest band for it would undercharge the longest deliveries, so use the
+ * widest band — the same fallback calculateRiderEarning already uses for pay.
+ */
+/**
+ * What one band charges for a trip.
+ *
+ * `fee` is the price at the band's own start; `feePerKm` then accrues over the
+ * distance past that start, so "Rs 20 up to 2 km, Rs 5/km after" is two bands
+ * rather than eighteen, and 7.5 km costs 47.50 instead of being rounded up to
+ * the next whole-km band. A band with no rate is a flat fee, as all were.
+ *
+ * Rounded to paise because the rate times a fractional distance is binary
+ * floating point: 20 + 5 * (7.3 - 2) lands on 46.50000000000001.
+ */
+function bandFee(range = {}, distanceKm = null) {
+  const flat = Number(range.fee);
+  const perKm = Number(range.feePerKm || 0);
+  if (!Number.isFinite(flat)) return null;
+  if (!perKm || !Number.isFinite(distanceKm)) return flat;
+
+  const past = Math.max(0, Number(distanceKm) - Number(range.min ?? 0));
+  return Math.round((flat + perKm * past) * 100) / 100;
+}
+
+/**
+ * The band behind a fee, for the app's fee explainer: the fee is
+ * baseFee + perKm x (distance - bandMin), plus surgeFee while a surge runs.
+ */
+function bandDetails(band, feeSettings = {}) {
+  if (!band) return null;
+  return {
+    bandMin: Number(band.min),
+    bandMax: Number(band.max),
+    baseFee: Number(band.fee),
+    perKm: Number(band.feePerKm || 0),
+    surgeFee: Number(feeSettings.surgeFee) || 0,
+  };
+}
+
+function widestBandFee(feeSettings = {}, distanceKm = null) {
+  const bands = deliveryFeeBands(feeSettings);
+  if (bands.length === 0) return null;
+  const widest = [...bands].sort((a, b) => Number(a?.max ?? 0) - Number(b?.max ?? 0)).pop();
+  return bandFee(widest, distanceKm);
+}
+
+/**
+ * How far the platform actually delivers, in km.
+ *
+ * Taken from the widest configured band rather than a separate setting: the
+ * bands are the only place a price exists for a distance, so a trip past the
+ * last one is by definition a trip nobody has priced. Null when no bands are
+ * configured — then there is nothing to derive a limit from and no limit is
+ * enforced.
+ */
+export function serviceableRadiusKm(feeSettings = {}) {
+  const maxima = deliveryFeeBands(feeSettings)
+    .map((range) => Number(range?.max))
+    .filter((max) => Number.isFinite(max) && max > 0);
+  return maxima.length > 0 ? Math.max(...maxima) : null;
+}
+
+/**
+ * A stored radius as a usable number, or null for "not set".
+ *
+ * Non-positive counts as unset: the columns are Decimal, so an empty admin
+ * field can land as 0, and taking that literally would hide a restaurant from
+ * everyone rather than leave it on the platform default.
+ */
+const radiusValue = (value) => {
+  const km = Number(value);
+  return Number.isFinite(km) && km > 0 ? km : null;
+};
+
+/**
+ * Is a customer this far away inside the radius a restaurant delivers to?
+ *
+ * Two knobs, because one number cannot fit a dense metro and a highway town at
+ * once: the platform's `discoveryRadiusKm` applies to every restaurant, and a
+ * restaurant's own `deliveryRadiusKm` replaces it outright — including when it
+ * is the wider of the two, which is the whole point of an override. Both unset
+ * means no limit, which is how the platform behaved before the setting existed.
+ *
+ * The boundary itself is inside, so a radius of 10 km still serves the customer
+ * measured at exactly 10 km.
+ *
+ * An unknown distance passes: a cart with no address yet, or a restaurant with
+ * no coordinates, is not evidence of a long trip, and refusing on it would
+ * break checkouts that are simply not ready to be priced.
+ *
+ * Pure on purpose — both the discovery feed and order placement have to reach
+ * the same verdict, and this is the only place that decides it.
+ *
+ * @returns {{ withinRadius: boolean, limitKm: number|null }}
+ */
+export function checkDeliveryRadius({
+  distanceKm = null,
+  restaurantRadiusKm = null,
+  platformRadiusKm = null,
+} = {}) {
+  const limitKm = radiusValue(restaurantRadiusKm) ?? radiusValue(platformRadiusKm);
+  const distance = Number(distanceKm);
+
+  if (limitKm === null || !Number.isFinite(distance)) {
+    return { withinRadius: true, limitKm };
+  }
+  return { withinRadius: distance <= limitKm, limitKm };
+}
+
+/** The platform-wide delivery radius, or null when the admin set no limit. */
+export async function loadPlatformDeliveryRadiusKm() {
+  const settings = await prisma.foodBusinessSettings.findFirst({
+    select: { discoveryRadiusKm: true },
+  });
+  return settings?.discoveryRadiusKm ?? null;
+}
+
+/** The band a distance falls in, or null. The last band includes its upper bound. */
+function findFeeRange(ranges, distanceKm) {
+  if (!Array.isArray(ranges) || ranges.length === 0 || !Number.isFinite(distanceKm)) {
+    return null;
+  }
+
+  const sorted = [...ranges].sort((a, b) => Number(a.min) - Number(b.min));
+  for (let i = 0; i < sorted.length; i += 1) {
+    const range = sorted[i] || {};
+    const min = Number(range.min);
+    const max = Number(range.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) continue;
+
+    const isLast = i === sorted.length - 1;
+    const inRange = isLast
+      ? distanceKm >= min && distanceKm <= max
+      : distanceKm >= min && distanceKm < max;
+
+    if (inRange) return range;
+  }
+
+  return null;
+}
+
+function matchFeeRange(ranges, distanceKm, pickValue) {
+  const range = findFeeRange(ranges, distanceKm);
+  if (!range) return null;
+  const value = pickValue(range);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Distance bands are their own table now, but every pricing function below reads
+ * them as `feeSettings.deliveryFeeRanges` — an array of
+ * `{ min, max, fee, deliveryBoyBasePay, deliveryBoyPerKm }`.
+ *
+ * Rebuilding that shape here keeps the pricing logic (and its tests) untouched
+ * while the storage gains real constraints. Ordered by lower bound so
+ * matchFeeRange's "last band is the widest" assumption holds without re-sorting.
+ */
+const toFeeRanges = (bands = []) =>
+  bands.map((band) => ({
+    id: band.id,
+    min: Number(band.minDistanceKm),
+    max: Number(band.maxDistanceKm),
+    fee: Number(band.fee),
+    feePerKm: Number(band.feePerKm || 0),
+    deliveryBoyBasePay: Number(band.deliveryBoyBasePay),
+    deliveryBoyPerKm: Number(band.deliveryBoyPerKm),
+  }));
+
+const FEE_QUERY = {
+  orderBy: { createdAt: 'desc' },
+  include: { deliveryFeeBands: { orderBy: { minDistanceKm: 'asc' } } },
+};
+
+/**
+ * Active fee settings, preferring a row scoped to the order's zone.
+ *
+ * Fees were global: one active row priced every trip in the country. A zone
+ * row overrides it, and a zone with no row of its own falls back to the global
+ * one -- so adding zone pricing never leaves a zone unpriced, and deployments
+ * that never configure a zone keep the exact behaviour they had.
+ *
+ * The override is per field, not wholesale. A zone row is created the moment an
+ * admin saves anything for that zone, and everything they did not fill in is
+ * null on it. Taking the row as-is made those nulls read as "not configured",
+ * so setting only a platform fee for a zone silently made delivery free there.
+ * A blank field means "inherit", which is what the screen says it means.
+ *
+ * The cost is that a zone cannot switch a fee off that the default has on --
+ * blank is inheritance, not zero. Charging nothing by accident is the worse of
+ * the two, and a zone that genuinely wants no delivery fee can set it to 0.
+ */
+export async function loadActiveFeeSettings(zoneId = null) {
+  const zoned = isId(zoneId)
+    ? await prisma.foodFeeSettings.findFirst({
+        where: { isActive: true, zoneId: String(zoneId) },
+        ...FEE_QUERY,
+      })
+    : null;
+
+  const global =
+    (await prisma.foodFeeSettings.findFirst({
+      where: { isActive: true, zoneId: null },
+      ...FEE_QUERY,
+    })) ||
+    // Deployments that predate zone scoping have a single active row with a
+    // null zoneId, which the query above already finds. This last look covers
+    // the case where every row happens to be zone-scoped and none matched.
+    (await prisma.foodFeeSettings.findFirst({ where: { isActive: true }, ...FEE_QUERY }));
+
+  const feeDoc = zoned || global;
+  if (!feeDoc) {
+    return { deliveryFee: 0, deliveryFeeRanges: [], platformFee: 0, gstRate: 0, zoneId: null };
+  }
+
+  const inherit = (field) =>
+    feeDoc[field] === null || feeDoc[field] === undefined ? global?.[field] ?? null : feeDoc[field];
+
+  // One read per request, the same way the bands are read: the rules are few
+  // and the alternative is a query inside a pure pricing function.
+  const surgeRules = await prisma.foodSurgeRule.findMany({
+    where: {
+      isActive: true,
+      OR: [{ zoneId: null }, ...(isId(zoneId) ? [{ zoneId: String(zoneId) }] : [])],
+    },
+    select: { surgeFee: true, startAt: true, endAt: true, isActive: true },
+  });
+
+  const ownRanges = toFeeRanges(feeDoc.deliveryFeeBands);
+  // No bands of its own means the zone did not override the ladder either.
+  const ranges = ownRanges.length > 0 ? ownRanges : toFeeRanges(global?.deliveryFeeBands);
+
+  return {
+    ...feeDoc,
+    deliveryFee: inherit('deliveryFee'),
+    platformFee: inherit('platformFee'),
+    quickDeliveryFee: inherit('quickDeliveryFee'),
+    gstRate: inherit('gstRate'),
+    deliveryFeeGstRate: inherit('deliveryFeeGstRate'),
+    deliveryDistanceMode: inherit('deliveryDistanceMode'),
+    roadDistanceCapFactor: inherit('roadDistanceCapFactor'),
+    deliveryFeeRanges: ranges,
+    /// Rupees the running surge adds to a charged delivery fee. 0 when nothing
+    /// is running, which is the normal state.
+    surgeFee: resolveSurgeFee(surgeRules),
+    /// Which row actually priced this, so callers can report it.
+    resolvedFromZone: Boolean(zoned),
+  };
+}
+
+/**
+ * The surge running for a zone at a moment, in rupees.
+ *
+ * A rule with no window is on until switched off -- the immediate case. A rule
+ * with one applies only inside it. Rules for a zone and rules for everywhere
+ * both count, and the largest wins rather than the sum: two overlapping rules
+ * are an admin mistake, and charging their total would surprise a customer far
+ * more than charging the higher one.
+ */
+/**
+ * A fee with the surge already on it, rounded to the whole rupee.
+ *
+ * loadActiveFeeSettings resolves the amount once per request, so this only
+ * adds it -- every path that charges for delivery goes through here, and one
+ * that forgot would quietly undercharge. The per-km rate leaves paise
+ * (Rs 75.70); the bill shows whole rupees, so the rounding lives here too.
+ */
+const withSurge = (fee, feeSettings = {}) => {
+  if (!Number.isFinite(fee)) return fee;
+  const surge = Number(feeSettings.surgeFee) || 0;
+  return Math.round(Number(fee) + Math.max(0, surge));
+};
+
+export function resolveSurgeFee(rules = [], at = new Date()) {
+  const now = at instanceof Date ? at.getTime() : new Date(at).getTime();
+  if (!Array.isArray(rules) || !Number.isFinite(now)) return 0;
+
+  const live = rules.filter((rule) => {
+    if (!rule || rule.isActive === false) return false;
+    if (rule.startAt && new Date(rule.startAt).getTime() > now) return false;
+    if (rule.endAt && new Date(rule.endAt).getTime() < now) return false;
+    return Number(rule.surgeFee) > 0;
+  });
+
+  return live.reduce((most, rule) => Math.max(most, Number(rule.surgeFee) || 0), 0);
+}
+
+export function resolveUserDeliveryFee(
+  feeSettings = {},
+  { subtotal = 0, distanceKm = null, freeDeliveryAbove = null } = {},
+) {
+  const ranges = Array.isArray(feeSettings.deliveryFeeRanges)
+    ? feeSettings.deliveryFeeRanges
+    : [];
+
+  // The restaurant's own free-delivery threshold wins over every band. It is
+  // checked here rather than at the call site because this is the one function
+  // every quote and every placed order routes through, so the discovery card's
+  // promise and the final bill cannot drift apart.
+  // Not `Number(freeDeliveryAbove)` — `Number(null)` is 0, so an unset
+  // threshold read as "free above ₹0" and made every delivery free.
+  const threshold = freeDeliveryAbove == null ? NaN : Number(freeDeliveryAbove);
+  if (Number.isFinite(threshold) && Number(subtotal) >= threshold) {
+    // Free delivery stays free. Adding surge here would charge for a delivery
+    // the restaurant has just promised to give away.
+    return {
+      deliveryFee: 0,
+      distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null,
+      source: 'free_delivery_threshold',
+    };
+  }
+
+  if (ranges.length > 0 && Number.isFinite(distanceKm)) {
+    const band = findFeeRange(ranges, distanceKm);
+    const matchedFee = band ? bandFee(band, distanceKm) : null;
+    if (Number.isFinite(matchedFee)) {
+      return {
+        deliveryFee: withSurge(matchedFee, feeSettings),
+        distanceKm: Number(distanceKm.toFixed(2)),
+        source: 'distance',
+        band: bandDetails(band, feeSettings),
+      };
+    }
+  }
+
+  // Distance known but past the last band — price it as the longest band.
+  if (Number.isFinite(distanceKm)) {
+    const overRangeFee = widestBandFee(feeSettings, distanceKm);
+    if (overRangeFee != null) {
+      const widest = [...deliveryFeeBands(feeSettings)]
+        .sort((a, b) => Number(a?.max ?? 0) - Number(b?.max ?? 0))
+        .pop();
+      return {
+        deliveryFee: withSurge(overRangeFee, feeSettings),
+        distanceKm: Number(distanceKm.toFixed(2)),
+        source: 'distance_over_range',
+        band: bandDetails(widest, feeSettings),
+      };
+    }
+  }
+
+  const fallbackFee = resolveBaseDeliveryFee(feeSettings);
+  return {
+    deliveryFee: withSurge(fallbackFee, feeSettings),
+    distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null,
+    source: Number.isFinite(distanceKm) ? 'default_unmatched_range' : 'default',
+  };
+}
+
+export function calculateRiderEarning(feeSettings = {}, distanceKm) {
+  const distance = Number(distanceKm);
+  if (!Number.isFinite(distance) || distance < 0) return 0;
+
+  // A floor under the whole calculation: a one-kilometre trip priced per km
+  // earned a rider almost nothing, and no rider accepts that.
+  const rawFloor = Number(feeSettings?.riderMinPayPerTrip);
+  const floor = Number.isFinite(rawFloor) && rawFloor > 0 ? Math.round(rawFloor) : 0;
+  const atLeastFloor = (amount) => Math.max(floor, amount);
+
+  const ranges = Array.isArray(feeSettings.deliveryFeeRanges)
+    ? feeSettings.deliveryFeeRanges
+    : [];
+  if (ranges.length === 0) return atLeastFloor(0);
+
+  // The same shape as the customer's fee (bandFee): base pay at the band's
+  // start, plus the per-km rate for every km past that start. It used to be
+  // base pay OR per-km times the whole trip, so ₹30/km on a 1.5–5 km band paid
+  // ₹147 for 4.9 km while the next band's flat ₹35 paid less for 15 km.
+  const payFor = (range) => {
+    const basePay = Number(range?.deliveryBoyBasePay || 0);
+    const perKm = Number(range?.deliveryBoyPerKm || 0);
+    const past = Math.max(0, distance - Number(range?.min ?? 0));
+    return basePay + perKm * past;
+  };
+
+  const matched = matchFeeRange(ranges, distance, payFor);
+  // A matched band is authoritative — including an explicit 0 — but never
+  // pays less than the floor.
+  if (matched != null && Number.isFinite(matched)) return atLeastFloor(Math.round(matched));
+
+  // No band covers this distance. The customer is still charged (resolveUserDeliveryFee
+  // falls back to the base fee), so paying the rider 0 here would mean unpaid work on a
+  // real delivery whenever the bands don't span the dispatch radius. Fall back to the
+  // widest configured band instead of silently zeroing the payout.
+  const widest = [...ranges].sort(
+    (a, b) => Number(a?.max ?? 0) - Number(b?.max ?? 0),
+  )[ranges.length - 1];
+  const fallback = payFor(widest);
+  return atLeastFloor(Number.isFinite(fallback) ? Math.round(fallback) : 0);
+}
+
+/**
+ * The address the trip should be priced against.
+ *
+ * Order creation passes a full `deliveryAddress`, but the checkout preview only
+ * ever sends `deliveryAddressId`, and the cart summary sends neither — nothing
+ * resolved either, so `distanceKm` came out null on every preview and the
+ * distance bands were skipped entirely in favour of the flat fallback fee. The
+ * customer saw one delivery charge at checkout and was billed another on
+ * placing the order.
+ *
+ * An explicitly chosen address wins even when it has no coordinates: pricing a
+ * different address than the one the customer picked would be worse than
+ * falling back to the flat fee.
+ */
+async function resolveDeliveryAddress(userId, dto) {
+  if (parseGeoPoint(dto.deliveryAddress)) return dto.deliveryAddress;
+  if (!isId(userId)) return dto.deliveryAddress;
+
+  // Addresses are their own table now; the default one sorts first so the
+  // fallback below picks it without a second pass.
+  const addresses = await prisma.userAddress.findMany({
+    where: { userId: String(userId) },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+  });
+  if (addresses.length === 0) return dto.deliveryAddress;
+
+  const wantedId = String(dto.deliveryAddressId || '').trim();
+  if (wantedId) {
+    // A specific address was asked for (any saved one, e.g. a receiver's for
+    // an order for someone else). Price that one or refuse -- quietly falling
+    // back to the default address quoted the wrong distance and fee.
+    const chosen = addresses.find((entry) => entry.id === wantedId);
+    if (!chosen) throw new ValidationError('That delivery address was not found. Please choose it again.');
+    return chosen;
+  }
+  return addresses[0] || dto.deliveryAddress;
+}
+
+export async function calculateOrderPricing(userId, dto, options = {}) {
+  const at = options.at instanceof Date ? options.at : new Date();
+  // The admin's cap on one dish, for the quote and for the order (createOrder
+  // prices through here too).
+  assertItemQuantities(dto?.items, await loadOrderLimits());
+  const restaurant =
+    options.restaurant || (await loadRestaurantForOrdering(dto.restaurantId));
+
+  if (!options.skipAvailabilityCheck) {
+    assertRestaurantOpenForOrdering(restaurant, at);
+  }
+
+  const deliveryAddress = normalizeDeliveryAddress(
+    await resolveDeliveryAddress(userId, dto),
+  );
+
+  // Ordering paused by the admin, everywhere or in this restaurant's zone.
+  // Skipped with the availability check: an order already paid for and only
+  // being confirmed must go through.
+  if (!options.skipAvailabilityCheck) {
+    await assertOrderingNotPaused([restaurant?.zoneId, deliveryAddress?.zoneId]);
+  }
+
+  const resolvedItems = await resolveOrderCartItems(dto.restaurantId, dto.items);
+  const items = resolvedItems.map((item) => ({
+    ...item,
+    price: Number(item.price) || 0,
+    quantity: Number(item.quantity) || 1,
+  }));
+  const subtotal = round2(
+    items.reduce(
+      (sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1),
+      0,
+    ),
+  );
+
+  // Zone comes from the restaurant, matching how an order records its zone
+  // (order.service.js falls back to restaurant.zoneId), so the quote a
+  // customer sees and the price they are charged resolve the same fee row.
+  const pricingZoneId = dto?.zoneId || restaurant?.zoneId || null;
+  const feeSettings = await loadActiveFeeSettings(pricingZoneId);
+
+  const packagingFee = 0;
+  const platformFee = Number(feeSettings.platformFee || 0);
+
+  const straightLineKm = calculateDistanceKm(restaurant, deliveryAddress);
+  const drivingKm = await getDeliveryDistanceKm(restaurant, deliveryAddress);
+  // The distance the fee, the radius checks and the rider's pay all use --
+  // and the one the app shows, so the charge always matches the distance.
+  let distanceKm = chooseChargedDistanceKm({
+    roadKm: drivingKm,
+    straightKm: straightLineKm,
+  });
+
+  // Nothing stopped a customer ordering from a restaurant on the other side of
+  // the country — one live order ran 999 km from a Punjab kitchen to an Indore
+  // address, priced off the end of the bands. Refuse the order rather than
+  // quote a fee for a delivery that cannot happen.
+  //
+  // Skipped when the distance is unknown (no address yet, or a restaurant with
+  // no coordinates): an unknown distance is not evidence of a long one, and
+  // blocking on it would break carts that are simply not ready to be priced.
+  const radiusKm = serviceableRadiusKm(feeSettings);
+  if (Number.isFinite(distanceKm) && radiusKm != null && distanceKm > radiusKm) {
+    throw new ValidationError(
+      `${restaurant.restaurantName || 'This restaurant'} is ${distanceKm.toFixed(
+        1,
+      )} km away and only delivers within ${radiusKm} km. Please choose a closer restaurant or a different address.`,
+    );
+  }
+
+  // The band-derived limit above says what the platform can price; this one says
+  // what an admin chose to cover, and the two are set independently. Enforced
+  // here as well as in the discovery feed because a cart outlives the listing it
+  // came from — and because the API can be called without ever opening the feed.
+  const coverage = checkDeliveryRadius({
+    distanceKm,
+    restaurantRadiusKm: restaurant.deliveryRadiusKm,
+    platformRadiusKm: await loadPlatformDeliveryRadiusKm(),
+  });
+  if (!coverage.withinRadius) {
+    throw new ValidationError(
+      `${restaurant.restaurantName || 'This restaurant'} is ${distanceKm.toFixed(
+        1,
+      )} km away and delivers within ${coverage.limitKm} km. Please choose a closer restaurant or a different address.`,
+    );
+  }
+
+  const deliveryFeeResult = resolveUserDeliveryFee(feeSettings, {
+    subtotal,
+    distanceKm,
+    freeDeliveryAbove: restaurant.freeDeliveryAbove,
+  });
+  const deliveryFee = round2(deliveryFeeResult.deliveryFee);
+  distanceKm = deliveryFeeResult.distanceKm ?? distanceKm;
+
+  let discount = 0;
+  let appliedCoupon = null;
+  // Why a code the customer typed did not apply, so the app can say "Add ₹40
+  // more" instead of silently showing no discount.
+  let couponError = null;
+  const codeRaw = dto.couponCode
+    ? String(dto.couponCode).trim().toUpperCase()
+    : "";
+
+  if (codeRaw) {
+    const now = new Date();
+    const offer = await prisma.foodOffer.findUnique({ where: { couponCode: codeRaw } });
+    const signedIn = isId(userId);
+
+    // Each count is fetched only when this offer has a rule that reads it.
+    const [usage, priorOrders, priorOrdersHere] = await Promise.all([
+      offer && signedIn && Number(offer.perUserLimit) > 0
+        ? prisma.foodOfferUsage.findUnique({
+          where: { offerId_userId: { offerId: offer.id, userId: String(userId) } },
+          select: { count: true },
+        })
+        : null,
+      offer && signedIn && (offer.customerScope === "first_time" || offer.isFirstOrderOnly === true)
+        ? prisma.foodOrder.count({ where: { userId: String(userId) } })
+        : 0,
+      offer && signedIn && offer.newToRestaurantOnly === true && isId(dto.restaurantId)
+        ? prisma.foodOrder.count({ where: { userId: String(userId), restaurantId: String(dto.restaurantId) } })
+        : 0,
+    ]);
+
+    const verdict = checkOfferEligibility({
+      offer,
+      subtotal,
+      restaurantId: dto.restaurantId,
+      userId: signedIn ? String(userId) : null,
+      now,
+      usageCount: Number(usage?.count) || 0,
+      priorOrders,
+      priorOrdersHere,
+    });
+
+    if (verdict.ok) {
+      discount = computeOfferDiscount(offer, subtotal);
+      appliedCoupon = { code: codeRaw, discount };
+    } else {
+      couponError = { code: verdict.code, message: verdict.message };
+    }
+  }
+
+  // GST is charged on the post-discount item value (discount is already clamped to <= subtotal).
+  // Rounded to paise, not whole rupees: 5% of ₹50 is ₹2.50, which used to bill as ₹3.
+  const gstRate = Number(feeSettings.gstRate || 0);
+  const tax =
+    Number.isFinite(gstRate) && gstRate > 0
+      ? round2(Math.max(0, subtotal - discount) * (gstRate / 100))
+      : 0;
+
+  const deliveryFeeGstRate = resolveDeliveryFeeGstRate(feeSettings);
+  const deliveryFeeGst = computeDeliveryFeeGst(deliveryFee, deliveryFeeGstRate);
+
+  // The tip is the customer's money for the rider: added to what they pay, and
+  // never folded into a fee, so it cannot be mistaken for platform income.
+  const tipAmount = Math.max(0, round2(Number(dto?.tipAmount) || 0));
+  if (tipAmount > 0) {
+    // The same rules the after-delivery tip enforces. Settings are only read
+    // when a tip is actually being added, so an untipped cart costs nothing.
+    const verdict = checkCheckoutTip(tipAmount, await getTipSettings());
+    if (!verdict.ok) throw new ValidationError(verdict.message);
+  }
+
+  const total = round2(
+    Math.max(
+      0,
+      subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + tax - discount,
+    ) + tipAmount,
+  );
+
+  const basePricing = {
+    tipAmount,
+    subtotal,
+    tax,
+    packagingFee,
+    deliveryFee,
+    deliveryFeeGst,
+    platformFee,
+    discount,
+    total,
+    // The rates behind `tax` and `deliveryFeeGst`, so the apps can label the
+    // bill rows ("GST (5%)") instead of showing a bare rupee figure.
+    gstRate,
+    deliveryFeeGstRate,
+    currency: "INR",
+    couponCode: appliedCoupon?.code || codeRaw || null,
+    appliedCoupon,
+    couponError,
+    distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null,
+    roadDistanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null,
+    straightLineDistanceKm: Number.isFinite(straightLineKm)
+      ? Number(straightLineKm.toFixed(2))
+      : null,
+    // What the app's fee explainer reads: which rule priced it, the band, and
+    // the part of deliveryFee that is surge (0 when delivery is free).
+    deliveryFeeBreakdown: {
+      source: deliveryFeeResult.source,
+      band: deliveryFeeResult.band || null,
+      surgeFee: deliveryFee > 0 ? Math.max(0, Number(feeSettings.surgeFee) || 0) : 0,
+    },
+  };
+
+  const pricing = applyDeliveryModePricing(
+    basePricing,
+    dto.deliveryMode,
+    Number(feeSettings.quickDeliveryFee) || 0,
+  );
+
+  const priceChanges = (Array.isArray(dto.items) ? dto.items : [])
+    .map((rawItem) => {
+      const itemId = String(rawItem?.itemId || rawItem?.id || '').trim();
+      const resolved = items.find((entry) => String(entry.itemId) === itemId);
+      if (!resolved) return null;
+
+      const previousPrice = Number(rawItem?.price);
+      const nextPrice = Number(resolved.price);
+      if (!Number.isFinite(previousPrice) || previousPrice === nextPrice) return null;
+
+      return {
+        itemId,
+        name: resolved.name,
+        previousPrice,
+        price: nextPrice,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    items,
+    priceChanges,
+    pricing: {
+      ...pricing,
+      deliveryFeeBreakdown: {
+        source: deliveryFeeResult.source,
+        distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null,
+        deliveryFee,
+        // The band that priced it: deliveryFee = baseFee + perKm x (distanceKm
+        // - bandMin) + surgeFee. Null when no band applied (free delivery, or
+        // the flat fallback).
+        bandMin: deliveryFeeResult.band?.bandMin ?? null,
+        bandMax: deliveryFeeResult.band?.bandMax ?? null,
+        baseFee: deliveryFeeResult.band?.baseFee ?? null,
+        perKm: deliveryFeeResult.band?.perKm ?? null,
+        surgeFee: deliveryFeeResult.band?.surgeFee ?? null,
+        message: Number.isFinite(distanceKm)
+          ? `Distance: ${Number(distanceKm).toFixed(1)} km`
+          : null,
+      },
+    },
+  };
+}

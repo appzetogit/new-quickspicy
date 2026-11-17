@@ -1,0 +1,54 @@
+import { sendResponse } from '../../../../utils/response.js';
+import * as svc from '../services/offerBanner.service.js';
+import { adminBannerZoneWhere, viewedZoneIds } from '../../../../core/roles/adminScope.service.js';
+
+// ── Admin ──
+export async function listOfferBannersController(req, res, next) {
+    try {
+        const where = adminBannerZoneWhere(await viewedZoneIds(req));
+        return sendResponse(res, 200, 'Offer banners fetched', await svc.listBannersAdmin(where));
+    } catch (e) { next(e); }
+}
+
+export async function createOfferBannerController(req, res, next) {
+    try {
+        const banner = await svc.createBanner(req.file, req.body || {});
+        return sendResponse(res, 201, 'Offer banner created', { banner });
+    } catch (e) { next(e); }
+}
+
+export async function updateOfferBannerController(req, res, next) {
+    try {
+        const banner = await svc.updateBanner(req.params.id, req.body || {}, req.file);
+        return sendResponse(res, 200, 'Offer banner updated', { banner });
+    } catch (e) { next(e); }
+}
+
+export async function deleteOfferBannerController(req, res, next) {
+    try {
+        return sendResponse(res, 200, 'Offer banner deleted', await svc.deleteBanner(req.params.id));
+    } catch (e) { next(e); }
+}
+
+export async function toggleOfferBannerStatusController(req, res, next) {
+    try {
+        const banner = await svc.toggleBannerStatus(req.params.id, req.body?.isActive);
+        return sendResponse(res, 200, 'Offer banner status updated', { banner });
+    } catch (e) { next(e); }
+}
+
+export async function reorderOfferBannersController(req, res, next) {
+    try {
+        return sendResponse(res, 200, 'Offer banners reordered', await svc.reorderBanners(req.body?.banners));
+    } catch (e) { next(e); }
+}
+
+// ── The apps, no login ──
+export async function listLiveOfferBannersController(req, res, next) {
+    try {
+        // ?zoneId= or ?lat=&lng= is optional: without either the apps get the
+        // banners meant for every zone, the right answer before an address is chosen.
+        const { zoneId, lat, lng } = req.query || {};
+        return sendResponse(res, 200, 'Offer banners fetched', await svc.listLiveBanners({ zoneId, lat, lng }));
+    } catch (e) { next(e); }
+}

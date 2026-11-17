@@ -1,0 +1,286 @@
+import { prisma } from '../../../../config/prisma.js';
+import { isId } from '../../../../utils/helpers.js';
+import { ValidationError } from '../../../../core/auth/errors.js';
+import { recordTransaction } from '../../../../core/payments/transaction.service.js';
+import { logger } from '../../../../utils/logger.js';
+
+export const getActiveCashbackSettings = async () => {
+    const doc = await prisma.foodCashbackSettings.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+    });
+    return (
+        doc || {
+            isEnabled: false,
+            cashbackType: 'percentage',
+            cashbackValue: 0,
+            minOrderValue: 0,
+            maxCashback: 0,
+            firstOrderOnly: false,
+            perUserLimit: 0,
+        }
+    );
+};
+
+/**
+ * Save the cashback rules from the admin panel.
+ *
+ * Only the keys the form actually sent are touched, so a screen that posts a
+ * subset cannot silently zero the rest. Every amount is clamped at zero — a
+ * negative cashback would debit the customer.
+ */
+export const upsertCashbackSettings = async (body = {}) => {
+    const data = {};
+    if (body.isEnabled !== undefined) data.isEnabled = Boolean(body.isEnabled);
+    if (body.cashbackType !== undefined) {
+        data.cashbackType = body.cashbackType === 'flat' ? 'flat' : 'percentage';
+    }
+    for (const key of ['cashbackValue', 'minOrderValue', 'maxCashback']) {
+        if (body[key] !== undefined) data[key] = Math.max(0, Number(body[key]) || 0);
+    }
+    if (body.firstOrderOnly !== undefined) data.firstOrderOnly = Boolean(body.firstOrderOnly);
+    if (body.perUserLimit !== undefined) data.perUserLimit = Math.max(0, Number(body.perUserLimit) || 0);
+
+    const existing = await prisma.foodCashbackSettings.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+    });
+
+    return existing
+        ? prisma.foodCashbackSettings.update({ where: { id: existing.id }, data })
+        : prisma.foodCashbackSettings.create({ data: { ...data, isActive: true } });
+};
+
+/** Preview the cashback an order would earn. Pure — no writes. */
+export const computeCashbackAmount = (settings, subtotal) => {
+    if (!settings?.isEnabled) return 0;
+    const base = Number(subtotal) || 0;
+    if (base <= 0) return 0;
+    if (base < (Number(settings.minOrderValue) || 0)) return 0;
+
+    const value = Number(settings.cashbackValue) || 0;
+    if (value <= 0) return 0;
+
+    let amount = settings.cashbackType === 'flat' ? value : (base * value) / 100;
+    const cap = Number(settings.maxCashback) || 0;
+    if (settings.cashbackType === 'percentage' && cap > 0) amount = Math.min(amount, cap);
+
+    return Math.max(0, Math.floor(amount)); // whole rupees, never round up in our favour
+};
+
+const cashbackWhere = (userId) => ({
+    entityType: 'user', entityId: userId, category: 'wallet_topup', description: { startsWith: 'Cashback' },
+});
+
+/** Cashback credits this customer has received, newest first. */
+const listCashbackTransactions = (userId, { skip, take } = {}) =>
+    prisma.transaction.findMany({
+        where: cashbackWhere(userId),
+        orderBy: { createdAt: 'desc' },
+        ...(skip !== undefined ? { skip } : {}),
+        ...(take !== undefined ? { take } : {}),
+    });
+
+/**
+ * Award cashback for a delivered order and credit the customer's wallet.
+ *
+ * Idempotent by order: `cashback:<orderId>` is the ledger's unique idempotency
+ * key, so a replay is refused by the database rather than by scanning prior
+ * transactions and hoping no two calls interleave. Never throws — a cashback
+ * failure must not affect the delivery.
+ */
+export const awardOrderCashback = async (orderId) => {
+    try {
+        if (!isId(orderId)) return { awarded: false, reason: 'invalid_order' };
+
+        const order = await prisma.foodOrder.findUnique({
+            where: { id: String(orderId) },
+            select: { id: true, order_id: true, userId: true, subtotal: true, orderStatus: true },
+        });
+        if (!order) return { awarded: false, reason: 'order_not_found' };
+        if (order.orderStatus !== 'delivered') return { awarded: false, reason: 'not_delivered' };
+
+        const settings = await getActiveCashbackSettings();
+        if (!settings.isEnabled) return { awarded: false, reason: 'disabled' };
+
+        const amount = computeCashbackAmount(settings, order.subtotal);
+        if (amount <= 0) return { awarded: false, reason: 'not_eligible' };
+
+        const idempotencyKey = `cashback:${order.id}`;
+        const already = await prisma.transaction.findUnique({ where: { idempotencyKey } });
+        if (already) return { awarded: false, reason: 'already_awarded' };
+
+        if (settings.firstOrderOnly) {
+            const deliveredCount = await prisma.foodOrder.count({
+                where: { userId: order.userId, orderStatus: 'delivered' },
+            });
+            if (deliveredCount > 1) return { awarded: false, reason: 'not_first_order' };
+        }
+
+        const perUserLimit = Number(settings.perUserLimit) || 0;
+        if (perUserLimit > 0) {
+            const priorAwards = await prisma.transaction.count({ where: cashbackWhere(order.userId) });
+            if (priorAwards >= perUserLimit) {
+                return { awarded: false, reason: 'per_user_limit_reached' };
+            }
+        }
+
+        // Through the ledger, not a direct balance write. Cashback used to push
+        // onto the wallet's embedded array and recompute the balance itself,
+        // which made it a second writer racing the real one.
+        await recordTransaction({
+            entityType: 'user',
+            entityId: order.userId,
+            type: 'credit',
+            amount,
+            description: `Cashback on order ${order.order_id || order.id}`,
+            category: 'wallet_topup',
+            orderId: order.id,
+            idempotencyKey,
+            metadata: {
+                source: 'cashback',
+                orderId: order.id,
+                orderDisplayId: order.order_id || order.id,
+            },
+        });
+
+        // No push: customers get only their order notifications (see
+        // customerNotify.service.js). The cashback shows in their wallet.
+
+        logger.info(`Cashback ₹${amount} credited to user ${order.userId} for order ${order.id}`);
+        return { awarded: true, amount };
+    } catch (e) {
+        logger.warn(`awardOrderCashback failed: ${e?.message || e}`);
+        return { awarded: false, reason: 'error' };
+    }
+};
+
+/** Cashback-only slice of the wallet ledger. */
+export const getCashbackHistory = async (userId, query = {}) => {
+    const id = String(userId || '');
+    if (!isId(id)) throw new ValidationError('User not found');
+
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
+
+    // Totals in the database and one page of rows, not every credit ever.
+    const [pageRows, total, sum] = await Promise.all([
+        listCashbackTransactions(id, { skip: (page - 1) * limit, take: limit }),
+        prisma.transaction.count({ where: cashbackWhere(id) }),
+        prisma.transaction.aggregate({ where: cashbackWhere(id), _sum: { amount: true } }),
+    ]);
+    const totalEarned = Number(sum._sum.amount) || 0;
+
+    const items = pageRows.map((t) => ({
+        id: t.id,
+        amount: Number(t.amount) || 0,
+        description: t.description || '',
+        orderId: t.orderId || t.metadata?.orderId || null,
+        orderDisplayId: t.metadata?.orderDisplayId || null,
+        status: t.status === 'completed' ? 'Completed' : t.status,
+        date: t.createdAt,
+        createdAt: t.createdAt,
+    }));
+
+    return {
+        totalEarned,
+        items,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+    };
+};
+
+/**
+ * Refund history across ALL of the user's orders.
+ * Sourced from the authoritative order payment records, enriched with the
+ * matching wallet refund transaction when the money went back to the wallet.
+ */
+export const getUserRefundHistory = async (userId, query = {}) => {
+    const id = String(userId || '');
+    if (!isId(id)) throw new ValidationError('User not found');
+
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
+
+    const where = {
+        userId: id,
+        OR: [
+            { refundStatus: { in: ['pending', 'processed', 'failed'] } },
+            { paymentStatus: 'refunded' },
+        ],
+    };
+
+    const [docs, total, walletRefunds, refundedSum] = await Promise.all([
+        prisma.foodOrder.findMany({
+            where,
+            select: {
+                id: true, order_id: true, orderId: true, total: true,
+                paymentMethod: true, paymentStatus: true,
+                refundStatus: true, refundAmount: true, refundId: true, refundProcessedAt: true,
+                refundLegs: { select: { refundTo: true, amount: true, status: true } },
+                orderStatus: true, createdAt: true, updatedAt: true,
+                restaurant: { select: { id: true, restaurantName: true, profileImage: true } },
+            },
+            orderBy: { updatedAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+        }),
+        prisma.foodOrder.count({ where }),
+        prisma.transaction.findMany({
+            where: { entityType: 'user', entityId: id, category: 'order_refund' },
+            select: { orderId: true, amount: true },
+        }),
+        prisma.foodOrder.aggregate({
+            where: { userId: id, OR: [{ refundStatus: 'processed' }, { paymentStatus: 'refunded' }] },
+            _sum: { refundAmount: true },
+        }),
+    ]);
+
+    const refundByOrder = new Map(walletRefunds.filter((t) => t.orderId).map((t) => [t.orderId, t]));
+
+    const refunds = docs.map((o) => {
+        const walletRow = refundByOrder.get(o.id);
+        const amount = Number(o.refundAmount) || Number(walletRow?.amount) || 0;
+        // Where it went, per leg: a split order is partly wallet, partly card.
+        const live = (o.refundLegs || []).filter((l) => l.status !== 'failed');
+        const toWallet = live.filter((l) => l.refundTo === 'wallet').reduce((s, l) => s + Number(l.amount), 0);
+        const toOriginal = live.filter((l) => l.refundTo === 'gateway').reduce((s, l) => s + Number(l.amount), 0);
+
+        return {
+            orderId: o.id,
+            orderDisplayId: o.order_id || o.id,
+            restaurantName: o.restaurant?.restaurantName || '',
+            amount,
+            // 'processed' once the money is back with the customer.
+            status: String(
+                o.refundStatus && o.refundStatus !== 'none'
+                    ? o.refundStatus
+                    : o.paymentStatus === 'refunded' ? 'processed' : 'pending',
+            ),
+            method: o.paymentMethod || '',
+            refundId: o.refundId || '',
+            // cancellationReason is derived from status history, which this query
+            // does not load; the field stays for shape compatibility.
+            reason: '',
+            // Only when all of it went to the wallet; split refunds say both.
+            creditedToWallet: live.length ? toOriginal === 0 : Boolean(walletRow),
+            walletAmount: Math.round(toWallet * 100) / 100,
+            originalMethodAmount: Math.round(toOriginal * 100) / 100,
+            processedAt: o.refundProcessedAt || null,
+            orderStatus: o.orderStatus,
+            createdAt: o.createdAt,
+            updatedAt: o.updatedAt,
+        };
+    });
+
+    return {
+        // Everything refunded to this customer, not just the page on screen.
+        totalRefunded: Number(refundedSum._sum.refundAmount) || 0,
+        refunds,
+        pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    };
+};

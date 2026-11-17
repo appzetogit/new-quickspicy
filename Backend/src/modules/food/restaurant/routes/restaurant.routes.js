@@ -1,0 +1,376 @@
+import express from 'express';
+import {
+    assertRestaurantSignupOpen,
+    isRestaurantSelfOnboardingOpen,
+    isDeliverySelfOnboardingOpen,
+} from '../../../../core/auth/onboardingGate.js';
+import { deleteOwnAccountController } from '../../../../core/auth/accountDeletion.service.js';
+import { logoutAllRestaurantDevices } from '../../../../core/auth/auth.service.js';
+import { upload } from '../../../../middleware/upload.js';
+import { imageUpload, uploadRateLimiter } from '../../../uploads/middleware/upload.middleware.js';
+import {
+    registerRestaurantController,
+    createOnboardingFeeOrderController,
+    listApprovedRestaurantsController,
+    getApprovedRestaurantController,
+    listPublicOffersController,
+    getCurrentRestaurantController,
+    updateRestaurantProfileController,
+    updateRestaurantAcceptingOrdersController,
+    updateCurrentRestaurantDiningSettingsController,
+    uploadRestaurantProfileImageController,
+    uploadRestaurantMenuImageController,
+    uploadRestaurantCoverImagesController,
+    uploadRestaurantMenuImagesController,
+    getRestaurantComplaintsController,
+    uploadRestaurantAttachmentController,
+    deleteCurrentRestaurantAccountController,
+    registerUnregisteredRestaurantController,
+    getRestaurantSubscriptionHistoryController
+} from '../controllers/restaurant.controller.js';
+import {
+    createRestaurantOfferController,
+    listRestaurantOffersController,
+    deleteRestaurantOfferController,
+    updateRestaurantOfferStatusController,
+    getRestaurantOfferController,
+    updateRestaurantOfferController,
+} from '../controllers/restaurantOffer.controller.js';
+import {
+    createRestaurantSupportTicketController,
+    listRestaurantSupportTicketsController,
+    getRestaurantSupportTicketController,
+} from '../controllers/supportTicket.controller.js';
+import {
+    createWithdrawalRequestController,
+    listMyWithdrawalsController
+} from '../controllers/withdrawal.controller.js';
+import {
+    getSubscriptionOverviewController,
+    listSubscriptionInvoicesController,
+    getSubscriptionInvoiceController,
+    listSubscriptionTransactionsController
+} from '../controllers/subscription.controller.js';
+import {
+    listCategoriesController,
+    createCategoryController,
+    updateCategoryController,
+    deleteCategoryController
+} from '../controllers/restaurantCategory.controller.js';
+import { getMenuController, updateMenuController, getPublicRestaurantMenuController } from '../controllers/restaurantMenu.controller.js';
+import { listPublicFoodsController } from '../controllers/publicFoods.controller.js';
+import { getPublicRestaurantAddonsController } from '../controllers/publicAddons.controller.js';
+import * as feedbackExperienceController from '../../admin/controllers/feedbackExperience.controller.js';
+import {
+    getOutletTimingsByRestaurantIdController,
+    getCurrentRestaurantOutletTimingsController,
+    upsertCurrentRestaurantOutletTimingsController
+} from '../controllers/outletTimings.controller.js';
+import {
+    createRestaurantFoodController,
+    updateRestaurantFoodController
+} from '../controllers/restaurantFood.controller.js';
+import {
+    listAddonsController,
+    createAddonController,
+    updateAddonController,
+    deleteAddonController
+} from '../controllers/restaurantAddon.controller.js';
+import {
+    downloadBulkMenuTemplateController,
+    uploadBulkMenuController
+} from '../controllers/bulkUpload.controller.js';
+import * as orderController from '../../orders/controllers/order.controller.js';
+import { authMiddleware, optionalAuth } from '../../../../core/auth/auth.middleware.js';
+import { sendError, sendResponse } from '../../../../utils/response.js';
+import { listRestaurantReviews, listPublicRestaurantReviews } from '../../orders/services/rating.service.js';
+import { findApprovedRestaurant } from '../services/restaurantLookup.helper.js';
+import { getRestaurantFinanceController } from '../controllers/restaurantFinance.controller.js';
+import {
+    listBannersController,
+    uploadBannersController,
+    deleteBannerController,
+    reorderBannersController,
+    getMediaController,
+    uploadCoverImageController,
+    uploadGalleryImagesController,
+    listVideosController,
+    uploadVideosController,
+    deleteVideoController,
+    deleteGalleryImageController
+} from '../controllers/restaurantBanner.controller.js';
+import { listBannersForRestaurantAppController } from '../../admin/controllers/restaurantAppBanner.controller.js';
+
+import { cacheResponse, invalidateCache } from '../../../../middleware/cache.js';
+
+const router = express.Router();
+
+const requireRestaurant = (req, res, next) => {
+    if (req.user?.role !== 'RESTAURANT') {
+        return sendError(res, 403, 'Restaurant access required');
+    }
+    next();
+};
+
+const uploadFields = upload.fields([
+    { name: 'profileImage', maxCount: 1 },
+    { name: 'panImage', maxCount: 1 },
+    { name: 'gstImage', maxCount: 1 },
+    { name: 'fssaiImage', maxCount: 1 },
+    { name: 'menuImages', maxCount: 10 },
+    // Onboarding: main cover + premises gallery (gallery is shown to the rider at pickup).
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'galleryImages', maxCount: 10 }
+]);
+
+// Refused before any file is read while restaurant self-sign-up is switched off.
+const restaurantSignupOpen = (req, res, next) =>
+    assertRestaurantSignupOpen().then(() => next(), next);
+router.post('/register', restaurantSignupOpen, uploadRateLimiter, uploadFields, registerRestaurantController);
+router.post('/onboarding-fee/order', restaurantSignupOpen, createOnboardingFeeOrderController);
+router.post('/unregistered', registerUnregisteredRestaurantController);
+// Public: whether restaurants / riders can sign themselves up right now, so the
+// website and apps can hide their register links when the admin has closed it.
+router.get('/onboarding-status', async (req, res, next) => {
+    try {
+        const [restaurant, delivery] = await Promise.all([
+            isRestaurantSelfOnboardingOpen(),
+            isDeliverySelfOnboardingOpen(),
+        ]);
+        res.json({ success: true, data: { restaurant, delivery } });
+    } catch (err) {
+        next(err);
+    }
+});
+/**
+ * Onboarding attachments, uploaded before the restaurant has an account — so
+ * this stays public, with the same protections /v1/uploads/image already has.
+ *
+ * As `upload.single` it accepted any file type, at 25MB buffered in memory,
+ * bounded only by the global API rate limit of 2500 requests per quarter hour
+ * per IP. That is an open file drop on the internet.
+ */
+router.post(
+    '/upload-attachment',
+    uploadRateLimiter,
+    imageUpload.single('file'),
+    uploadRestaurantAttachmentController,
+);
+
+// Public: approved restaurants list (for user app)
+// One minute, not five: the cards say whether each restaurant is open now.
+router.get('/restaurants', cacheResponse(60, 'restaurants'), listApprovedRestaurantsController);
+router.get('/restaurants/:id', cacheResponse(60, 'restaurant_detail'), getApprovedRestaurantController);
+// One minute: out-of-stock dishes are left out, and one with a timed
+// out-of-stock has to come back when its time is up, not ten minutes later.
+router.get('/restaurants/:id/menu', cacheResponse(60, 'restaurant_menu'), getPublicRestaurantMenuController);
+router.get('/public/foods', cacheResponse(300, 'public_foods'), listPublicFoodsController);
+router.get('/restaurants/:id/outlet-timings', cacheResponse(600, 'restaurant_timings'), getOutletTimingsByRestaurantIdController);
+router.get('/offers', optionalAuth, listPublicOffersController);
+// Public: categories list (zone-aware; returns zone categories + global)
+router.get('/categories/public', cacheResponse(600, 'categories'), listCategoriesController);
+
+// Restaurant dashboard/profile (Bearer token + RESTAURANT role)
+router.get('/current', authMiddleware, requireRestaurant, getCurrentRestaurantController);
+// Signs this restaurant out on every phone, this one included.
+router.post('/logout-all-devices', authMiddleware, requireRestaurant, async (req, res, next) => {
+    try {
+        const data = await logoutAllRestaurantDevices(req.user?.userId);
+        return sendResponse(res, 200, 'Logged out on all devices', data);
+    } catch (error) {
+        next(error);
+    }
+});
+router.delete(['/account', '/profile/account'], authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurants:*');
+    await invalidateCache('restaurant_detail:*');
+    next();
+}, deleteOwnAccountController);
+router.patch('/profile', authMiddleware, requireRestaurant, async (req, res, next) => {
+    // Invalidate caches when profile is updated
+    await invalidateCache('restaurants:*');
+    await invalidateCache('restaurant_detail:*');
+    next();
+}, updateRestaurantProfileController);
+router.patch('/availability', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurants:*');
+    await invalidateCache('restaurant_detail:*');
+    next();
+}, updateRestaurantAcceptingOrdersController);
+router.patch('/dining-settings', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurants:*');
+    next();
+}, updateCurrentRestaurantDiningSettingsController);
+
+router.get('/outlet-timings', authMiddleware, requireRestaurant, getCurrentRestaurantOutletTimingsController);
+router.put('/outlet-timings', authMiddleware, requireRestaurant, upsertCurrentRestaurantOutletTimingsController);
+router.get('/finance', authMiddleware, requireRestaurant, getRestaurantFinanceController);
+router.post('/withdraw', authMiddleware, requireRestaurant, createWithdrawalRequestController);
+router.get('/withdrawals', authMiddleware, requireRestaurant, listMyWithdrawalsController);
+router.get('/subscription-history', authMiddleware, requireRestaurant, getRestaurantSubscriptionHistoryController);
+// New calendar-month postpaid subscription endpoints
+router.get('/subscription/overview', authMiddleware, requireRestaurant, getSubscriptionOverviewController);
+router.get('/subscription/invoices', authMiddleware, requireRestaurant, listSubscriptionInvoicesController);
+router.get('/subscription/invoices/:invoiceId', authMiddleware, requireRestaurant, getSubscriptionInvoiceController);
+router.get('/subscription/transactions', authMiddleware, requireRestaurant, listSubscriptionTransactionsController);
+router.post(
+    '/profile/profile-image',
+    authMiddleware,
+    requireRestaurant,
+    upload.single('file'),
+    async (req, res, next) => {
+        await invalidateCache('restaurants:*');
+        await invalidateCache('restaurant_detail:*');
+        next();
+    },
+    uploadRestaurantProfileImageController
+);
+router.post(
+    '/profile/menu-image',
+    authMiddleware,
+    requireRestaurant,
+    upload.single('file'),
+    async (req, res, next) => {
+        await invalidateCache('restaurant_menu:*');
+        next();
+    },
+    uploadRestaurantMenuImageController
+);
+router.post(
+    '/profile/cover-images',
+    authMiddleware,
+    requireRestaurant,
+    upload.array('files', 20),
+    async (req, res, next) => {
+        await invalidateCache('restaurant_detail:*');
+        next();
+    },
+    uploadRestaurantCoverImagesController
+);
+router.post(
+    '/profile/menu-images',
+    authMiddleware,
+    requireRestaurant,
+    upload.array('files', 20),
+    async (req, res, next) => {
+        await invalidateCache('restaurant_menu:*');
+        next();
+    },
+    uploadRestaurantMenuImagesController
+);
+
+// Admin-managed promo banners shown INSIDE the restaurant partner app.
+router.get('/app-banners', authMiddleware, requireRestaurant, listBannersForRestaurantAppController);
+
+// Main cover image + premises gallery. The gallery is surfaced to the delivery partner
+// at pickup so they can visually identify the shop.
+router.get('/media', authMiddleware, requireRestaurant, getMediaController);
+router.post('/media/cover-image', authMiddleware, requireRestaurant, upload.single('file'), uploadCoverImageController);
+router.post('/media/gallery', authMiddleware, requireRestaurant, upload.array('files', 10), uploadGalleryImagesController);
+router.delete('/media/gallery', authMiddleware, requireRestaurant, deleteGalleryImageController);
+
+// Storefront videos. Fewer at a time than photos: each is megabytes and is
+// buffered in memory on the way through.
+router.get('/media/videos', authMiddleware, requireRestaurant, listVideosController);
+router.post('/media/videos', authMiddleware, requireRestaurant, upload.array('files', 3), uploadVideosController);
+router.delete('/media/videos', authMiddleware, requireRestaurant, deleteVideoController);
+
+// Banners shown on the public restaurant page (/restaurants/:id -> coverImages).
+// Separate from /profile/cover-images, which resets the restaurant to 'pending' and is
+// only appropriate during onboarding — routine banner edits must not take a live
+// restaurant offline.
+router.get('/banners', authMiddleware, requireRestaurant, listBannersController);
+router.post(
+    '/banners',
+    authMiddleware,
+    requireRestaurant,
+    upload.array('files', 10),
+    uploadBannersController
+);
+router.delete('/banners', authMiddleware, requireRestaurant, deleteBannerController);
+router.patch('/banners/order', authMiddleware, requireRestaurant, reorderBannersController);
+
+// Categories (restaurant dashboard). Read-only for item creation, CRUD for Menu Categories page.
+router.get('/categories', authMiddleware, requireRestaurant, listCategoriesController);
+router.post('/categories', authMiddleware, requireRestaurant, createCategoryController);
+router.patch('/categories/:id', authMiddleware, requireRestaurant, updateCategoryController);
+router.delete('/categories/:id', authMiddleware, requireRestaurant, deleteCategoryController);
+
+// Menu (restaurant dashboard) - only fields needed by UI
+router.get('/menu', authMiddleware, requireRestaurant, getMenuController);
+router.patch('/menu', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurant_menu:*');
+    next();
+}, updateMenuController);
+
+// Feedback (restaurant dashboard)
+router.post('/feedback-experience', authMiddleware, requireRestaurant, feedbackExperienceController.createFeedbackExperience);
+
+// Public: ratings and reviews for a restaurant's page (user app).
+router.get('/restaurants/:id/reviews', cacheResponse(120, 'restaurant_reviews'), async (req, res, next) => {
+    try {
+        const restaurant = await findApprovedRestaurant(req.params.id);
+        if (!restaurant?.id) return sendResponse(res, 404, 'Restaurant not found', null);
+        const data = await listPublicRestaurantReviews(restaurant.id, req.query || {});
+        return sendResponse(res, 200, 'Reviews fetched successfully', data);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Public: restaurant add-ons (user app)
+router.get('/restaurants/:id/addons', cacheResponse(600, 'restaurant_addons'), getPublicRestaurantAddonsController);
+
+// Foods (restaurant creates/updates items -> stored in food_items collection)
+router.post('/foods', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurant_menu:*');
+    next();
+}, createRestaurantFoodController);
+router.patch('/foods/:id', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurant_menu:*');
+    next();
+}, updateRestaurantFoodController);
+
+// Bulk Menu Upload
+router.get('/bulk-upload/template', authMiddleware, requireRestaurant, downloadBulkMenuTemplateController);
+router.post('/bulk-upload', authMiddleware, requireRestaurant, upload.single('file'), uploadBulkMenuController);
+
+// Add-ons (restaurant dashboard) - approval handled by admin
+router.get('/addons', authMiddleware, requireRestaurant, listAddonsController);
+router.post('/addons', authMiddleware, requireRestaurant, createAddonController);
+router.patch('/addons/:id', authMiddleware, requireRestaurant, updateAddonController);
+router.delete('/addons/:id', authMiddleware, requireRestaurant, deleteAddonController);
+
+// Orders (restaurant dashboard)
+router.get('/orders', authMiddleware, requireRestaurant, orderController.listOrdersRestaurantController);
+// Before /orders/:orderId, or Express reads "rejection-reasons" as an order id.
+router.get('/orders/rejection-reasons', authMiddleware, requireRestaurant, orderController.listRejectionReasonsRestaurantController);
+router.get('/orders/:orderId', authMiddleware, requireRestaurant, orderController.getOrderByIdRestaurantController);
+router.patch('/orders/:orderId/status', authMiddleware, requireRestaurant, orderController.updateOrderStatusRestaurantController);
+router.post('/orders/:orderId/resend-notification', authMiddleware, requireRestaurant, orderController.resendDeliveryNotificationRestaurantController);
+
+// Reviews: what customers rated and wrote, newest first, with the average.
+router.get('/reviews', authMiddleware, requireRestaurant, async (req, res, next) => {
+    try {
+        const data = await listRestaurantReviews(req.user?.userId, req.query || {});
+        return sendResponse(res, 200, 'Reviews fetched successfully', data);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Complaints (restaurant dashboard)
+router.get('/complaints', authMiddleware, requireRestaurant, getRestaurantComplaintsController);
+router.post('/support/tickets', authMiddleware, requireRestaurant, createRestaurantSupportTicketController);
+router.get('/support/tickets', authMiddleware, requireRestaurant, listRestaurantSupportTicketsController);
+router.get('/support/tickets/:id', authMiddleware, requireRestaurant, getRestaurantSupportTicketController);
+
+// Offers (restaurant dashboard)
+router.get('/my-offers', authMiddleware, requireRestaurant, listRestaurantOffersController);
+router.post('/my-offers', authMiddleware, requireRestaurant, createRestaurantOfferController);
+router.patch('/my-offers/:id/status', authMiddleware, requireRestaurant, updateRestaurantOfferStatusController);
+router.get('/my-offers/:id', authMiddleware, requireRestaurant, getRestaurantOfferController);
+router.put('/my-offers/:id', authMiddleware, requireRestaurant, updateRestaurantOfferController);
+router.delete('/my-offers/:id', authMiddleware, requireRestaurant, deleteRestaurantOfferController);
+
+export default router;

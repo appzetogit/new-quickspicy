@@ -1,0 +1,769 @@
+import { prisma } from '../../../../config/prisma.js';
+import { toOrder, orderInclude } from '../order.mapper.js';
+import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
+import { logger } from '../../../../utils/logger.js';
+import { getIO, rooms } from '../../../../config/socket.js';
+import { addOrderJob } from '../../../../queues/producers/order.producer.js';
+import { runUnscoped } from '../../../../core/roles/adminScope.context.js';
+import {
+  buildDeliverySocketPayload,
+  getRiderActiveOrderCounts,
+  notifyOwnersActionableAlert,
+  pushStatusHistory,
+} from './order.helpers.js';
+import {
+  buildIncomingOrderPushData,
+  enrichPayloadWithTripRoadDistance,
+  getCashBlockedPartnerIds,
+  getDispatchSettings,
+  orderCollectsCash,
+  tryAutoAssign,
+} from './order-dispatch.service.js';
+
+/**
+ * Manual rider assignment.
+ *
+ * A zone (or the whole platform) can be set to 'manual': orders there are never
+ * offered to riders automatically. They wait in the admin panel's Assign rider
+ * queue; an admin picks a rider from that zone, the rider gets the usual
+ * accept popup, and if they decline or don't answer the order comes back to
+ * the queue. Mode = the zone's own setting, else the global one, else 'auto'.
+ */
+
+/** Statuses an order can be given a rider in -- the same as automatic dispatch. */
+const DISPATCHABLE = ['confirmed', 'preparing', 'ready_for_pickup', 'ready', 'reached_pickup', 'picked_up', 'reached_drop'];
+/** What an admin may assign a rider to: before pickup. */
+const ASSIGNABLE = ['confirmed', 'preparing', 'ready_for_pickup'];
+
+// ---- which mode applies ------------------------------------------------------
+
+const CACHE_MS = 30_000;
+let modeCache = { at: 0, value: null };
+
+export function clearDispatchModeCache() {
+  modeCache = { at: 0, value: null };
+}
+
+async function loadModes() {
+  if (modeCache.value && Date.now() - modeCache.at < CACHE_MS) return modeCache.value;
+  const [settings, zones] = await Promise.all([
+    getDispatchSettings(),
+    runUnscoped(() =>
+      prisma.foodZone.findMany({ where: { dispatchMode: { not: null } }, select: { id: true, dispatchMode: true } }),
+    ),
+  ]);
+  const zoneModes = new Map(zones.map((z) => [z.id, z.dispatchMode === 'manual' ? 'manual' : 'auto']));
+  modeCache = { at: Date.now(), value: { global: settings.dispatchMode, settings, zoneModes } };
+  return modeCache.value;
+}
+
+export async function getDispatchModeForZone(zoneId) {
+  const { global, zoneModes } = await loadModes();
+  return (zoneId && zoneModes.get(String(zoneId))) || global || 'auto';
+}
+
+export async function isManualForOrder(orderId) {
+  const row = await runUnscoped(() =>
+    prisma.foodOrder.findUnique({ where: { id: String(orderId) }, select: { zoneId: true } }),
+  );
+  if (!row) return false;
+  return (await getDispatchModeForZone(row.zoneId)) === 'manual';
+}
+
+/**
+ * Which orders are in manual mode, as a Prisma filter.
+ * `{ kind: 'none' }` -- no order is manual; `{ kind: 'all' }` -- every order;
+ * `{ kind: 'some', where }` -- only those matching `where`.
+ */
+export async function manualOrderFilter() {
+  const { global, zoneModes } = await loadModes();
+  if (global === 'manual') {
+    const autoZones = [...zoneModes].filter(([, m]) => m === 'auto').map(([id]) => id);
+    if (!autoZones.length) return { kind: 'all' };
+    return { kind: 'some', where: { OR: [{ zoneId: null }, { zoneId: { notIn: autoZones } }] } };
+  }
+  const manualZones = [...zoneModes].filter(([, m]) => m === 'manual').map(([id]) => id);
+  if (!manualZones.length) return { kind: 'none' };
+  return { kind: 'some', where: { zoneId: { in: manualZones } } };
+}
+
+// ---- telling admins ------------------------------------------------------------
+
+/** Super admins, plus sub-admins who look after the zone's city. */
+async function zoneAdminTargets(zoneId) {
+  return runUnscoped(async () => {
+    const zone = zoneId
+      ? await prisma.foodZone.findUnique({ where: { id: String(zoneId) }, select: { cityId: true } })
+      : null;
+    const admins = await prisma.foodAdmin.findMany({
+      where: {
+        isActive: true,
+        isDeleted: false,
+        OR: [
+          { adminType: 'super_admin' },
+          ...(zone?.cityId ? [{ cities: { some: { cityId: zone.cityId } } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    return admins.map((a) => ({ ownerType: 'ADMIN', ownerId: a.id }));
+  });
+}
+
+function emitToAdmins(event, zoneId, payload) {
+  try {
+    const io = getIO();
+    if (!io) return;
+    let target = io.to(rooms.adminOrdersAll());
+    if (zoneId) target = target.to(rooms.adminOrdersZone(zoneId));
+    target.emit(event, payload);
+  } catch (err) {
+    logger.warn(`Admin dispatch emit failed: ${err?.message || err}`);
+  }
+}
+
+async function alertAdmins(row, { title, body, reason }) {
+  const payload = {
+    orderId: row.id,
+    orderMongoId: row.id,
+    displayOrderId: row.order_id || row.orderId || '',
+    zoneId: row.zoneId || null,
+    restaurantName: row.restaurant?.restaurantName || '',
+    reason: reason || 'new',
+    message: body,
+    waitingSince: row.awaitingManualAt || new Date(),
+  };
+  emitToAdmins('order_needs_assignment', row.zoneId, payload);
+  try {
+    const { sendNotificationToOwners } = await import('../../../../core/notifications/firebase.service.js');
+    const targets = await zoneAdminTargets(row.zoneId);
+    if (targets.length) {
+      await sendNotificationToOwners(targets, {
+        title,
+        body,
+        data: { type: 'order_needs_assignment', orderId: row.id, link: '/admin/food/dispatch/assign' },
+      });
+    }
+  } catch (err) {
+    logger.warn(`Manual dispatch admin push failed for ${row.id}: ${err?.message || err}`);
+  }
+}
+
+// ---- the queue ---------------------------------------------------------------
+
+/**
+ * Called by tryAutoAssign for a manual-mode order: put it in (or keep it in)
+ * the admin queue instead of offering it to riders. Admins are alerted when it
+ * first arrives and whenever a rider declines or lets it time out -- not on
+ * every background re-check.
+ */
+export async function enterManualQueue(orderId, options = {}) {
+  const id = String(orderId);
+  const row = await runUnscoped(() =>
+    prisma.foodOrder.findUnique({
+      where: { id },
+      select: {
+        id: true, order_id: true, orderId: true, zoneId: true, orderStatus: true,
+        dispatchStatus: true, awaitingManualAt: true,
+        restaurant: { select: { restaurantName: true } },
+      },
+    }),
+  );
+  if (!row || row.dispatchStatus === 'accepted' || !DISPATCHABLE.includes(row.orderStatus)) return null;
+
+  const firstTime = !row.awaitingManualAt;
+  if (firstTime) {
+    await prisma.foodOrder.updateMany({ where: { id, awaitingManualAt: null }, data: { awaitingManualAt: new Date() } });
+    row.awaitingManualAt = new Date();
+  }
+
+  const display = row.order_id || row.orderId || id;
+  if (options.reason === 'declined' || options.reason === 'timeout') {
+    const rider = options.partnerId
+      ? await prisma.foodDeliveryPartner.findUnique({ where: { id: String(options.partnerId) }, select: { name: true } })
+      : null;
+    const who = rider?.name || 'The rider';
+    const what = options.reason === 'declined' ? 'declined' : "didn't respond to";
+    await alertAdmins(row, {
+      title: 'Order needs a rider',
+      body: `${who} ${what} order #${display}. Please assign another rider.`,
+      reason: options.reason,
+    });
+  } else if (firstTime) {
+    await alertAdmins(row, {
+      title: 'Order needs a rider',
+      body: `Order #${display} from ${row.restaurant?.restaurantName || 'a restaurant'} is waiting for a rider to be assigned.`,
+      reason: 'new',
+    });
+  }
+  return row;
+}
+
+/** Orders waiting for an admin to assign (or for an assigned rider to accept). */
+export async function listManualQueue() {
+  const filter = await manualOrderFilter();
+  if (filter.kind === 'none') return { orders: [] };
+
+  const settings = await getDispatchSettings();
+  const rows = await prisma.foodOrder.findMany({
+    where: {
+      orderStatus: { in: ASSIGNABLE },
+      dispatchAcceptedAt: null,
+      dispatchStatus: { in: ['unassigned', 'assigned'] },
+      ...(filter.kind === 'some' ? filter.where : {}),
+    },
+    select: {
+      id: true, order_id: true, orderId: true, orderStatus: true, dispatchStatus: true,
+      dispatchDeliveryPartnerId: true, dispatchAssignedAt: true, awaitingManualAt: true, createdAt: true,
+      paymentMethod: true, total: true, zoneId: true, addrStreet: true, addrCity: true,
+      isForSomeoneElse: true,
+      restaurant: { select: { restaurantName: true, area: true } },
+      zone: { select: { name: true } },
+      items: { select: { name: true, quantity: true } },
+      dispatchOffers: {
+        where: { action: { in: ['rejected', 'timeout', 'offered'] } },
+        select: { partnerId: true, action: true, at: true, partner: { select: { name: true } } },
+        orderBy: { at: 'desc' },
+      },
+    },
+    orderBy: [{ awaitingManualAt: 'asc' }, { createdAt: 'asc' }],
+    take: 300,
+  });
+
+  const now = Date.now();
+  return {
+    alertMinutes: settings.manualQueueAlertMinutes,
+    acceptWindowSeconds: settings.manualAcceptWindowSeconds,
+    orders: rows.map((r) => {
+      const assigned = r.dispatchStatus === 'assigned' && r.dispatchDeliveryPartnerId
+        ? r.dispatchOffers.find((o) => o.partnerId === r.dispatchDeliveryPartnerId && o.action === 'offered')
+        : null;
+      const since = r.awaitingManualAt || r.createdAt;
+      return {
+        id: r.id,
+        displayId: r.order_id || r.orderId || r.id,
+        orderStatus: r.orderStatus,
+        restaurantName: r.restaurant?.restaurantName || '',
+        restaurantArea: r.restaurant?.area || '',
+        zoneId: r.zoneId,
+        zoneName: r.zone?.name || '',
+        dropArea: [r.addrStreet, r.addrCity].filter(Boolean).join(', '),
+        paymentMethod: r.paymentMethod,
+        total: Number(r.total) || 0,
+        isForSomeoneElse: r.isForSomeoneElse,
+        items: r.items.map((i) => `${i.quantity} x ${i.name}`),
+        waitingSince: since,
+        waitingMinutes: Math.floor((now - new Date(since).getTime()) / 60000),
+        assignedTo: assigned
+          ? {
+              id: r.dispatchDeliveryPartnerId,
+              name: assigned.partner?.name || '',
+              assignedAt: r.dispatchAssignedAt,
+              deadlineAt: new Date(new Date(r.dispatchAssignedAt).getTime() + settings.manualAcceptWindowSeconds * 1000),
+            }
+          : null,
+        declinedBy: r.dispatchOffers
+          .filter((o) => o.action === 'rejected' || o.action === 'timeout')
+          .map((o) => ({ id: o.partnerId, name: o.partner?.name || '', action: o.action, at: o.at })),
+      };
+    }),
+  };
+}
+
+// ---- choosing a rider ----------------------------------------------------------
+
+async function loadOrderForAssign(orderId) {
+  const row = await prisma.foodOrder.findUnique({
+    where: { id: String(orderId) },
+    include: { ...orderInclude, restaurant: true, zone: { select: { id: true, name: true, cityId: true, cityRef: { select: { name: true } } } } },
+  });
+  if (!row) throw new NotFoundError('Order not found');
+  return row;
+}
+
+/** Riders whose last location is inside the zone's boundary. */
+const startOfTodayIst = () => {
+  const now = new Date();
+  const ist = new Date(now.getTime() + 330 * 60000);
+  ist.setUTCHours(0, 0, 0, 0);
+  return new Date(ist.getTime() - 330 * 60000);
+};
+
+/** Most online riders the picker lists, nearest first. */
+export const ELIGIBLE_ONLINE_CAP = 50;
+/** Offline riders per page when the admin asks to see them. */
+export const ELIGIBLE_OFFLINE_PAGE = 20;
+
+/**
+ * Riders for an order's zone or city, found in PostgreSQL and bounded.
+ *
+ * It used to load every approved rider in the city (no limit), then their
+ * details, wallets and today's deliveries, and sort the lot in Node.js. Now
+ * the candidates come from one query each: online riders nearest first, at
+ * most ELIGIBLE_ONLINE_CAP; offline riders a page at a time, by name. The
+ * per-rider lookups run only for the riders returned. A rider belongs if
+ * they are in the zone (GPS inside its boundary) or their city matches.
+ */
+async function eligibleRiderCandidates({ zoneId, cityKey, lat, lng, online, search, limit, offset }) {
+  const hasPoint = Number.isFinite(lat) && Number.isFinite(lng);
+  const q = String(search || '').trim().slice(0, 60);
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return prisma.$queryRaw`
+    SELECT * FROM (
+    SELECT p."id", p."name", p."phone", p."city", p."vehicleType", p."rating", p."lastLocationAt",
+           p."availabilityStatus"::text AS "availabilityStatus",
+           (z."boundary" IS NOT NULL AND p."lastLocation" IS NOT NULL
+             AND ST_Covers(z."boundary", p."lastLocation")) AS "insideZone",
+           CASE WHEN ${hasPoint} AND p."lastLocation" IS NOT NULL
+             THEN ST_Distance(p."lastLocation", ST_MakePoint(${hasPoint ? lng : 0}, ${hasPoint ? lat : 0})::geography) / 1000
+           END AS "distanceKm"
+    FROM "food_delivery_partners" p
+    LEFT JOIN "food_zones" z ON z."id" = ${zoneId || ''}
+    WHERE p."status"::text = 'approved'
+      AND (p."availabilityStatus"::text = 'online') = ${online}
+      AND (
+        (${cityKey} <> '' AND lower(p."city") = ${cityKey})
+        OR (z."boundary" IS NOT NULL AND p."lastLocation" IS NOT NULL AND ST_Covers(z."boundary", p."lastLocation"))
+      )
+      AND (${q} = '' OR p."name" ILIKE ${like} OR p."phone" LIKE ${like})
+    ) c
+    ORDER BY "insideZone" DESC,
+             CASE WHEN ${online} THEN "distanceKm" END ASC NULLS LAST,
+             "name" ASC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+}
+
+/**
+ * The picker list for assigning an order by hand.
+ *
+ * Options: includeOffline (also list offline riders, a page at a time),
+ * search (name or phone, both lists), offlinePage (1-based).
+ */
+export async function listEligibleRiders(orderId, { includeOffline = false, search = '', offlinePage = 1 } = {}) {
+  const row = await loadOrderForAssign(orderId);
+  const order = toOrder(row);
+  const zoneId = row.zoneId;
+  const cityName = row.zone?.cityRef?.name || row.zone?.name || '';
+  const cityKey = String(cityName).trim().toLowerCase();
+  const lat = Number(row.restaurant?.latitude);
+  const lng = Number(row.restaurant?.longitude);
+  const page = Math.max(1, Math.trunc(Number(offlinePage) || 1));
+  const common = { zoneId, cityKey, lat, lng, search };
+
+  const [onlineRows, offlineRows] = await Promise.all([
+    // One past the cap, to say whether the list was cut.
+    eligibleRiderCandidates({ ...common, online: true, limit: ELIGIBLE_ONLINE_CAP + 1, offset: 0 }),
+    includeOffline
+      ? eligibleRiderCandidates({
+          ...common,
+          online: false,
+          limit: ELIGIBLE_OFFLINE_PAGE + 1,
+          offset: (page - 1) * ELIGIBLE_OFFLINE_PAGE,
+        })
+      : [],
+  ]);
+  const onlineCapped = onlineRows.length > ELIGIBLE_ONLINE_CAP;
+  const offlineHasMore = offlineRows.length > ELIGIBLE_OFFLINE_PAGE;
+  const candidates = [
+    ...onlineRows.slice(0, ELIGIBLE_ONLINE_CAP),
+    ...offlineRows.slice(0, ELIGIBLE_OFFLINE_PAGE),
+  ];
+  const meta = {
+    order: { id: row.id, displayId: row.order_id || row.id, zoneId, zoneName: row.zone?.name || '', restaurantName: row.restaurant?.restaurantName || '' },
+    onlineCapped,
+    onlineCap: ELIGIBLE_ONLINE_CAP,
+    offline: includeOffline ? { page, pageSize: ELIGIBLE_OFFLINE_PAGE, hasMore: offlineHasMore } : null,
+  };
+  if (!candidates.length) return { ...meta, riders: [] };
+
+  const ids = candidates.map((c) => c.id);
+  const [activeCounts, { maxActiveOrdersPerRider }, cashBlocked, wallets, todayCounts] = await Promise.all([
+    getRiderActiveOrderCounts(ids),
+    getDispatchSettings(),
+    orderCollectsCash(order) ? getCashBlockedPartnerIds(ids) : new Set(),
+    prisma.wallet.findMany({ where: { entityType: 'deliveryBoy', entityId: { in: ids } }, select: { entityId: true, cashInHand: true } }),
+    prisma.foodOrder.groupBy({
+      by: ['dispatchDeliveryPartnerId'],
+      where: { dispatchDeliveryPartnerId: { in: ids }, orderStatus: 'delivered', deliveredAt: { gte: startOfTodayIst() } },
+      _count: { _all: true },
+    }),
+  ]);
+  const cash = new Map(wallets.map((w) => [w.entityId, Number(w.cashInHand) || 0]));
+  const today = new Map(todayCounts.map((c) => [c.dispatchDeliveryPartnerId, c._count._all]));
+  const declined = new Set(
+    (row.dispatchOffers || []).filter((o) => ['rejected', 'timeout'].includes(o.action)).map((o) => o.partnerId),
+  );
+
+  const riders = candidates.map((p) => {
+    const online = p.availabilityStatus === 'online';
+    const isInside = Boolean(p.insideZone);
+    // At peak time an admin may let a rider carry more than one order; a rider
+    // under that limit can still be given this one.
+    const activeOrders = activeCounts.get(p.id) || 0;
+    const atLimit = activeOrders >= maxActiveOrdersPerRider;
+    const reasons = [];
+    if (!online) reasons.push('Offline');
+    if (atLimit) {
+      reasons.push(maxActiveOrdersPerRider > 1 ? `Already carrying ${activeOrders} orders` : 'On another delivery');
+    }
+    if (cashBlocked.has(p.id)) reasons.push('Cash limit reached');
+    const distanceKm = p.distanceKm == null ? null : Math.round(Number(p.distanceKm) * 10) / 10;
+    return {
+      id: p.id,
+      name: p.name,
+      phone: p.phone,
+      city: p.city,
+      vehicleType: p.vehicleType,
+      rating: Number(p.rating) || 0,
+      online,
+      insideZone: isInside,
+      busy: atLimit,
+      activeOrders,
+      maxActiveOrders: maxActiveOrdersPerRider,
+      cashInHand: cash.get(p.id) || 0,
+      cashBlocked: cashBlocked.has(p.id),
+      deliveredToday: today.get(p.id) || 0,
+      distanceKm,
+      lastLocationAt: p.lastLocationAt,
+      declinedThisOrder: declined.has(p.id),
+      currentlyAssigned: row.dispatchDeliveryPartnerId === p.id && row.dispatchStatus === 'assigned',
+      assignable: reasons.length === 0,
+      // Outside the zone is allowed only with an override and a reason.
+      needsOverride: reasons.length === 0 && !isInside,
+      notAssignableReason: reasons.join(', '),
+    };
+  });
+
+  const rank = (r) => (r.assignable ? 0 : 2) + (r.insideZone ? 0 : 1);
+  riders.sort(
+    (a, b) => rank(a) - rank(b) || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9) || a.name.localeCompare(b.name),
+  );
+  return { ...meta, riders };
+}
+
+// ---- assigning -------------------------------------------------------------------
+
+async function notifyRiderOfAssignment(row, partnerId, windowMs) {
+  const order = toOrder(row);
+  const basePayload = buildDeliverySocketPayload(order, row.restaurant);
+  const payload = await enrichPayloadWithTripRoadDistance(order, basePayload);
+  const acceptanceDeadlineAt = new Date(Date.now() + windowMs);
+  try {
+    getIO()?.to(rooms.delivery(partnerId)).emit('new_order', {
+      ...payload,
+      acceptanceDeadlineAt,
+      acceptTimeoutSeconds: Math.round(windowMs / 1000),
+      assignedByAdmin: true,
+    });
+  } catch (err) {
+    logger.warn(`Assign socket failed: ${err?.message || err}`);
+  }
+  try {
+    await notifyOwnersActionableAlert([{ ownerType: 'DELIVERY_PARTNER', ownerId: partnerId }], {
+      title: 'New order assigned to you',
+      body: `Order #${row.order_id || row.id} has been assigned to you. Tap to accept.`,
+      androidTag: `order_${row.id}`,
+      androidChannelId: 'incoming_orders_channel_v3',
+      data: buildIncomingOrderPushData(order, payload, acceptanceDeadlineAt, windowMs),
+    });
+  } catch (err) {
+    logger.warn(`Assign push failed for ${row.id}: ${err?.message || err}`);
+  }
+}
+
+/**
+ * Tell a rider their pending assignment was taken back. 'order_deassigned' is
+ * the event the shipped rider app already listens for: it closes the accept
+ * popup for that order, so no app update is needed.
+ */
+function tellRiderWithdrawn(partnerId, row) {
+  try {
+    getIO()?.to(rooms.delivery(partnerId)).emit('order_deassigned', {
+      orderId: row.id,
+      orderMongoId: row.id,
+      message: `Order #${row.order_id || row.id} is no longer assigned to you.`,
+    });
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * An admin gives an order to a rider. The rider gets the same accept popup as
+ * an automatic offer, with the manual accept window; declining or not
+ * answering brings the order back to the queue.
+ */
+export async function assignRiderManually(orderId, partnerId, adminId, { force = false, reason = '' } = {}) {
+  const row = await loadOrderForAssign(orderId);
+  if (!ASSIGNABLE.includes(row.orderStatus)) {
+    throw new ValidationError(`An order that is ${row.orderStatus.replace(/_/g, ' ')} can't be assigned a rider`);
+  }
+  if (row.dispatchStatus === 'accepted' || row.dispatchAcceptedAt) {
+    throw new ValidationError('A rider has already accepted this order');
+  }
+
+  const { riders } = await listEligibleRiders(row.id, { includeOffline: true });
+  const pick = riders.find((r) => r.id === String(partnerId));
+  if (!pick) {
+    if (!force) throw new ValidationError("This rider isn't in the order's zone or city");
+  } else if (!pick.assignable) {
+    throw new ValidationError(`Can't assign ${pick.name}: ${pick.notAssignableReason}`);
+  }
+  if ((!pick || pick.needsOverride) && !force) {
+    throw new ValidationError(`${pick?.name || 'This rider'} is outside the zone right now. Assign anyway with a reason.`);
+  }
+  if (force && !String(reason || '').trim()) {
+    throw new ValidationError('Give a reason for assigning a rider from outside the zone');
+  }
+  const partner = pick
+    ? { id: pick.id, name: pick.name }
+    : await prisma.foodDeliveryPartner.findFirst({
+        where: { id: String(partnerId), status: 'approved', availabilityStatus: 'online' },
+        select: { id: true, name: true },
+      });
+  if (!partner) throw new ValidationError('That rider is not available');
+
+  const settings = await getDispatchSettings();
+  const windowMs = settings.manualAcceptWindowSeconds * 1000;
+  const previous = row.dispatchStatus === 'assigned' ? row.dispatchDeliveryPartnerId : null;
+  if (previous === partner.id) throw new ValidationError(`${partner.name} is already assigned this order`);
+
+  // Only from the state we just read: two admins assigning at once can't both win.
+  const { count } = await prisma.foodOrder.updateMany({
+    where: {
+      id: row.id,
+      dispatchAcceptedAt: null,
+      dispatchStatus: row.dispatchStatus,
+      dispatchDeliveryPartnerId: row.dispatchDeliveryPartnerId,
+    },
+    data: {
+      dispatchStatus: 'assigned',
+      dispatchDeliveryPartnerId: partner.id,
+      dispatchAssignedAt: new Date(),
+      awaitingManualAt: row.awaitingManualAt || new Date(),
+    },
+  });
+  if (!count) throw new ValidationError('This order was just assigned or accepted. Refresh and try again.');
+
+  if (previous) {
+    await prisma.orderDispatchOffer.updateMany({
+      where: { orderId: row.id, partnerId: previous, action: 'offered' },
+      data: { action: 'withdrawn' },
+    });
+    tellRiderWithdrawn(previous, row);
+  }
+  await prisma.orderDispatchOffer.create({ data: { orderId: row.id, partnerId: partner.id, action: 'offered' } });
+  await pushStatusHistory(row.id, {
+    byRole: 'ADMIN',
+    byId: adminId,
+    from: row.orderStatus,
+    to: row.orderStatus,
+    note: `Rider ${partner.name} assigned by admin${force ? ` (outside zone: ${String(reason).trim()})` : ''}`,
+  });
+
+  const fresh = await loadOrderForAssign(row.id);
+  await notifyRiderOfAssignment(fresh, partner.id, windowMs);
+  await addOrderJob(
+    { action: 'DISPATCH_TIMEOUT_CHECK', orderMongoId: row.id, orderId: row.id, partnerId: partner.id, manual: true },
+    { delay: windowMs },
+  );
+  emitToAdmins('order_assignment_update', row.zoneId, { orderId: row.id, assignedTo: partner });
+
+  return {
+    orderId: row.id,
+    assignedTo: partner,
+    deadlineAt: new Date(Date.now() + windowMs),
+  };
+}
+
+/**
+ * Give an order to a rider from outside -- Rapido, Shadowfax, a temporary hand
+ * -- when no Minto rider can take it. Their name and phone go on the order and
+ * show to the customer and restaurant as the rider. They have no app, so the
+ * admin moves the order on (picked up, delivered) from the Orders page.
+ */
+export async function assignExternalRider(orderId, adminId, { provider = '', name = '', phone = '' } = {}) {
+  const row = await loadOrderForAssign(orderId);
+  if (!ASSIGNABLE.includes(row.orderStatus)) {
+    throw new ValidationError(`An order that is ${row.orderStatus.replace(/_/g, ' ')} can't be assigned a rider`);
+  }
+  if (row.dispatchStatus === 'accepted' || row.dispatchAcceptedAt) {
+    throw new ValidationError('A rider has already accepted this order');
+  }
+  const riderName = String(name || '').trim().slice(0, 80);
+  const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  const via = String(provider || '').trim().slice(0, 40);
+  if (riderName.length < 2) throw new ValidationError("Enter the rider's name");
+  if (!/^[6-9]\d{9}$/.test(digits)) throw new ValidationError("Enter the rider's 10-digit mobile number");
+
+  const previous = row.dispatchStatus === 'assigned' ? row.dispatchDeliveryPartnerId : null;
+  const { count } = await prisma.foodOrder.updateMany({
+    where: {
+      id: row.id,
+      dispatchAcceptedAt: null,
+      dispatchStatus: row.dispatchStatus,
+      dispatchDeliveryPartnerId: row.dispatchDeliveryPartnerId,
+    },
+    data: {
+      dispatchStatus: 'accepted',
+      dispatchDeliveryPartnerId: null,
+      dispatchAssignedAt: new Date(),
+      dispatchAcceptedAt: new Date(),
+      externalRiderProvider: via || null,
+      externalRiderName: riderName,
+      externalRiderPhone: digits,
+    },
+  });
+  if (!count) throw new ValidationError('This order was just assigned or accepted. Refresh and try again.');
+
+  // Nobody else is asked any more.
+  await prisma.orderDispatchOffer.updateMany({
+    where: { orderId: row.id, action: 'offered' },
+    data: { action: 'withdrawn' },
+  });
+  if (previous) tellRiderWithdrawn(previous, row);
+  await pushStatusHistory(row.id, {
+    byRole: 'ADMIN',
+    byId: adminId,
+    from: row.orderStatus,
+    to: row.orderStatus,
+    note: `Outside rider ${riderName}${via ? ` (${via})` : ''} assigned by admin`,
+  });
+
+  const assignedTo = { id: null, name: riderName, phone: digits, provider: via, isExternal: true };
+  try {
+    const io = getIO();
+    if (io) {
+      const payload = { orderId: row.id, orderMongoId: row.id, orderStatus: row.orderStatus, deliveryPartner: assignedTo };
+      if (row.userId) io.to(rooms.user(row.userId)).emit('order_status_update', payload);
+      if (row.restaurantId) io.to(rooms.restaurant(row.restaurantId)).emit('order_status_update', payload);
+    }
+  } catch (err) {
+    logger.warn(`External rider socket emit failed: ${err?.message || err}`);
+  }
+  emitToAdmins('order_assignment_update', row.zoneId, { orderId: row.id, assignedTo });
+  return { orderId: row.id, assignedTo };
+}
+
+/** Take back an assignment the rider hasn't accepted; the order stays queued. */
+export async function withdrawManualAssignment(orderId, adminId) {
+  const row = await loadOrderForAssign(orderId);
+  if (row.dispatchStatus !== 'assigned' || !row.dispatchDeliveryPartnerId || row.dispatchAcceptedAt) {
+    throw new ValidationError('No pending assignment to cancel');
+  }
+  const partnerId = row.dispatchDeliveryPartnerId;
+  const { count } = await prisma.foodOrder.updateMany({
+    where: { id: row.id, dispatchStatus: 'assigned', dispatchDeliveryPartnerId: partnerId, dispatchAcceptedAt: null },
+    data: { dispatchStatus: 'unassigned', dispatchDeliveryPartnerId: null, dispatchAssignedAt: null },
+  });
+  if (!count) throw new ValidationError('The rider has just accepted or the order changed. Refresh.');
+  await prisma.orderDispatchOffer.updateMany({
+    where: { orderId: row.id, partnerId, action: 'offered' },
+    data: { action: 'withdrawn' },
+  });
+  tellRiderWithdrawn(partnerId, row);
+  await pushStatusHistory(row.id, {
+    byRole: 'ADMIN',
+    byId: adminId,
+    from: row.orderStatus,
+    to: row.orderStatus,
+    note: 'Rider assignment cancelled by admin',
+  });
+  emitToAdmins('order_assignment_update', row.zoneId, { orderId: row.id, assignedTo: null });
+  return { orderId: row.id, withdrawn: true };
+}
+
+// ---- zone switches, sweeps and reminders -------------------------------------------
+
+/** A zone's own mode: 'auto', 'manual', or null to follow the global default. */
+export async function setZoneDispatchMode(zoneId, mode) {
+  const value = mode === 'manual' || mode === 'auto' ? mode : null;
+  const before = await getDispatchModeForZone(zoneId);
+  const { count } = await prisma.foodZone.updateMany({ where: { id: String(zoneId) }, data: { dispatchMode: value } });
+  if (!count) throw new NotFoundError('Zone not found');
+  clearDispatchModeCache();
+  const after = await getDispatchModeForZone(zoneId);
+  if (before === 'manual' && after === 'auto') {
+    void sweepWaitingOrdersToAuto(zoneId).catch((err) => logger.warn(`Zone dispatch sweep failed: ${err?.message || err}`));
+  }
+  return { zoneId: String(zoneId), dispatchMode: value, effectiveMode: after };
+}
+
+export async function listZoneDispatchModes() {
+  const [{ global, settings }, zones] = await Promise.all([
+    loadModes(),
+    prisma.foodZone.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, dispatchMode: true, cityRef: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+  return {
+    ...settings,
+    dispatchMode: global,
+    zones: zones.map((z) => ({
+      id: z.id,
+      name: z.name,
+      city: z.cityRef?.name || '',
+      dispatchMode: z.dispatchMode || null,
+      effectiveMode: z.dispatchMode || global,
+    })),
+  };
+}
+
+/** A zone went back to automatic: offer its waiting orders to riders now. */
+export async function sweepWaitingOrdersToAuto(zoneId = null) {
+  const rows = await runUnscoped(() =>
+    prisma.foodOrder.findMany({
+      where: {
+        awaitingManualAt: { not: null },
+        dispatchAcceptedAt: null,
+        dispatchStatus: 'unassigned',
+        orderStatus: { in: ASSIGNABLE },
+        ...(zoneId ? { zoneId: String(zoneId) } : {}),
+      },
+      select: { id: true, zoneId: true },
+    }),
+  );
+  let swept = 0;
+  for (const r of rows) {
+    if ((await getDispatchModeForZone(r.zoneId)) !== 'auto') continue;
+    await prisma.foodOrder.update({ where: { id: r.id }, data: { awaitingManualAt: null } });
+    await tryAutoAssign(r.id).catch((err) => logger.warn(`Sweep auto-assign failed for ${r.id}: ${err?.message || err}`));
+    swept += 1;
+  }
+  return { swept };
+}
+
+/** Every few minutes: remind admins of orders that have waited too long. */
+export async function remindStaleManualQueue() {
+  const settings = await getDispatchSettings();
+  const cutoff = new Date(Date.now() - settings.manualQueueAlertMinutes * 60000);
+  const rows = await runUnscoped(() =>
+    prisma.foodOrder.findMany({
+      where: {
+        awaitingManualAt: { lt: cutoff },
+        dispatchAcceptedAt: null,
+        dispatchStatus: 'unassigned',
+        orderStatus: { in: ASSIGNABLE },
+      },
+      select: {
+        id: true, order_id: true, orderId: true, zoneId: true, awaitingManualAt: true,
+        restaurant: { select: { restaurantName: true } },
+      },
+      take: 100,
+    }),
+  );
+  for (const r of rows) {
+    if ((await getDispatchModeForZone(r.zoneId)) !== 'manual') continue;
+    const mins = Math.floor((Date.now() - new Date(r.awaitingManualAt).getTime()) / 60000);
+    await alertAdmins(r, {
+      title: 'Order still needs a rider',
+      body: `Order #${r.order_id || r.orderId || r.id} has waited ${mins} min for a rider. Please assign one.`,
+      reason: 'reminder',
+    });
+  }
+  return { reminded: rows.length };
+}
+

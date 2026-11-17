@@ -1,0 +1,147 @@
+import express from 'express';
+import path from 'path';
+import cors from 'cors';
+import helmet from 'helmet';
+import mongoSanitize from 'mongo-sanitize';
+import xssClean from 'xss-clean';
+import routes from './routes/index.js';
+import { signMediaResponses } from './middleware/signMedia.js';
+import { guardErrorResponses } from './middleware/guardErrorResponses.js';
+import { stripIncomingSignatures } from './middleware/stripIncomingSignatures.js';
+import shareLinksRoutes from './modules/food/public/shareLinks.routes.js';
+import errorHandler from './middleware/errorHandler.js';
+import notFound from './middleware/notFound.js';
+import { mountDeployWebhook } from './middleware/deployWebhook.js';
+import { apiRateLimiter } from './middleware/rateLimit.js';
+import { responseTimeLogger } from './middleware/responseTimeLogger.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
+import { healthCheck } from './config/health.js';
+import { config } from './config/env.js';
+
+const app = express();
+
+// Trust first proxy (essential for express-rate-limit if behind a proxy)
+app.set('trust proxy', 1);
+
+// Request ID tracing (before other middlewares so all logs can use it)
+app.use(requestIdMiddleware);
+
+// Health endpoints (no rate limit, minimal JSON, no secrets)
+app.get('/health', async (_req, res) => {
+    try {
+        const data = await healthCheck();
+        // 503 when the database is unreachable, so a load balancer stops
+        // routing to this instance instead of only the body saying DOWN.
+        res.status(data.status === 'UP' ? 200 : 503).json(data);
+    } catch (err) {
+        res.status(503).json({ status: 'DOWN', error: 'Health check failed' });
+    }
+});
+app.get('/ready', (_req, res) => {
+    res.status(200).json({ status: 'ready' });
+});
+
+// Security & parsing middlewares
+app.use(helmet({
+    contentSecurityPolicy: { directives: { defaultSrc: ["'self'"] } },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: config.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+    xssFilter: true,
+    noSniff: true,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+}));
+// An empty list is any origin — the mobile apps send no Origin header, so
+// nothing else would work for them. Set CORS_ORIGINS in production for the
+// admin panel; validateEnv warns when it is unset there.
+app.use(cors(config.corsOrigins.length ? { origin: config.corsOrigins } : undefined));
+
+// Every request except the health probes above, which a load balancer hits
+// constantly and which are registered before this on purpose.
+//
+// This replaced morgan('dev'), which logged the same requests a second time —
+// without the request id, in raw ANSI straight to stdout, and still chattering
+// under the test runner, whose stdout is also its protocol channel.
+app.use(responseTimeLogger);
+/**
+ * Requests whose authenticity is checked against the bytes we actually received.
+ *
+ * A sender signs the exact payload it transmitted. Re-serialising the parsed
+ * JSON can change whitespace and key order, so an HMAC computed over
+ * JSON.stringify(req.body) only matches by luck — and fails closed when it does
+ * not, which reads as a rejected webhook rather than as a bug.
+ */
+const SIGNED_WEBHOOK_PATHS = ['/webhook/razorpay', '/api/deploy'];
+
+app.use(express.json({
+    verify: (req, _res, buf) => {
+        const url = req.originalUrl || '';
+        if (SIGNED_WEBHOOK_PATHS.some((signed) => url.includes(signed))) {
+            req.rawBody = buf;
+        }
+    }
+}));
+app.use(express.urlencoded({ extended: true }));
+
+// Protect against NoSQL injection and XSS
+// A NUL character in any text value makes Postgres refuse the whole query, so
+// a request carrying one (`?search=%00`) failed with a 500 wherever it was used.
+// No real input contains one; they are removed before anything reads them.
+const stripNul = (value) => {
+    if (typeof value === 'string') return value.includes('\u0000') ? value.replace(/\u0000/g, '') : value;
+    if (Array.isArray(value)) return value.map(stripNul);
+    if (value && typeof value === 'object') {
+        for (const key of Object.keys(value)) value[key] = stripNul(value[key]);
+    }
+    return value;
+};
+
+app.use((req, _res, next) => {
+    req.body = stripNul(mongoSanitize(req.body));
+    req.query = stripNul(mongoSanitize(req.query));
+    req.params = stripNul(mongoSanitize(req.params));
+    next();
+});
+app.use(xssClean());
+
+// Signs S3 media urls on the way out. Before the routes so it wraps res.json
+// for every handler, including the ones that never touch sendResponse.
+app.use('/api', signMediaResponses);
+
+// Never lets a database error, stack trace or crash text reach a client, even
+// from controllers that send err.message themselves instead of using next().
+app.use('/api', guardErrorResponses);
+
+// ...and takes our signatures back off on the way in, so a client that posts
+// back a url we signed for it cannot freeze a dead one into the database.
+app.use('/api', stripIncomingSignatures);
+
+// Global rate limiting for API routes
+app.use('/api', apiRateLimiter);
+
+// API Routes
+app.use('/api', routes);
+
+// Public share-link landing pages and the Android App Links manifest.
+// Mounted at the root, not under /api, because these paths are what shared links
+// point at and what Android matches its intent filter against.
+app.use(shareLinksRoutes);
+// Production nginx only forwards /api to Node, so the invite page is reachable
+// at /api/v1/share/invite too.
+app.use('/api/v1', shareLinksRoutes);
+
+// Dev-only: serve uploaded files when nginx is not in front (production uses nginx)
+if (config.nodeEnv === 'development') {
+    app.use('/uploads', express.static(path.resolve(config.uploadStorageRoot)));
+}
+
+// Mounted here rather than at server start so it is registered before the
+// catch-all 404 below, which would otherwise answer /api/deploy first.
+mountDeployWebhook(app);
+
+// Anything no route matched gets a JSON 404 instead of Express's HTML page.
+app.use(notFound);
+
+// Error Handling
+app.use(errorHandler);
+
+export default app;

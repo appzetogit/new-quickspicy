@@ -1,0 +1,198 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+    resolveUserDeliveryFee,
+    calculateRiderEarning,
+    serviceableRadiusKm,
+    resolveDeliveryFeeGstRate,
+    computeDeliveryFeeGst,
+} from './order-pricing.service.js';
+
+/**
+ * Distance-band pricing, checked without a database. These branches decide what a
+ * customer is charged and what a rider is paid, and both have already produced
+ * live incidents — a flat fee overriding the bands, and a rider paid nothing for a
+ * delivery past the last band.
+ */
+
+const settings = {
+    deliveryFee: 99, // deliberately higher than every band
+    deliveryFeeRanges: [
+        { min: 0, max: 3, fee: 20, deliveryBoyBasePay: 15 },
+        { min: 3, max: 7, fee: 40, deliveryBoyPerKm: 8 },
+        { min: 7, max: 12, fee: 70, deliveryBoyPerKm: 10 },
+    ],
+    gstRate: 5,
+    deliveryFeeGstRate: 18,
+};
+
+test('bands beat the flat fee when the distance is known', () => {
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 2 }).deliveryFee, 20);
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 5 }).deliveryFee, 40);
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 9 }).deliveryFee, 70);
+});
+
+test('band boundaries are half-open, except the last which includes its max', () => {
+    // 3 km belongs to the 3–7 band, not 0–3.
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 3 }).deliveryFee, 40);
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 7 }).deliveryFee, 70);
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 12 }).deliveryFee, 70);
+});
+
+test('an unknown distance quotes the cheapest band, never the flat fee', () => {
+    // The flat 99 used to win here, so carts without an address yet showed a fee
+    // no band would ever have produced.
+    const quote = resolveUserDeliveryFee(settings, { distanceKm: null });
+    assert.equal(quote.deliveryFee, 20);
+    assert.equal(quote.source, 'default');
+});
+
+test("a restaurant's free-delivery threshold overrides every band", () => {
+    // The card promises "Free delivery above ₹149", so a ₹149 subtotal must not
+    // be charged the 9 km band's ₹70.
+    const free = resolveUserDeliveryFee(settings, { distanceKm: 9, subtotal: 149, freeDeliveryAbove: 149 });
+    assert.equal(free.deliveryFee, 0);
+    assert.equal(free.source, 'free_delivery_threshold');
+
+    // A rupee short still pays.
+    const paid = resolveUserDeliveryFee(settings, { distanceKm: 9, subtotal: 148, freeDeliveryAbove: 149 });
+    assert.equal(paid.deliveryFee, 70);
+
+    // No threshold configured leaves pricing exactly as it was.
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 9, subtotal: 9999 }).deliveryFee, 70);
+});
+
+test('the flat fee is used only when no bands exist at all', () => {
+    const quote = resolveUserDeliveryFee({ deliveryFee: 99, deliveryFeeRanges: [] }, { distanceKm: 5 });
+    assert.equal(quote.deliveryFee, 99);
+});
+
+test('a trip past the last band is charged as the widest band', () => {
+    const quote = resolveUserDeliveryFee(settings, { distanceKm: 20 });
+    assert.equal(quote.deliveryFee, 70);
+    assert.equal(quote.source, 'distance_over_range');
+});
+
+test('rider pay: a base-pay band pays its base pay', () => {
+    assert.equal(calculateRiderEarning(settings, 2), 15);
+});
+
+test('rider pay: base pay plus per-km for the km past the band start', () => {
+    const both = { deliveryFeeRanges: [
+        { min: 0, max: 3, fee: 20, deliveryBoyBasePay: 20, deliveryBoyPerKm: 5 },
+        { min: 3, max: 10, fee: 40, deliveryBoyBasePay: 35, deliveryBoyPerKm: 6 },
+    ] };
+    assert.equal(calculateRiderEarning(both, 2), 30); // 20 + 5 × 2
+    assert.equal(calculateRiderEarning(both, 5), 47); // 35 + 6 × 2
+    // The screenshot case: ₹30/km used to multiply the whole trip, paying ₹147
+    // for 4.9 km on a 1.5–5 km band.
+    const old = { deliveryFeeRanges: [{ min: 1.5, max: 5, fee: 35, deliveryBoyPerKm: 30 }] };
+    assert.equal(calculateRiderEarning(old, 4.9), 102); // 30 × 3.4
+});
+
+test('rider pay: per-km counts from the band start, like the customer fee', () => {
+    assert.equal(calculateRiderEarning(settings, 5), 16); // 8 × (5 − 3)
+    assert.equal(calculateRiderEarning(settings, 9), 20); // 10 × (9 − 7)
+});
+
+test('rider pay past the last band falls back rather than paying zero', () => {
+    // The customer is still charged, so a 0 here would mean unpaid work on a real
+    // delivery whenever the bands do not span the dispatch radius.
+    assert.equal(calculateRiderEarning(settings, 20), 130); // 10 × (20 − 7), widest band
+});
+
+test('rider pay is zero only when nothing is configured', () => {
+    assert.equal(calculateRiderEarning({ deliveryFeeRanges: [] }, 5), 0);
+    assert.equal(calculateRiderEarning(settings, -1), 0);
+});
+
+test('the serviceable radius is the widest band max', () => {
+    assert.equal(serviceableRadiusKm(settings), 12);
+    // No bands means no limit can be derived, so none is enforced.
+    assert.equal(serviceableRadiusKm({ deliveryFeeRanges: [] }), null);
+});
+
+test('delivery-fee GST is never charged, even with a rate left in settings', () => {
+    // GST is on food only (admin issue #28).
+    assert.equal(resolveDeliveryFeeGstRate(settings), 0);
+    assert.equal(resolveDeliveryFeeGstRate({}), 0);
+    assert.equal(computeDeliveryFeeGst(40, resolveDeliveryFeeGstRate(settings)), 0);
+});
+
+/**
+ * A band can carry a per-km rate as well as a flat fee, so a tariff like
+ * "Rs 20 up to 2 km, then Rs 5 per km" is two bands and stays exact for
+ * fractional distances instead of rounding up to the next whole-km band.
+ */
+const perKmSettings = {
+    deliveryFeeRanges: [
+        { min: 0, max: 2, fee: 20, feePerKm: 0 },
+        { min: 2, max: 20, fee: 20, feePerKm: 5 },
+    ],
+};
+
+test('a per-km band charges the flat fee until its own start', () => {
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 0.4 }).deliveryFee, 20);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 1.9 }).deliveryFee, 20);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 2 }).deliveryFee, 20);
+});
+
+test('past the free distance it is base + rate * the kilometres beyond', () => {
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 3 }).deliveryFee, 25);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 7 }).deliveryFee, 45);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 20 }).deliveryFee, 110);
+});
+
+test('fractional distances are charged per km, then rounded to the rupee', () => {
+    // 20 + 5 * 5.5 = 47.5 -> 48; 20 + 5 * 0.1 = 20.5 -> 21; 20 + 5 * 0.06 = 20.3 -> 20.
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 7.5 }).deliveryFee, 48);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 2.1 }).deliveryFee, 21);
+    assert.equal(resolveUserDeliveryFee(perKmSettings, { distanceKm: 2.06 }).deliveryFee, 20);
+});
+
+test('surge is added before rounding, and never to free delivery', () => {
+    // The reported bill: 35 + 10 * 4.07 = 75.70, plus a 30 surge = 105.70 -> 106.
+    const bands = {
+        deliveryFeeRanges: [{ min: 5, max: 15, fee: 35, feePerKm: 10 }],
+        surgeFee: 30,
+    };
+    assert.equal(resolveUserDeliveryFee(bands, { distanceKm: 9.07 }).deliveryFee, 106);
+    assert.equal(
+        resolveUserDeliveryFee(bands, { distanceKm: 9.07, subtotal: 500, freeDeliveryAbove: 199 }).deliveryFee,
+        0,
+    );
+});
+
+test('a trip past the last band keeps accruing the rate, not the start price', () => {
+    const quote = resolveUserDeliveryFee(perKmSettings, { distanceKm: 25 });
+    assert.equal(quote.source, 'distance_over_range');
+    assert.equal(quote.deliveryFee, 135);
+});
+
+test('bands with no rate price exactly as before', () => {
+    assert.equal(resolveUserDeliveryFee(settings, { distanceKm: 9 }).deliveryFee, 70);
+});
+
+test('the fee follows the band exactly, and says which band priced it', () => {
+    const bands = { deliveryFeeRanges: [{ min: 0, max: 50, fee: 10, feePerKm: 7 }] };
+
+    // 0 km is the band's 0 km price: its base fee, nothing per km.
+    const zero = resolveUserDeliveryFee(bands, { distanceKm: 0 });
+    assert.equal(zero.deliveryFee, 10);
+    assert.equal(zero.source, 'distance');
+    assert.deepEqual(zero.band, { bandMin: 0, bandMax: 50, baseFee: 10, perKm: 7, surgeFee: 0 });
+
+    // fee + feePerKm x km past the band start.
+    assert.equal(resolveUserDeliveryFee(bands, { distanceKm: 3 }).deliveryFee, 31);
+
+    // Past the last band: priced on the widest band, which is reported.
+    const over = resolveUserDeliveryFee(bands, { distanceKm: 60 });
+    assert.equal(over.source, 'distance_over_range');
+    assert.equal(over.band.bandMax, 50);
+
+    // A surge shows in the breakdown as well as in the fee.
+    const surged = resolveUserDeliveryFee({ ...bands, surgeFee: 15 }, { distanceKm: 0 });
+    assert.equal(surged.deliveryFee, 25);
+    assert.equal(surged.band.surgeFee, 15);
+});
