@@ -16,7 +16,6 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const WEBP_MIME = 'image/webp';
 const GIF_MIME = 'image/gif';
-const MAX_GIF_BYTES = 3_000_000;
 const ANIMATED_MAX_WIDTH = 720;
 const FOLDER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/_-]*$/;
 
@@ -154,23 +153,16 @@ const getWebpMaxWidth = () => {
 
 /**
  * Convert JPEG/PNG/WebP to optimized WebP for storage.
- * GIF becomes animated WebP (under 3 MB only). PNG with alpha uses lossless WebP.
+ * GIF becomes animated WebP when that is smaller. PNG with alpha uses lossless WebP.
  * Defaults are phone-sized: 1600px wide at quality 80.
  */
 export const optimizeImageForStorage = async (inputBuffer, mimeType) => {
     const normalizedMime = String(mimeType || '').toLowerCase();
 
     if (normalizedMime === GIF_MIME) {
-        // A GIF banner is effectively a video, and the app downloads the whole
-        // file before showing a frame: a 22 MB one held the home screen up for
-        // seconds. Big ones are refused with a plain reason; the rest become
-        // animated WebP, sized for a phone, at a fraction of the bytes.
-        if (inputBuffer.length > MAX_GIF_BYTES) {
-            const mb = (inputBuffer.length / 1e6).toFixed(1);
-            throw new ValidationError(
-                `This GIF is ${mb} MB. Animated images must be under ${MAX_GIF_BYTES / 1e6} MB - make it shorter or smaller (about 480px wide), or use a still image.`
-            );
-        }
+        // No size cap of its own (only the 25 MB upload limit): the admin
+        // decides. A big GIF is still made phone-sized here, as animated WebP
+        // at ANIMATED_MAX_WIDTH, which is usually a fraction of the bytes.
         const animated = sharp(inputBuffer, { animated: true, failOn: 'none' });
         const meta = await animated.metadata();
         const outputBuffer = await animated

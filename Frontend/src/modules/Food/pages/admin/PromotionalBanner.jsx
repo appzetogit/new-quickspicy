@@ -6,9 +6,10 @@ import ImageCropDialog from "@food/components/admin/ImageCropDialog"
 
 /** The app shows promotional banners at 5:3 (promo_banner_carousel.dart). */
 const BANNER_ASPECT = 5 / 3
-/** Matches the server's MAX_VIDEO_BYTES (12MB). GIFs are kept smaller: the app downloads them whole. */
+/** Matches the server's MAX_VIDEO_BYTES (12MB). */
 const MAX_VIDEO_BYTES = 12 * 1024 * 1024
-const MAX_GIF_BYTES = 5 * 1024 * 1024
+/** GIFs have no limit of their own, only the server's 25MB cap on any upload. */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 const debugError = (...args) => {}
 
@@ -111,8 +112,8 @@ export default function PromotionalBanner() {
       return
     }
     if (type === "image/gif") {
-      if (file.size > MAX_GIF_BYTES) {
-        alert("GIF must be 5MB or less")
+      if (file.size > MAX_UPLOAD_BYTES) {
+        alert("That GIF is over the 25MB upload limit")
         return
       }
       setFormData(prev => ({ ...prev, file, mediaType: "gif", poster: null, posterPreview: null, preview: URL.createObjectURL(file) }))
@@ -491,7 +492,7 @@ export default function PromotionalBanner() {
                     <p className="text-[10px] text-slate-400">
                       {editingBanner
                         ? "To change the picture or video, add a new banner and delete this one."
-                        : "Image: JPEG, PNG or WebP, max 2MB, cropped to 5:3. GIF: max 5MB. Video: MP4 or WebM, max 12MB. Make GIFs and videos 5:3 (e.g. 1200×720); they are not cropped."}
+                        : "Image: JPEG, PNG or WebP, max 2MB, cropped to 5:3. GIF: any size up to the 25MB upload limit. Video: MP4 or WebM, max 12MB. Make GIFs and videos 5:3 (e.g. 1200×720); they are not cropped."}
                     </p>
                     {!editingBanner && formData.mediaType === "video" && (
                       <div className="flex items-center gap-3">
