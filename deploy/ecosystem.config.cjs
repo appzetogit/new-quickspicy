@@ -43,5 +43,15 @@ module.exports = {
       script: 'scripts/run-scheduled-jobs.js',
       max_memory_restart: '300M',
     },
+    {
+      // Runs the delayed order jobs: a rider's offer running out (next rider
+      // gets it) and a restaurant not accepting in time. Needs
+      // BULLMQ_ENABLED=true in Backend/.env. Without it those jobs are never
+      // queued and only the scheduler's 5-minute watchdog moves stuck orders.
+      ...common,
+      name: 'nq-worker',
+      script: 'src/queues/workers/order.worker.js',
+      max_memory_restart: '300M',
+    },
   ],
 }

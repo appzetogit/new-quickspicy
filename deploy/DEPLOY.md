@@ -3,7 +3,7 @@
 | Host | Serves | Backed by |
 | --- | --- | --- |
 | `new.quickspicy.in` | web app (SPA) | static build in `/srv/new-quick/web` |
-| `api-new.quickspicy.in` | API, Socket.IO, uploads | pm2 `nq-api` (5100), `nq-socket` (5101), `nq-scheduler` |
+| `api-new.quickspicy.in` | API, Socket.IO, uploads | pm2 `nq-api` (5100), `nq-socket` (5101), `nq-scheduler`, `nq-worker` |
 
 Same server as the older Quick Spicy app (`ssh quickspicy-srv`). The two share
 nginx and Redis and nothing else: this one has its own PostgreSQL database
@@ -35,9 +35,14 @@ into `Frontend/vite.config.js`, plus `Backend/init` / `Frontend/init` and a
     cd /var/www/new-quick/Backend
     PATH=/opt/node22/bin:$PATH npm ci
     PATH=/opt/node22/bin:$PATH npm run db:migrate     # all three steps, never just `migrate deploy`
-    pm2 reload nq-api nq-socket nq-scheduler
+    pm2 reload nq-api nq-socket nq-scheduler nq-worker
 
 First time only: `pm2 start /var/www/new-quick/deploy/ecosystem.config.cjs && pm2 save`.
+
+`Backend/.env` needs `BULLMQ_ENABLED=true` (Redis is already on through
+`REDIS_URL`). `nq-worker` runs the delayed order jobs: a rider offer that runs
+out goes to the next rider within seconds instead of waiting for the 5-minute
+watchdog.
 
 `Backend/.env` lives on the server only. Production mode (`NODE_ENV=production`)
 refuses to start without Razorpay, SMS India Hub and Firebase credentials;
