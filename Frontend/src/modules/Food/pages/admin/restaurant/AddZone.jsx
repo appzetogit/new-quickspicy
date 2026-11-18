@@ -849,7 +849,7 @@ export default function AddZone() {
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    City
+                    City <span className="text-red-500">*</span>
                   </label>
                   <CityPicker
                     value={{ cityId: formData.cityId, name: formData.city, createCity: formData.createCity }}

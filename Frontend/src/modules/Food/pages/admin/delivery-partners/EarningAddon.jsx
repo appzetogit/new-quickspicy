@@ -4,6 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@food/components/ui/dialog"
 import { adminAPI } from "@food/api"
 import { toast } from "sonner"
+import { toDayInput } from "@food/utils/dayInput"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -56,7 +57,7 @@ export default function EarningAddon() {
           debugLog(`?? Addon "${addon.title}":`, {
             currentRedemptions: addon.currentRedemptions,
             maxRedemptions: addon.maxRedemptions,
-            display: `${addon.currentRedemptions || 0} / ${addon.maxRedemptions || '8'}`
+            display: `${addon.currentRedemptions || 0} / ${addon.maxRedemptions || '∞'}`
           })
         })
         setEarningAddons(addons)
@@ -103,8 +104,8 @@ export default function EarningAddon() {
           ? String(Math.round((addon.requiredOnlineMinutes / 60) * 100) / 100)
           : "",
         earningAmount: addon.earningAmount?.toString() || "",
-        startDate: addon.startDate ? new Date(addon.startDate).toISOString().split('T')[0] : "",
-        endDate: addon.endDate ? new Date(addon.endDate).toISOString().split('T')[0] : "",
+        startDate: toDayInput(addon.startDate),
+        endDate: toDayInput(addon.endDate),
         maxRedemptions: addon.maxRedemptions?.toString() || "",
       })
     } else {
@@ -481,7 +482,7 @@ export default function EarningAddon() {
                         {visibleColumns.redemptions && (
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-slate-700">
-                              {addon.currentRedemptions || 0} / {addon.maxRedemptions || '8'}
+                              {addon.currentRedemptions || 0} / {addon.maxRedemptions || '∞'}
                             </span>
                           </td>
                         )}
@@ -549,7 +550,7 @@ export default function EarningAddon() {
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-lg bg-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all text-sm"
-                placeholder="e.g., Complete 50 orders and earn \u20B9500"
+                placeholder="e.g., Complete 50 orders and earn ₹500"
               />
             </div>
 

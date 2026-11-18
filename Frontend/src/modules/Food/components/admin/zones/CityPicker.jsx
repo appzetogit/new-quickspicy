@@ -74,6 +74,8 @@ export default function CityPicker({ value, onChange, disabled = false }) {
         onFocus={() => setOpen(true)}
         onChange={(e) => type(e.target.value)}
         placeholder="Start typing a city"
+        // Named for the "… is required" message, which otherwise used the placeholder.
+        aria-label="City"
         className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
       />

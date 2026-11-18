@@ -18,6 +18,7 @@ import canceledIcon from "@food/assets/Dashboard-icons/image26.png"
 import paymentFailedIcon from "@food/assets/Dashboard-icons/image27.png"
 import refundedIcon from "@food/assets/Dashboard-icons/image25.png"
 import { restaurantLabel } from "@food/utils/entityLabels"
+import { toDayInput } from "@food/utils/dayInput"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -137,8 +138,8 @@ export default function RegularOrderReport() {
         limit: 10000,
         ...(filters.zone !== "All Zones" && { zoneId: filters.zone }),
         ...(filters.restaurant !== "All restaurants" && { restaurantId: filters.restaurant }),
-        ...(fromDate && { startDate: fromDate.toISOString().split('T')[0] }),
-        ...(toDate && { endDate: toDate.toISOString().split('T')[0] }),
+        ...(fromDate && { startDate: toDayInput(fromDate) }),
+        ...(toDate && { endDate: toDayInput(toDate) }),
       }
 
       const response = await adminAPI.getOrders(params)

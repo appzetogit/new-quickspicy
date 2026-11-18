@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Loader2, Upload, CheckCircle2, AlertTriangle } from "lucide-react"
 import { adminAPI } from "@food/api"
@@ -99,9 +99,25 @@ export default function AddDeliveryman() {
   }, [])
 
   const set = (key, value) => {
-    setForm((f) => ({ ...f, [key]: value }))
+    // A new city can make the chosen zone wrong, so it is cleared.
+    setForm((f) => ({ ...f, [key]: value, ...(key === "city" && value !== f.city ? { zoneId: "" } : {}) }))
     if (errors[key]) setErrors((e) => ({ ...e, [key]: "" }))
   }
+
+  // The chosen city's zones. Zones with no city recorded match nothing, so if
+  // none match the whole list is offered rather than an empty picker.
+  const zonesForCity = useMemo(() => {
+    const name = String(form.city || "").trim().toLowerCase()
+    if (!name) return zones
+    const city = cities.find((c) => String(c.name || "").trim().toLowerCase() === name)
+    const cityId = String(city?.id || city?._id || "")
+    const matches = zones.filter((z) => {
+      const zoneCityId = String(z.cityId || z.cityRef?.id || z.cityRef?._id || "")
+      const zoneCity = String(z.city || z.cityRef?.name || "").trim().toLowerCase()
+      return (cityId && zoneCityId === cityId) || (zoneCity && zoneCity === name)
+    })
+    return matches.length ? matches : zones
+  }, [zones, cities, form.city])
 
   const validate = () => {
     const e = {}
@@ -210,10 +226,10 @@ export default function AddDeliveryman() {
                   <input className={input} value={form.city} onChange={(e) => set("city", e.target.value)} />
                 )}
               </Field>
-              <Field label="Zone" required={zones.length > 0} error={errors.zoneId} hint="For the admin list; orders still go to the nearest rider">
+              <Field label="Zone" required={zones.length > 0} error={errors.zoneId} hint="The rider's home zone. Zones set to take their own riders only offer orders to riders who serve them">
                 <select className={input} value={form.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
                   <option value="">Choose a zone…</option>
-                  {zones.map((z) => (
+                  {zonesForCity.map((z) => (
                     <option key={z.id || z._id} value={z.id || z._id}>{z.name || z.zoneName}</option>
                   ))}
                 </select>

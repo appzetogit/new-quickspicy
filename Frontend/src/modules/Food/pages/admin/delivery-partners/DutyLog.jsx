@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Clock, Loader2, Radio, AlertTriangle, Search } from "lucide-react"
 import { adminAPI } from "@food/api"
+import { toDayInput } from "@food/utils/dayInput"
 
 /**
  * When each rider went online and offline, on a screen of its own.
@@ -27,7 +28,7 @@ const fmtDuration = (minutes) => {
   return hours ? `${hours}h ${mins}m` : `${mins}m`
 }
 
-const iso = (date) => date.toISOString().slice(0, 10)
+const iso = (date) => toDayInput(date)
 
 /** Last 30 days, which is the range a duty question is usually about. */
 const defaultRange = () => {

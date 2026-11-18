@@ -3,6 +3,7 @@ import { Edit, Upload, Info, Trash2, Plus, Calendar, Link as LinkIcon, Save, X, 
 import api from "@food/api"
 import { resolveMediaUrl } from "../../../../shared/utils/mediaUrl.js"
 import ImageCropDialog from "@food/components/admin/ImageCropDialog"
+import { toDayInput } from "@food/utils/dayInput"
 
 /** The app shows promotional banners at 5:3 (promo_banner_carousel.dart). */
 const BANNER_ASPECT = 5 / 3
@@ -292,8 +293,8 @@ export default function PromotionalBanner() {
       restaurantId: banner.restaurantId || "",
       zoneId: banner.zoneId?._id || banner.zoneId || "",
       placement: banner.placement || "home",
-      startDate: banner.startDate ? new Date(banner.startDate).toISOString().split('T')[0] : "",
-      endDate: banner.endDate ? new Date(banner.endDate).toISOString().split('T')[0] : "",
+      startDate: toDayInput(banner.startDate),
+      endDate: toDayInput(banner.endDate),
       file: null,
       mediaType: banner.mediaType || "image",
       preview: resolveMediaUrl(banner.mediaType === "video" ? banner.videoUrl : banner.imageUrl),
