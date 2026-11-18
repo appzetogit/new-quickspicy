@@ -129,6 +129,9 @@ export async function savePlatformSetting(key, value, adminId = null) {
         // The next push signs in with what was just saved.
         const { resetFirebaseCredentialCache } = await import('../../../../core/notifications/firebase.service.js');
         resetFirebaseCredentialCache();
+        // Live tracking in this process too; other processes notice within a minute.
+        const { reloadFirebaseRealtime } = await import('../../../../config/firebase.js');
+        await reloadFirebaseRealtime();
     }
     return { key, value: maskSecrets(row.value, (PLATFORM_SETTING_KEYS[key]?.notSecret || [])), updatedAt: row.updatedAt };
 }

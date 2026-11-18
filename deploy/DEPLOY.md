@@ -45,8 +45,13 @@ out goes to the next rider within seconds instead of waiting for the 5-minute
 watchdog.
 
 `Backend/.env` lives on the server only. Production mode (`NODE_ENV=production`)
-refuses to start without Razorpay, SMS India Hub and Firebase credentials;
-until those exist it runs as `NODE_ENV=staging`, where every OTP is 1234.
+refuses to start without Razorpay, SMS and Firebase credentials. Each can be
+an env var or saved in the admin panel instead: 3rd Party → Razorpay (key id,
+secret, webhook secret, switched on), 3rd Party → SMS India Hub or Twilio, and
+the Firebase page (service account + Realtime Database URL, which also turns on
+server-side live tracking). Until those exist it runs as `NODE_ENV=staging`,
+where every OTP is 1234. Going live: save the keys, set `NODE_ENV=production`
+and `USE_DEFAULT_OTP=false`, then `pm2 reload nq-api nq-socket nq-scheduler nq-worker --update-env`.
 
 ## Frontend
 

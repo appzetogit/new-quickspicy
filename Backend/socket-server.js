@@ -50,8 +50,8 @@ const gracefulShutdown = async (signal) => {
 
 const startSocketServer = async () => {
     try {
-        validateConfig();
-        initializeFirebaseRealtime();
+        await validateConfig();
+        await initializeFirebaseRealtime();
 
         await connectDB();
         if (config.redisEnabled) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { findConfigProblems } from './validateEnv.js';
+import { findConfigProblems, panelCoverage } from './validateEnv.js';
 
 /**
  * Boot-time configuration checks.
@@ -58,8 +58,36 @@ test('each production secret is reported by name, with what it breaks', () => {
         assert.equal(problems.length, 1, `dropping ${field} should be the only problem`);
         // The name of the variable to set, and the consequence of not setting
         // it — an error naming neither is one nobody can act on.
-        assert.match(problems[0], /^[A-Z0-9_ or]+ is not set — .+\.$/);
+        // It also says where in the admin panel the key can go instead.
+        assert.match(problems[0], /^[A-Z0-9_ or]+ is not set, nor saved in admin → .+ — .+\.$/);
     }
+});
+
+test('keys saved and switched on in the admin panel stand in for missing env vars', () => {
+    const bare = complete({
+        razorpayKeyId: undefined, razorpayKeySecret: undefined, razorpayWebhookSecret: undefined,
+        smsApiKey: undefined, smsSenderId: undefined, smsDltTemplateId: undefined,
+        firebaseServiceAccount: undefined,
+    });
+    assert.equal(findConfigProblems(bare).length, 7);
+
+    const account = JSON.stringify({ client_email: 'x@y.iam.gserviceaccount.com', private_key: 'k', project_id: 'p' });
+    const thirdParty = {
+        razorpay: { enabled: true, keyId: 'rzp', keySecret: 's', webhookSecret: 'w' },
+        sms_india_hub: { enabled: true, apiKey: 'a', senderId: 'QSPICY' },
+    };
+    assert.deepEqual(findConfigProblems(bare, panelCoverage({ thirdParty, firebase: { serviceAccountCredential: account } })), []);
+
+    // Twilio does the SMS just as well.
+    const viaTwilio = panelCoverage({ thirdParty: { twilio: { enabled: true, accountSid: 'AC', authToken: 't', phoneNumber: '+1' } } });
+    assert.equal(viaTwilio.sms, true);
+
+    // Saved but switched off counts for nothing, as at runtime.
+    const off = panelCoverage({ thirdParty: { ...thirdParty, razorpay: { ...thirdParty.razorpay, enabled: false } } });
+    assert.equal(findConfigProblems(bare, off).filter((p) => p.startsWith('RAZORPAY')).length, 3);
+
+    // A Firebase credential that is not a service account does not count.
+    assert.equal(panelCoverage({ firebase: { serviceAccountCredential: '{"apiKey":"x"}' } }).firebase, false);
 });
 
 test('either form of the Firebase credential satisfies the check', () => {

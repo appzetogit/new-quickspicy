@@ -16,20 +16,75 @@ import { logger } from '../utils/logger.js';
  * local database should not need a payment gateway to see a menu.
  */
 
-/** Credentials with no default. Each note says what stops working without it. */
+/**
+ * Credentials with no default. Each note says what stops working without it.
+ * The last field names what can stand in for it from the admin panel
+ * (see panelCoverage): a key saved and switched on there is used at runtime
+ * when the environment has none, so production may start on it.
+ */
 const PRODUCTION_SECRETS = [
-    ['RAZORPAY_KEY_ID', (c) => c.razorpayKeyId, 'online payments cannot be created'],
-    ['RAZORPAY_KEY_SECRET', (c) => c.razorpayKeySecret, 'online payments cannot be created'],
+    ['RAZORPAY_KEY_ID', (c) => c.razorpayKeyId, 'online payments cannot be created', 'razorpayKeyId'],
+    ['RAZORPAY_KEY_SECRET', (c) => c.razorpayKeySecret, 'online payments cannot be created', 'razorpayKeySecret'],
     ['RAZORPAY_WEBHOOK_SECRET', (c) => c.razorpayWebhookSecret,
-        'every payment webhook is refused, so paid orders are never confirmed'],
-    ['SMS_INDIA_HUB_API_KEY', (c) => c.smsApiKey, 'no OTP is delivered, so nobody can log in'],
-    ['SMS_INDIA_HUB_SENDER_ID', (c) => c.smsSenderId, 'no OTP is delivered, so nobody can log in'],
+        'every payment webhook is refused, so paid orders are never confirmed', 'razorpayWebhookSecret'],
+    ['SMS_INDIA_HUB_API_KEY', (c) => c.smsApiKey, 'no OTP is delivered, so nobody can log in', 'sms'],
+    ['SMS_INDIA_HUB_SENDER_ID', (c) => c.smsSenderId, 'no OTP is delivered, so nobody can log in', 'sms'],
     ['SMS_INDIA_HUB_DLT_TEMPLATE_ID', (c) => c.smsDltTemplateId,
-        'the operator rejects the message, so no OTP is delivered'],
+        'the operator rejects the message, so no OTP is delivered', 'sms'],
     ['FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_PATH',
         (c) => c.firebaseServiceAccount || c.firebaseServiceAccountPath,
-        'no push notification is sent — restaurants are not told about new orders'],
+        'no push notification is sent — restaurants are not told about new orders', 'firebase'],
 ];
+
+const PANEL_PLACE = {
+    razorpayKeyId: 'admin → 3rd Party → Razorpay',
+    razorpayKeySecret: 'admin → 3rd Party → Razorpay',
+    razorpayWebhookSecret: 'admin → 3rd Party → Razorpay',
+    sms: 'admin → 3rd Party (SMS India Hub or Twilio)',
+    firebase: 'admin → Firebase',
+};
+
+const parseServiceAccount = (raw) => {
+    try {
+        const parsed = typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : raw;
+        return parsed && typeof parsed === 'object' && parsed.client_email && parsed.private_key ? parsed : null;
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * Which production credentials the admin panel supplies, from the saved
+ * "third_party" and "firebase" platform settings. Mirrors what the runtime
+ * reads: a 3rd Party service counts only when switched on, SMS India Hub needs
+ * an API key and sender id, Twilio an account SID, auth token and number.
+ */
+export const panelCoverage = ({ thirdParty = {}, firebase = {} } = {}) => {
+    const on = (name) => (thirdParty?.[name]?.enabled ? thirdParty[name] : null);
+    const razorpay = on('razorpay');
+    const hub = on('sms_india_hub');
+    const twilio = on('twilio');
+    return {
+        razorpayKeyId: Boolean(razorpay?.keyId),
+        razorpayKeySecret: Boolean(razorpay?.keySecret),
+        razorpayWebhookSecret: Boolean(razorpay?.webhookSecret),
+        sms: Boolean((hub?.apiKey && hub?.senderId) || (twilio?.accountSid && twilio?.authToken && twilio?.phoneNumber)),
+        firebase: Boolean(parseServiceAccount(firebase?.serviceAccountCredential)),
+    };
+};
+
+/** Reads the panel's saved credentials. Null when the database cannot be read. */
+const readPanelCoverage = async () => {
+    try {
+        const { prisma } = await import('./prisma.js');
+        const rows = await prisma.foodPlatformSetting.findMany({ where: { key: { in: ['third_party', 'firebase'] } } });
+        const value = (key) => rows.find((row) => row.key === key)?.value || {};
+        return panelCoverage({ thirdParty: value('third_party'), firebase: value('firebase') });
+    } catch (error) {
+        logger.warn(`Could not read the credentials saved in the admin panel: ${error?.message || error}`);
+        return null;
+    }
+};
 
 /**
  * The project a configured service account belongs to, or '' if it cannot be
@@ -51,12 +106,14 @@ const readServiceAccountProjectId = (cfg) => {
 
 /**
  * Returns the reasons this configuration should not serve traffic, as
- * sentences. Empty means it is fit to run.
+ * sentences. Empty means it is fit to run. `panel` is panelCoverage() of the
+ * admin panel's saved keys; a production secret it covers is not required in
+ * the environment.
  *
  * Separate from validateConfig so a test can check a configuration without the
  * process exiting underneath it.
  */
-export const findConfigProblems = (cfg = config) => {
+export const findConfigProblems = (cfg = config, panel = null) => {
     const problems = [];
     const isProduction = cfg.nodeEnv === 'production';
 
@@ -104,8 +161,9 @@ export const findConfigProblems = (cfg = config) => {
     }
 
     if (isProduction) {
-        for (const [name, read, consequence] of PRODUCTION_SECRETS) {
-            if (!read(cfg)) problems.push(`${name} is not set — ${consequence}.`);
+        for (const [name, read, consequence, panelKey] of PRODUCTION_SECRETS) {
+            if (read(cfg) || panel?.[panelKey]) continue;
+            problems.push(`${name} is not set, nor saved in ${PANEL_PLACE[panelKey]} — ${consequence}.`);
         }
     }
 
@@ -148,10 +206,16 @@ export const findConfigWarnings = (cfg = config) => {
  * Exiting is the point. A server that boots missing a payment secret looks
  * healthy to a load balancer and fails one customer at a time.
  */
-export const validateConfig = () => {
+export const validateConfig = async () => {
     for (const warning of findConfigWarnings()) logger.warn(warning);
 
-    const problems = findConfigProblems();
+    let problems = findConfigProblems();
+    // Only production demands the service keys, and only then is it worth a
+    // query to see whether the admin panel supplies the ones the env lacks.
+    if (problems.length && config.nodeEnv === 'production') {
+        const panel = await readPanelCoverage();
+        if (panel) problems = findConfigProblems(config, panel);
+    }
     if (problems.length === 0) return;
 
     logger.error(`Refusing to start — ${problems.length} configuration problem(s):`);

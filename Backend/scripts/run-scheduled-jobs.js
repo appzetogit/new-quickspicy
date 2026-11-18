@@ -37,7 +37,7 @@ const shutdown = async (signal) => {
 
 const start = async () => {
     try {
-        validateConfig();
+        await validateConfig();
         await connectDB();
         if (config.redisEnabled) {
             await connectRedis();

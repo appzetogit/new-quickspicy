@@ -14,3 +14,8 @@ process.env.NODE_ENV ??= 'test';
 process.env.JWT_ACCESS_SECRET ??= 'test-access-secret';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret';
 process.env.USE_DEFAULT_OTP ??= 'true';
+
+// Forced, not defaulted. A test that queues an order job on a real Redis hands
+// it to whatever worker is running there -- the live one, on the server -- and
+// the open queue connection keeps the test process from exiting.
+process.env.BULLMQ_ENABLED = 'false';

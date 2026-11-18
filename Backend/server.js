@@ -136,8 +136,8 @@ const startBackgroundJobs = async () => {
 
 const startServer = async () => {
     try {
-        validateConfig();
-        initializeFirebaseRealtime();
+        await validateConfig();
+        await initializeFirebaseRealtime();
 
         await ensureUploadStorageReady();
         logger.info(`Upload storage ready at ${path.resolve(config.uploadStorageRoot)}`);

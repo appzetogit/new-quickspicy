@@ -88,6 +88,30 @@ test('the Firebase page: a bad credential is refused, a good one is used for pus
     assert.equal((await getPlatformSetting('firebase')).value.serviceAccountCredential.startsWith('••••'), true);
 });
 
+test('saving the Firebase page starts live tracking with that credential and database', async () => {
+    const { generateKeyPairSync } = await import('node:crypto');
+    const { default: firebaseAdmin, getFirebaseDB } = await import('../../../../config/firebase.js');
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const account = {
+        type: 'service_account', project_id: 'qs-live', client_email: 'rtdb@qs-live.iam.gserviceaccount.com',
+        private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    };
+    try {
+        await savePlatformSetting('firebase', { serviceAccountCredential: JSON.stringify(account), databaseURL: 'https://qs-live.firebaseio.com' });
+        assert.match(getFirebaseDB().app.options.databaseURL, /qs-live/);
+
+        // A new credential replaces the running one.
+        await savePlatformSetting('firebase', {
+            serviceAccountCredential: JSON.stringify({ ...account, client_email: 'other@qs-live.iam.gserviceaccount.com' }),
+            databaseURL: 'https://qs-live-2.firebaseio.com',
+        });
+        assert.match(getFirebaseDB().app.options.databaseURL, /qs-live-2/);
+        assert.equal(firebaseAdmin.apps.length, 1);
+    } finally {
+        await Promise.all(firebaseAdmin.apps.map((app) => app.delete()));
+    }
+});
+
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
 test('the best top-up bonus rule wins, within its dates and cap', () => {
