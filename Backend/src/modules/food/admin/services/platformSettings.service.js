@@ -120,6 +120,11 @@ export async function savePlatformSetting(key, value, adminId = null) {
         create: { key, value: merged, updatedBy: isId(adminId) ? String(adminId) : null },
         update: { value: merged, updatedBy: isId(adminId) ? String(adminId) : null },
     });
+    if (key === 'third_party') {
+        // Payments and OTP use the new keys from the next request on.
+        const { loadThirdPartyCredentials } = await import('../../../../core/config/adminCredentials.js');
+        await loadThirdPartyCredentials({ force: true });
+    }
     if (key === 'firebase') {
         // The next push signs in with what was just saved.
         const { resetFirebaseCredentialCache } = await import('../../../../core/notifications/firebase.service.js');

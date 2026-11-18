@@ -27,21 +27,36 @@ const thirdPartyServices = [
     id: "razorpay",
     name: "Razorpay",
     category: "Payment Gateway",
-    description: "Razorpay payment gateway",
+    description: "Online payments, wallet top-ups and refunds. Used when the server has no Razorpay keys of its own. Test keys start rzp_test_, live keys rzp_live_.",
     fields: [
       { key: "keyId", label: "Key ID", type: "text" },
-      { key: "keySecret", label: "Key Secret", type: "password" }
+      { key: "keySecret", label: "Key Secret", type: "password" },
+      { key: "webhookSecret", label: "Webhook Secret (Razorpay → Settings → Webhooks, URL https://api-new.quickspicy.in/api/v1/payments/webhook/razorpay)", type: "password" }
+    ]
+  },
+  {
+    id: "sms_india_hub",
+    name: "SMS India Hub",
+    category: "SMS Service",
+    description: "Sends login OTPs. Used first when switched on. The message must match your registered DLT template exactly; put {otp} where the code goes.",
+    fields: [
+      { key: "username", label: "Username", type: "text" },
+      { key: "apiKey", label: "API Key", type: "password" },
+      { key: "senderId", label: "Sender ID", type: "text" },
+      { key: "dltTemplateId", label: "DLT Template ID", type: "text" },
+      { key: "messageTemplate", label: "OTP message (with {otp})", type: "text" }
     ]
   },
   {
     id: "twilio",
     name: "Twilio",
     category: "SMS Service",
-    description: "SMS and messaging service",
+    description: "Sends login OTPs when SMS India Hub is not set up.",
     fields: [
       { key: "accountSid", label: "Account SID", type: "text" },
       { key: "authToken", label: "Auth Token", type: "password" },
-      { key: "phoneNumber", label: "Phone Number", type: "text" }
+      { key: "phoneNumber", label: "Phone Number", type: "text" },
+      { key: "messageTemplate", label: "OTP message (with {otp})", type: "text" }
     ]
   },
   {

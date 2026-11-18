@@ -5,6 +5,74 @@ import { config } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { RateLimitError } from '../auth/errors.js';
 import { evaluateOtpRateWindow } from './otp.rateWindow.js';
+import { loadThirdPartyCredentials, thirdPartyService } from '../config/adminCredentials.js';
+
+/**
+ * The text that carries the OTP. SMS India Hub only delivers text matching a
+ * DLT template registered for the sender, word for word, so it is a setting:
+ * SMS_OTP_TEMPLATE in the env, or the template saved with the panel's keys.
+ * {otp} is replaced with the code. The default is the template registered for
+ * the original sender.
+ */
+const DEFAULT_INDIA_HUB_TEMPLATE = 'Welcome to the Minto Foods powered by Appzeto.Your OTP for registration is {otp}.BGADEC.';
+const DEFAULT_PLAIN_TEMPLATE = 'Your Quick Spicy OTP is {otp}. Do not share it with anyone.';
+const fillTemplate = (template, otp) => String(template).split('{otp}').join(otp);
+
+/**
+ * Which SMS service sends OTPs, and with what: SMS India Hub from the env;
+ * else SMS India Hub saved (and switched on) in admin → 3rd Party; else Twilio
+ * from there. null when none is set up.
+ */
+export const resolveSmsProvider = () => {
+    if (config.smsApiKey && config.smsSenderId) {
+        return {
+            name: 'sms_india_hub', source: 'env',
+            apiKey: config.smsApiKey, senderId: config.smsSenderId,
+            username: config.smsIndiaHubUsername, dltTemplateId: config.smsDltTemplateId,
+            template: process.env.SMS_OTP_TEMPLATE || DEFAULT_INDIA_HUB_TEMPLATE,
+        };
+    }
+    const hub = thirdPartyService('sms_india_hub');
+    if (hub?.apiKey && hub?.senderId) {
+        return {
+            name: 'sms_india_hub', source: 'admin',
+            apiKey: hub.apiKey, senderId: hub.senderId, username: hub.username, dltTemplateId: hub.dltTemplateId,
+            template: String(hub.messageTemplate || '').includes('{otp}') ? hub.messageTemplate : DEFAULT_INDIA_HUB_TEMPLATE,
+        };
+    }
+    const twilio = thirdPartyService('twilio');
+    if (twilio?.accountSid && twilio?.authToken && twilio?.phoneNumber) {
+        return {
+            name: 'twilio', source: 'admin',
+            accountSid: twilio.accountSid, authToken: twilio.authToken, from: twilio.phoneNumber,
+            template: String(twilio.messageTemplate || '').includes('{otp}') ? twilio.messageTemplate : DEFAULT_PLAIN_TEMPLATE,
+        };
+    }
+    return null;
+};
+
+/** Twilio's Messages API. Indian numbers get +91. Never throws. */
+const sendSmsViaTwilio = async (provider, phone, otp) => {
+    try {
+        const digits = String(phone || '').replace(/\D/g, '');
+        const to = digits.length === 10 ? `+91${digits}` : `+${digits}`;
+        const body = new URLSearchParams({ To: to, From: provider.from, Body: fillTemplate(provider.template, otp) });
+        const auth = Buffer.from(`${provider.accountSid}:${provider.authToken}`).toString('base64');
+        const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(provider.accountSid)}/Messages.json`, {
+            method: 'POST',
+            headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            logger.error(`Twilio refused the OTP SMS for ${phone}: ${response.status} ${text.slice(0, 300)}`);
+        } else {
+            logger.info(`✅ OTP SMS sent to ${to} via Twilio`);
+        }
+    } catch (error) {
+        logger.error(`Error sending OTP SMS via Twilio to ${phone}: ${error.message}`);
+    }
+};
 
 const generateOtpCode = () => {
     const code = crypto.randomInt(1000, 9999);
@@ -16,7 +84,7 @@ const generateOtpCode = () => {
  * @param {string} phone - 10-digit mobile number (will be prefixed with 91)
  * @param {string} otp
  */
-const sendSmsViaIndiaHub = async (phone, otp) => {
+const sendSmsViaIndiaHub = async (provider, phone, otp) => {
     try {
         // Normalize phone: strip non-digits, ensure 91 country code prefix
         const digits = String(phone || '').replace(/\D/g, '');
@@ -24,21 +92,21 @@ const sendSmsViaIndiaHub = async (phone, otp) => {
 
         // EXACT DLT TEMPLATE provided by user:
         // "Welcome to the ##var## powered by SMSINDIAHUB. Your OTP for registration is ##var##"
-        const message = `Welcome to the Minto Foods powered by Appzeto.Your OTP for registration is ${otp}.BGADEC.`;
+        const message = fillTemplate(provider.template, otp);
 
         // SMS India Hub HTTP GET API — query param names are case-sensitive per SOP
         const url = new URL('http://cloud.smsindiahub.in/vendorsms/pushsms.aspx');
-        url.searchParams.append('APIKey', config.smsApiKey);
-        url.searchParams.append('sid', config.smsSenderId);
+        url.searchParams.append('APIKey', provider.apiKey);
+        url.searchParams.append('sid', provider.senderId);
         url.searchParams.append('msisdn', msisdn);
         url.searchParams.append('msg', message);
         url.searchParams.append('gwid', '2');
         url.searchParams.append('fl', '0');
-        if (config.smsIndiaHubUsername) {
-            url.searchParams.append('uname', config.smsIndiaHubUsername);
+        if (provider.username) {
+            url.searchParams.append('uname', provider.username);
         }
-        if (config.smsDltTemplateId) {
-            url.searchParams.append('DLT_TE_ID', config.smsDltTemplateId);
+        if (provider.dltTemplateId) {
+            url.searchParams.append('DLT_TE_ID', provider.dltTemplateId);
         }
 
         logger.info(`[SMS] Sending OTP to ${msisdn} via SMS India Hub...`);
@@ -148,7 +216,11 @@ export const createOrUpdateOtp = async (phone) => {
 
     // Only send SMS if not in default OTP mode
     if (!config.useDefaultOtp) {
-        await sendSmsViaIndiaHub(phone, otp);
+        await loadThirdPartyCredentials();
+        const provider = resolveSmsProvider();
+        if (!provider) logger.error(`No SMS service is set up (env or admin → 3rd Party), so the OTP for ${phone} was not sent`);
+        else if (provider.name === 'twilio') await sendSmsViaTwilio(provider, phone, otp);
+        else await sendSmsViaIndiaHub(provider, phone, otp);
     }
 
     return otp;

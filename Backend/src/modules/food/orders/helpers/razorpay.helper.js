@@ -11,8 +11,36 @@ try {
 import { config } from '../../../../config/env.js';
 import { logger } from '../../../../utils/logger.js';
 
-const KEY_ID = config.razorpayKeyId || process.env.RAZORPAY_KEY_ID || '';
-const KEY_SECRET = config.razorpayKeySecret || process.env.RAZORPAY_KEY_SECRET || '';
+import { loadThirdPartyCredentials, thirdPartyService, startThirdPartyRefresh } from '../../../../core/config/adminCredentials.js';
+
+const ENV_KEY_ID = config.razorpayKeyId || process.env.RAZORPAY_KEY_ID || '';
+const ENV_KEY_SECRET = config.razorpayKeySecret || process.env.RAZORPAY_KEY_SECRET || '';
+
+// The panel's keys are loaded before anything can ask whether Razorpay is set up.
+if (process.env.NODE_ENV !== 'test') {
+    await loadThirdPartyCredentials().catch(() => {});
+    startThirdPartyRefresh();
+}
+
+/**
+ * The keys in use: the server's environment if it has both, otherwise the
+ * ones saved (and switched on) under admin → 3rd Party → Razorpay. Never a mix
+ * of the two, since an id and a secret from different accounts never work.
+ */
+function keys() {
+    if (ENV_KEY_ID && ENV_KEY_SECRET) return { id: ENV_KEY_ID, secret: ENV_KEY_SECRET, source: 'env' };
+    const saved = thirdPartyService('razorpay');
+    if (saved?.keyId && saved?.keySecret) {
+        return { id: String(saved.keyId).trim(), secret: String(saved.keySecret).trim(), webhookSecret: String(saved.webhookSecret || '').trim(), source: 'admin' };
+    }
+    return { id: '', secret: '', source: 'none' };
+}
+
+/** Where the Razorpay keys come from: 'env', 'admin' or 'none'. */
+export const getRazorpayKeySource = () => keys().source;
+
+/** The webhook secret saved with the panel's keys (the env one is read by the webhook itself). */
+export const getAdminRazorpayWebhookSecret = () => keys().webhookSecret || '';
 
 /**
  * Keys copied from a template ("PLACEHOLDER", "your_key_secret") are not keys.
@@ -34,20 +62,22 @@ export function __setRazorpayForTests(instance, { keySecret = 'test_secret' } = 
 
 export function isRazorpayConfigured() {
     if (testDouble) return true;
+    const { id, secret } = keys();
     return Boolean(
-        KEY_ID && KEY_SECRET && Razorpay
-        && !looksLikePlaceholder(KEY_ID) && !looksLikePlaceholder(KEY_SECRET),
+        id && secret && Razorpay
+        && !looksLikePlaceholder(id) && !looksLikePlaceholder(secret),
     );
 }
 
 export function getRazorpayKeyId() {
-    return KEY_ID;
+    return keys().id;
 }
 
 export function getRazorpayInstance() {
     if (testDouble) return testDouble.instance;
     if (!isRazorpayConfigured()) return null;
-    return new Razorpay({ key_id: KEY_ID, key_secret: KEY_SECRET });
+    const { id, secret } = keys();
+    return new Razorpay({ key_id: id, key_secret: secret });
 }
 
 export function createRazorpayOrder(amountPaise, currency = 'INR', receipt = '', notes = undefined) {
@@ -77,7 +107,7 @@ export function createPaymentLink({ amountPaise, currency = 'INR', description, 
 }
 
 export function verifyPaymentSignature(orderId, paymentId, signature) {
-    const secret = testDouble ? testDouble.keySecret : KEY_SECRET;
+    const secret = testDouble ? testDouble.keySecret : keys().secret;
     if (!secret) return false;
     const body = `${orderId}|${paymentId}`;
     const expected = Buffer.from(crypto.createHmac('sha256', secret).update(body).digest('hex'), 'utf8');

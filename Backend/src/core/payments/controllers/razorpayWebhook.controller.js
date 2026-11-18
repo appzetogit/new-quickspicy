@@ -8,7 +8,7 @@ import {
     applyGatewayRefundUpdate,
     onlineAmountDuePaise,
 } from '../../../modules/food/orders/services/order-refund.service.js';
-import { getRazorpayInstance } from '../../../modules/food/orders/helpers/razorpay.helper.js';
+import { getRazorpayInstance, getAdminRazorpayWebhookSecret } from '../../../modules/food/orders/helpers/razorpay.helper.js';
 
 /**
  * A payment was captured for a food order we no longer have -- the customer
@@ -50,7 +50,8 @@ async function refundOrphanPayment(paymentObj) {
  */
 export const handleRazorpayWebhook = async (req, res) => {
     const signature = req.headers['x-razorpay-signature'];
-    const secret = config.razorpayWebhookSecret;
+    // The env secret, or the one saved with the panel's keys when those are in use.
+    const secret = config.razorpayWebhookSecret || getAdminRazorpayWebhookSecret();
 
     // 1. Verify the signature against the raw body buffer.
     if (!signature || !secret || !req.rawBody) {
