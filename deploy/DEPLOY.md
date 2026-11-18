@@ -35,7 +35,16 @@ into `Frontend/vite.config.js`, plus `Backend/init` / `Frontend/init` and a
     cd /var/www/new-quick/Backend
     PATH=/opt/node22/bin:$PATH npm ci
     PATH=/opt/node22/bin:$PATH npm run db:migrate     # all three steps, never just `migrate deploy`
-    pm2 reload nq-api nq-socket nq-scheduler nq-worker
+    pm2 restart nq-api nq-socket nq-scheduler nq-worker
+
+Use `restart`, not `reload`: `pm2 reload` left nq-socket, nq-scheduler and
+nq-worker running old code for a day.
+
+Firebase uses the same project as the older app (`quick-spicy`). The service
+account is `/var/www/new-quick/secrets/firebase-service-account.json` (0600,
+outside `Backend/` so a deploy cannot delete it), named by
+`FIREBASE_SERVICE_ACCOUNT_PATH` in `Backend/.env` along with the database URL
+and web config.
 
 First time only: `pm2 start /var/www/new-quick/deploy/ecosystem.config.cjs && pm2 save`.
 
@@ -51,7 +60,7 @@ secret, webhook secret, switched on), 3rd Party → SMS India Hub or Twilio, and
 the Firebase page (service account + Realtime Database URL, which also turns on
 server-side live tracking). Until those exist it runs as `NODE_ENV=staging`,
 where every OTP is 1234. Going live: save the keys, set `NODE_ENV=production`
-and `USE_DEFAULT_OTP=false`, then `pm2 reload nq-api nq-socket nq-scheduler nq-worker --update-env`.
+and `USE_DEFAULT_OTP=false`, then `pm2 restart nq-api nq-socket nq-scheduler nq-worker --update-env`.
 
 ## Frontend
 
