@@ -12,6 +12,15 @@ nginx and Redis and nothing else: this one has its own PostgreSQL database
 
 DNS: A records `new` and `api-new` → the server, in Hostinger hPanel.
 
+**Database time zone must be UTC for the app's role.** This server's
+PostgreSQL runs in `Asia/Kolkata`; Prisma stores times as UTC, and raw SQL read
+fresh rider GPS as 5½ hours old, so auto dispatch offered orders to nobody.
+Set once per server (done here 2026-11-18), then restart the API:
+
+    sudo -u postgres psql -c "ALTER ROLE newquick SET timezone TO 'UTC';"
+
+The API logs an error at startup if the session is not UTC.
+
 ## Before every deploy
 
 GitHub repositories in this organisation have repeatedly had a loader pushed

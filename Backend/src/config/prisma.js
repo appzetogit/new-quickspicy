@@ -154,10 +154,33 @@ export const prisma = new PrismaClient({
 // ever shows up in profiling, narrow it to per-model result extensions on the
 // hot models (FoodOrder, FoodRestaurant, FoodItem) instead of $allModels.
 
+/**
+ * Prisma stores DateTime as UTC in columns without a time zone. Raw SQL that
+ * compares those columns with a JS Date, or writes now() into them, goes
+ * through the session time zone. On a server whose Postgres runs in IST every
+ * fresh rider location read as 5½ hours old, so auto dispatch offered orders
+ * to nobody. The fix is the session in UTC:
+ *   ALTER ROLE <app user> SET timezone TO 'UTC';
+ */
+const warnIfSessionNotUtc = async () => {
+    try {
+        const [{ timezone }] = await prisma.$queryRaw`SELECT current_setting('TimeZone') AS timezone`;
+        if (!/^(UTC|Etc\/UTC|GMT|UCT|Zulu)$/i.test(String(timezone))) {
+            logger.error(
+                `Postgres session time zone is "${timezone}", not UTC. Rider dispatch and other time checks will be `
+                + `off by the UTC offset. Run: ALTER ROLE <db user> SET timezone TO 'UTC'; then restart the API.`,
+            );
+        }
+    } catch (error) {
+        logger.warn(`Could not read the Postgres session time zone: ${error?.message || error}`);
+    }
+};
+
 export const connectDB = async () => {
     try {
         await prisma.$connect();
         logger.info('Postgres connected');
+        await warnIfSessionNotUtc();
     } catch (error) {
         logger.error(`Postgres connection error: ${error.message}`);
         process.exit(1);

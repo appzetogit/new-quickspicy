@@ -23,6 +23,9 @@ import { getZones, getZoneById, createZone, updateZone, deleteZone } from './adm
  * admin typed.
  */
 const created = { admins: [], zones: [] };
+// Every zone belongs to a city now (resolveZoneCity), so the zone tests make one.
+const TEST_CITY = `Zone Test City ${Date.now()}`;
+const inTestCity = { city: TEST_CITY, createCity: true };
 const stamp = () => `${Date.now()}${Math.floor(performance.now() * 1000) % 1000}`;
 
 const makeSubAdmin = async (payload = {}) => {
@@ -39,6 +42,7 @@ const makeSubAdmin = async (payload = {}) => {
 test.after(async () => {
     await prisma.foodAdmin.deleteMany({ where: { id: { in: created.admins } } });
     await prisma.foodZone.deleteMany({ where: { id: { in: created.zones } } });
+    await prisma.foodCity.deleteMany({ where: { name: TEST_CITY } });
     await prisma.$disconnect();
 });
 
@@ -191,6 +195,7 @@ test('a zone needs a name and at least three points', async () => {
 
 test('a created zone gets its derived boundary', async () => {
     const { zone } = await createZone({
+        ...inTestCity,
         name: `Zone ${stamp()}`,
         coordinates: [
             { latitude: 22.6, longitude: 75.7 },
@@ -214,6 +219,7 @@ test('a created zone gets its derived boundary', async () => {
 
 test('editing the ring re-derives the boundary, a short ring is ignored', async () => {
     const { zone } = await createZone({
+        ...inTestCity,
         name: `Editable ${stamp()}`,
         coordinates: [
             { latitude: 20.0, longitude: 70.0 },
@@ -243,6 +249,7 @@ test('editing the ring re-derives the boundary, a short ring is ignored', async 
 test('zones list, filter, and delete cleanly', async () => {
     const name = `Listed ${stamp()}`;
     const { zone } = await createZone({
+        ...inTestCity,
         name,
         isActive: false,
         coordinates: [

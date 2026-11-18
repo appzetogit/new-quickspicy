@@ -198,7 +198,7 @@ test('a duplicate coupon code is refused', async () => {
         () => createRestaurantOffer(r.id, {
             couponCode: code, discountType: 'percentage', discountValue: 20,
         }),
-        /already exists/,
+        /already (taken|exists)/,
     );
 });
 
@@ -270,14 +270,27 @@ test('a pin outside every zone is refused', async () => {
     );
 });
 
-test('editing a reviewable field clears the previous decision', async () => {
-    const r = await makeRestaurant({ status: 'approved', approvedAt: new Date(), rejectionReason: 'old' });
+test('an approved restaurant keeps trading: a reviewable edit becomes a change request', async () => {
+    const r = await makeRestaurant({ status: 'approved', approvedAt: new Date() });
+    const newName = `Renamed ${stamp()}`;
 
-    const updated = await updateRestaurantProfile(r.id, { restaurantName: `Renamed ${stamp()}` });
-    assert.equal(updated.status, 'pending');
+    const updated = await updateRestaurantProfile(r.id, { restaurantName: newName });
+    assert.equal(updated.status, 'approved', 'still visible to customers');
+    assert.ok(updated.profileChangeRequest, 'the rename waits for an admin');
 
     const row = await prisma.foodRestaurant.findUnique({ where: { id: r.id } });
-    // Left set, the admin screen shows the restaurant as pending and approved.
+    assert.notEqual(row.restaurantName, newName, 'the live name is unchanged until approved');
+    assert.ok(row.approvedAt, 'the approval stands');
+});
+
+test('editing a reviewable field on a rejected restaurant clears the previous decision', async () => {
+    const r = await makeRestaurant({ status: 'rejected', rejectionReason: 'old' });
+
+    const updated = await updateRestaurantProfile(r.id, { restaurantName: `Renamed ${stamp()}` });
+    assert.equal(updated.status, 'pending', 'back in the review queue');
+
+    const row = await prisma.foodRestaurant.findUnique({ where: { id: r.id } });
+    // Left set, the admin screen shows the restaurant as pending and rejected.
     assert.equal(row.approvedAt, null);
     assert.equal(row.rejectionReason, '');
 });
