@@ -34,6 +34,8 @@ const DEFAULT_CONFIG = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "",
+  // Realtime Database, for live rider tracking on the website.
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "",
 }
 
 const DEFAULTS = {
@@ -48,6 +50,7 @@ const CONFIG_FIELDS = [
   { key: "appId", label: "App Id" },
   { key: "storageBucket", label: "Storage Bucket" },
   { key: "measurementId", label: "Measurement Id", placeholder: "Ex: F-12345678" },
+  { key: "databaseURL", label: "Realtime Database URL", placeholder: "https://your-project-default-rtdb.firebaseio.com" },
 ]
 
 const inputClass =

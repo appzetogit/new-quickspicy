@@ -176,6 +176,7 @@ window.addEventListener('unhandledrejection', (event) => {
 import { AppProviders } from './app/providers.jsx'
 import AppErrorBoundary from './shared/components/AppErrorBoundary.jsx'
 import { installFormValidationFeedback } from './shared/utils/formValidationFeedback.js'
+import MarketingScripts from './modules/Food/components/MarketingScripts.jsx'
 
 // One listener for the whole app: forms that rely on `required` get a styled,
 // visible message instead of the browser's easily-missed native bubble.
@@ -188,6 +189,8 @@ createRoot(rootElement).render(
   <AppErrorBoundary>
     <AppProviders>
       <App />
+      {/* Analytics / ad pixels from admin → Marketing Tools; public pages only. */}
+      <MarketingScripts />
     </AppProviders>
   </AppErrorBoundary>
 )

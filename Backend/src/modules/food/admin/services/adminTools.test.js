@@ -12,6 +12,7 @@ import {
     computeTopupBonus, applyTopupBonus, creditCustomerWallet, listCustomerWalletCredits,
     customerRewardsReport, couponOrderReport, bulkImportRestaurants,
 } from './adminTools.service.js';
+import { loadAdminServiceAccount, resetFirebaseCredentialCache } from '../../../../core/notifications/firebase.service.js';
 
 /**
  * Pages that used to save nothing: settings pages (one JSON per page),
@@ -19,7 +20,7 @@ import {
  * restaurant bulk import.
  */
 const tag = uniqueTag('AT');
-const created = { users: [], restaurants: [], zones: [], settings: ['ai', 'theme', 'wallet_bonus'] };
+const created = { users: [], restaurants: [], zones: [], settings: ['ai', 'theme', 'wallet_bonus', 'firebase'] };
 let saved = {};
 
 test.before(async () => {
@@ -71,6 +72,20 @@ test('secrets are masked on read, kept when sent back masked, and never public',
     assert.equal(pub.theme.accessToken, undefined);
     assert.equal(pub.ai, undefined, 'AI settings are admin-only');
     await assert.rejects(() => savePlatformSetting('not_a_page', {}), /Unknown settings page/);
+});
+
+test('the Firebase page: a bad credential is refused, a good one is used for push, only the web config is public', async () => {
+    await assert.rejects(() => savePlatformSetting('firebase', { serviceAccountCredential: 'not json' }), /JSON file/);
+    await assert.rejects(() => savePlatformSetting('firebase', { serviceAccountCredential: '{"project_id":"x"}' }), /missing/);
+    const account = { project_id: 'qs-test', client_email: 'push@qs-test.iam.gserviceaccount.com', private_key: 'test-private-key' };
+    await savePlatformSetting('firebase', { serviceAccountCredential: JSON.stringify(account), apiKey: 'AIza-web-key', databaseURL: 'https://qs-test.firebaseio.com' });
+    resetFirebaseCredentialCache();
+    const loaded = await loadAdminServiceAccount({ force: true });
+    assert.equal(loaded.client_email, account.client_email);
+    const pub = await getPublicPlatformSettings();
+    assert.equal(pub.firebase.apiKey, 'AIza-web-key', 'the web apiKey is public by design');
+    assert.equal(pub.firebase.serviceAccountCredential, undefined, 'the service account never is');
+    assert.equal((await getPlatformSetting('firebase')).value.serviceAccountCredential.startsWith('••••'), true);
 });
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────

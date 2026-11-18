@@ -16,7 +16,9 @@ import { isId } from '../../../../utils/helpers.js';
  */
 export const PLATFORM_SETTING_KEYS = {
     app_web: { public: true },
-    firebase: { public: true },
+    // The web config's apiKey is public by design (it is in every page that
+    // uses Firebase); the service account is the secret.
+    firebase: { public: true, notSecret: ['apiKey'] },
     analytics: { public: true },
     ai: { public: false },
     react_site: { public: true },
@@ -42,12 +44,12 @@ const SECRET_NAME = /secret|password|passwd|token|private_?key|server_?key|api_?
 const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 /** Deep copy with every secret replaced: '••••' plus its last 4 characters. */
-export function maskSecrets(value) {
-    if (Array.isArray(value)) return value.map(maskSecrets);
+export function maskSecrets(value, notSecret = []) {
+    if (Array.isArray(value)) return value.map((v) => maskSecrets(v));
     if (!isPlainObject(value)) return value;
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-        if (SECRET_NAME.test(k) && typeof v === 'string' && v) {
+        if (SECRET_NAME.test(k) && !notSecret.includes(k) && typeof v === 'string' && v) {
             out[k] = `${MASK}${v.slice(-4)}`;
         } else {
             out[k] = maskSecrets(v);
@@ -57,12 +59,12 @@ export function maskSecrets(value) {
 }
 
 /** Deep copy with every secret removed, for the public endpoint. */
-export function stripSecrets(value) {
-    if (Array.isArray(value)) return value.map(stripSecrets);
+export function stripSecrets(value, notSecret = []) {
+    if (Array.isArray(value)) return value.map((v) => stripSecrets(v));
     if (!isPlainObject(value)) return value;
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-        if (SECRET_NAME.test(k)) continue;
+        if (SECRET_NAME.test(k) && !notSecret.includes(k)) continue;
         out[k] = stripSecrets(v);
     }
     return out;
@@ -101,7 +103,7 @@ export async function readPlatformSetting(key) {
 
 export async function getPlatformSetting(key) {
     const row = await prisma.foodPlatformSetting.findUnique({ where: { key: checkKey(key) } });
-    return { key, value: maskSecrets(row?.value ?? {}), updatedAt: row?.updatedAt ?? null };
+    return { key, value: maskSecrets(row?.value ?? {}, (PLATFORM_SETTING_KEYS[key]?.notSecret || [])), updatedAt: row?.updatedAt ?? null };
 }
 
 export async function savePlatformSetting(key, value, adminId = null) {
@@ -109,6 +111,7 @@ export async function savePlatformSetting(key, value, adminId = null) {
     if (!isPlainObject(value)) throw new ValidationError('Settings must be an object');
     const stored = await readPlatformSetting(key);
     const merged = keepMaskedSecrets(value, stored);
+    if (key === 'firebase') checkFirebaseCredential(merged.serviceAccountCredential);
     if (Buffer.byteLength(JSON.stringify(merged), 'utf8') > MAX_BYTES) {
         throw new ValidationError('These settings are too large to save');
     }
@@ -117,12 +120,32 @@ export async function savePlatformSetting(key, value, adminId = null) {
         create: { key, value: merged, updatedBy: isId(adminId) ? String(adminId) : null },
         update: { value: merged, updatedBy: isId(adminId) ? String(adminId) : null },
     });
-    return { key, value: maskSecrets(row.value), updatedAt: row.updatedAt };
+    if (key === 'firebase') {
+        // The next push signs in with what was just saved.
+        const { resetFirebaseCredentialCache } = await import('../../../../core/notifications/firebase.service.js');
+        resetFirebaseCredentialCache();
+    }
+    return { key, value: maskSecrets(row.value, (PLATFORM_SETTING_KEYS[key]?.notSecret || [])), updatedAt: row.updatedAt };
+}
+
+/**
+ * The service-account JSON pasted on the Firebase page has to be usable: a
+ * typo here would otherwise only show up as every push failing.
+ */
+function checkFirebaseCredential(raw) {
+    if (raw === undefined || raw === null || (typeof raw === 'string' && !raw.trim())) return;
+    let account = raw;
+    if (typeof raw === 'string') {
+        try { account = JSON.parse(raw); } catch { throw new ValidationError('The service account must be the JSON file Firebase gives you, pasted whole'); }
+    }
+    if (!account?.client_email || !account?.private_key || !account?.project_id) {
+        throw new ValidationError('That service account is missing client_email, private_key or project_id');
+    }
 }
 
 /** Every public settings page, secrets removed: { [key]: value }. */
 export async function getPublicPlatformSettings() {
     const keys = Object.entries(PLATFORM_SETTING_KEYS).filter(([, v]) => v.public).map(([k]) => k);
     const rows = await prisma.foodPlatformSetting.findMany({ where: { key: { in: keys } } });
-    return Object.fromEntries(rows.map((r) => [r.key, stripSecrets(r.value)]));
+    return Object.fromEntries(rows.map((r) => [r.key, stripSecrets(r.value, (PLATFORM_SETTING_KEYS[r.key]?.notSecret || []))]));
 }

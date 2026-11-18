@@ -13,6 +13,33 @@ const firebaseConfig = {
   databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || ""
 };
 
+/**
+ * The Firebase web config saved on the admin Firebase page, for a build made
+ * without the VITE_FIREBASE_* values. Fills only the empty fields, and only
+ * before Firebase starts. Returns whether live tracking can now start.
+ */
+export function applyRuntimeFirebaseConfig(saved = {}) {
+  if (!app) {
+    const fromAdmin = {
+      apiKey: saved.apiKey,
+      authDomain: saved.authDomain,
+      projectId: saved.fcmProjectId || saved.projectId,
+      appId: saved.appId,
+      messagingSenderId: saved.messagingSenderId,
+      storageBucket: saved.storageBucket,
+      measurementId: saved.measurementId,
+      databaseURL: saved.databaseURL,
+    }
+    for (const [k, v] of Object.entries(fromAdmin)) {
+      if (!firebaseConfig[k] && typeof v === "string" && v.trim()) firebaseConfig[k] = v.trim()
+    }
+  }
+  return hasRealtimeConfig()
+}
+
+/** True when there is enough config to start the Realtime Database. */
+export const hasRealtimeConfig = () => Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL)
+
 // Internal state
 let app;
 let firebaseAuth = null;

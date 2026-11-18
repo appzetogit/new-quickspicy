@@ -76,6 +76,37 @@ let cachedAccessToken = null;
 let cachedAccessTokenExpiryMs = 0;
 let cachedServiceAccount = null;
 
+/**
+ * The service account pasted on the admin Firebase page (platform setting
+ * "firebase", field serviceAccountCredential), used when the server has none
+ * in its environment. Reloaded at most once a minute, and straight away after
+ * the page is saved (resetFirebaseCredentialCache).
+ */
+const adminAccount = { value: null, loadedAt: 0 };
+
+export const loadAdminServiceAccount = async ({ force = false } = {}) => {
+    if (!force && Date.now() - adminAccount.loadedAt < 60_000) return adminAccount.value;
+    adminAccount.loadedAt = Date.now();
+    try {
+        const row = await prisma.foodPlatformSetting.findUnique({ where: { key: 'firebase' } });
+        const raw = row?.value?.serviceAccountCredential;
+        const parsed = typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : raw && typeof raw === 'object' ? raw : null;
+        adminAccount.value = parsed?.client_email && parsed?.private_key ? parsed : null;
+    } catch (error) {
+        logger.warn(`Firebase credential on the admin page could not be read: ${error?.message || error}`);
+        adminAccount.value = null;
+    }
+    return adminAccount.value;
+};
+
+/** Forget every cached credential, so the next send uses what was just saved. */
+export const resetFirebaseCredentialCache = () => {
+    cachedServiceAccount = null;
+    cachedAccessToken = null;
+    cachedAccessTokenExpiryMs = 0;
+    adminAccount.loadedAt = 0;
+};
+
 const sanitizeString = (value) => String(value ?? '').trim();
 const normalizeNotificationText = (value) => {
     const raw = sanitizeString(value);
@@ -133,7 +164,10 @@ const getServiceAccountFromEnv = () => {
         }
     }
 
-    throw new Error('Firebase service account is not configured. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_PATH.');
+    // Not cached with the env one: an admin can replace it from the panel.
+    if (adminAccount.value) return adminAccount.value;
+
+    throw new Error('Firebase service account is not configured. Paste it on the admin Firebase page, or set FIREBASE_SERVICE_ACCOUNT / FIREBASE_SERVICE_ACCOUNT_PATH.');
 };
 
 /**
@@ -623,6 +657,7 @@ const sendMessageWithRetry = async (message, { projectId, accessToken }) => {
 };
 
 export const sendPushNotification = async (tokens, payload = {}) => {
+    await loadAdminServiceAccount();
     const projectId = getFirebaseProjectId();
     const accessToken = await getFirebaseAccessToken();
     // De-duplicated only: the owner's own cap was applied when its tokens were
