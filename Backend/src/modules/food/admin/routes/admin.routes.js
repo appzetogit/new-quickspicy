@@ -440,6 +440,7 @@ router.patch('/profile-changes/:id/reject', profileChangeController.rejectProfil
 router.patch('/addons/:id', addonsApprovalController.updateRestaurantAddon);
 router.patch('/addons/:id/approve', addonsApprovalController.approveRestaurantAddon);
 router.patch('/addons/:id/reject', addonsApprovalController.rejectRestaurantAddon);
+router.delete('/addons/:id', addonsApprovalController.deleteRestaurantAddon);
 
 // ----- Foods -----
 router.get('/foods', adminController.getFoods);

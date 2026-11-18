@@ -149,6 +149,15 @@ export default function AddonsList() {
                 description: editForm.description.trim(),
                 image: imageUrl || a.image,
                 images: imageUrl ? [imageUrl] : a.images,
+                // The list and the detail view read draft.*, so the saved
+                // values go there too; otherwise the row kept the old name.
+                draft: {
+                  ...(a.draft || {}),
+                  name: editForm.name.trim(),
+                  price: priceNum,
+                  description: editForm.description.trim(),
+                  ...(imageUrl ? { image: imageUrl, images: [imageUrl] } : {}),
+                },
               }
             : a,
         ),
@@ -260,7 +269,8 @@ export default function AddonsList() {
     const id = pendingDelete?.id || pendingDelete?._id
     try {
       setSubmittingAction(true)
-      await adminAPI.rejectRestaurantAddon(String(id), "Deleted by admin")
+      // A real delete; this used to reject the add-on and call that deleted.
+      await adminAPI.deleteRestaurantAddon(String(id))
       setAddons((prev) => (prev || []).filter((a) => String(a.id || a._id) !== String(id)))
       toast.success("Add-on deleted")
     } catch (error) {

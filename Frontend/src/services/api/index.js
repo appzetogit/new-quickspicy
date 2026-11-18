@@ -1572,6 +1572,8 @@ export const adminAPI = {
       { reason: String(reason || "").trim() },
       { contextModule: "admin" },
     ),
+  deleteRestaurantAddon: (id) =>
+    apiClient.delete(`/food/admin/addons/${String(id)}`, { contextModule: "admin" }),
   /** Business Settings (admin) */
   getBusinessSettings: () =>
     apiClient.get(API_ENDPOINTS.ADMIN.BUSINESS_SETTINGS, {

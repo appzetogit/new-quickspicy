@@ -291,3 +291,17 @@ export async function rejectRestaurantAddon(addonId, reason) {
 
     return serializeAddon(updated);
 }
+
+/**
+ * Delete an add-on (soft: isDeleted, as everywhere else, so past orders that
+ * name it are untouched). The admin page used to "delete" by rejecting it,
+ * which left it in the restaurant's list marked rejected.
+ */
+export async function deleteRestaurantAddonAdmin(addonId) {
+    if (!isId(addonId)) return null;
+    const { count } = await prisma.foodAddon.updateMany({
+        where: liveAddon({ id: String(addonId) }),
+        data: { isDeleted: true },
+    });
+    return count ? { id: String(addonId), deleted: true } : null;
+}
