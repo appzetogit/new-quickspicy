@@ -30,6 +30,8 @@ const seoPages = [
 ]
 
 export default function PageMetaDataPageMetaData() {
+  // Used in the default meta titles; the hook was imported but never called.
+  const companyName = useCompanyName()
   const [searchQuery, setSearchQuery] = useState("")
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)

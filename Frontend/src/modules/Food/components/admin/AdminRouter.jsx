@@ -152,7 +152,7 @@ const LandingPageManagement = lazy(() => import("@food/pages/admin/system/Landin
 // import DiningList from "@food/pages/admin/system/DiningList");
 const EditRestaurant = lazy(() => import("@food/pages/admin/restaurant/EditRestaurant"));
 const AdminLogin = lazy(() => import("@food/pages/admin/auth/AdminLogin"));
-const AdminSignup = lazy(() => import("@food/pages/admin/auth/AdminSignup"));
+// AdminSignup is not routed: admin accounts are created by a super admin.
 const AdminForgotPassword = lazy(() => import("@food/pages/admin/auth/AdminForgotPassword"));
 
 function FeatureSettingsRouteGuard() {
@@ -230,7 +230,9 @@ export default function AdminRouter() {
         {/* Admin Auth Routes */}
         <Route path="login" element={<AuthRedirect module="admin"><AdminLogin /></AuthRedirect>} />
         <Route path="forgot-password" element={<AuthRedirect module="admin"><AdminForgotPassword /></AuthRedirect>} />
-        <Route path="signup" element={<AuthRedirect module="admin"><AdminSignup /></AuthRedirect>} />
+        {/* No self sign-up for admins (accounts come from Sub Admins); the old
+            page called an API that does not exist. */}
+        <Route path="signup" element={<Navigate to="/admin/login" replace />} />
 
         {/* Protected Routes - With Layout */}
         <Route

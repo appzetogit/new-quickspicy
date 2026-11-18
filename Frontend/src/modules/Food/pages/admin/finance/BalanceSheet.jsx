@@ -54,9 +54,13 @@ const weekOf = (ref = new Date()) => {
 
 const shiftWeeks = (period, weeks) => {
   const ref = new Date(`${period.from}T00:00:00`)
+  // A bad date (a cleared picker) used to turn into NaN-NaN-NaN here.
+  if (Number.isNaN(ref.getTime())) return weekOf()
   ref.setDate(ref.getDate() + weeks * 7)
   return weekOf(ref)
 }
+
+const isDay = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
 
 export default function BalanceSheet() {
   const [tab, setTab] = useState("restaurants")
@@ -198,7 +202,8 @@ export default function BalanceSheet() {
               <input
                 type="date"
                 value={period.from}
-                onChange={(e) => setPeriod({ ...period, from: e.target.value })}
+                // Clearing the picker keeps the old day: a period always has both ends.
+                onChange={(e) => isDay(e.target.value) && setPeriod({ ...period, from: e.target.value })}
                 className="text-sm rounded-lg border border-slate-300 px-3 py-2 bg-white"
               />
             </div>
@@ -209,7 +214,7 @@ export default function BalanceSheet() {
               <input
                 type="date"
                 value={period.to}
-                onChange={(e) => setPeriod({ ...period, to: e.target.value })}
+                onChange={(e) => isDay(e.target.value) && setPeriod({ ...period, to: e.target.value })}
                 className="text-sm rounded-lg border border-slate-300 px-3 py-2 bg-white"
               />
             </div>
