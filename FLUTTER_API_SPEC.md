@@ -1059,3 +1059,15 @@ Sockets are an optimization. The tracking screen must still work by polling `GET
 ## Build order
 
 auth/OTP → zone + landing → restaurant list/detail/menu → cart → `/calculate` → checkout + Razorpay → order tracking (REST first, sockets after) → profile/addresses/orders history → wallet/referrals → notifications + FCM.
+
+## Public admin settings (no auth)
+
+`GET /food/platform-settings/public` → `{ [key]: value }` for the public settings pages, secrets removed. Keys present only once an admin has saved that page:
+
+- `app_web`: per app `{ minVersion, downloadUrl }` (`userAppAndroid`, `userAppIOS`, `restaurantAppAndroid`, …). Use `minVersion` for a force-update prompt.
+- `login_setup`: which login options and social logins are switched on.
+- `theme`: `{ selectedTheme }`.
+- `withdraw_methods`: `{ methods: [{ name, forRestaurants, forRiders, isActive, isDefault, fields: [{ label, type, placeholder, required }] }] }`. The restaurant and rider apps build their payout form from the active methods.
+- `wallet_bonus`: `{ enabled, rules: [...] }`, to show "top up ₹1000, get ₹100" offers. The bonus itself is credited by the server after the top-up; `POST /food/user/wallet/topup/verify` now returns `bonus` when one was paid.
+- `join_us`: extra form fields for restaurant / rider sign-up.
+- `offline_payment`, `analytics`, `react_site`, `react_registration`, `landing_admin`, `landing_react`, `firebase` (web config only).

@@ -135,3 +135,23 @@ Statement: `{ id, entityType, entityId, name, phone, weekKey, periodStart, perio
 - Only dishes (`item`) have descriptions.
 - The bulk call is all-or-nothing: one bad row and nothing is saved.
 - An empty Telugu text means "use the English", so clearing a translation is sending `""`.
+
+## Settings pages, reports and tools (built out 2026-11-18)
+
+| Method | Path | Body / query | Returns | Permission |
+|---|---|---|---|---|
+| GET | `/platform-settings/:key` | — | `{ key, value, updatedAt }` (secrets masked `••••1234`) | `system_settings` |
+| PUT | `/platform-settings/:key` | `{ value: {...} }` | same | `system_settings` |
+| GET | `/reports/coupon-orders` | `?from=&to=&couponCode=&page=&limit=` | `{ coupons: [...], orders: [...], pagination }` | `report_management` |
+| GET | `/reports/customer-rewards` | `?from=&to=&search=&page=` | `{ rows: [{ name, phone, cashback, referral, topupBonus, adminCredit, total }], totals, pagination }` | `report_management` |
+| POST | `/customers/:id/wallet/credit` | `{ amount, reason, requestId }` | `{ transactionId, amount, balance }` | `customer_management` edit |
+| GET | `/customers/wallet-credits` | `?page=&limit=` | `{ credits: [...], pagination }` | `customer_management` |
+| POST | `/restaurants/bulk-import` | `{ rows: [{ restaurantName, ownerName, ownerPhone, zone, ownerEmail?, city?, area?, address?, pincode?, latitude?, longitude?, cuisines? }] }` (max 500) | `{ created, failed, results: [{ line, ok, id?, reason? }] }` | `restaurant_management` create |
+| GET | `/files` | `?folder=` | `{ folder, folders: [...], files: [{ path, name, size, url, modifiedAt }] }` | `system_settings` |
+| GET | `/withdrawals/balance-sheet/history` | now also `?from=&to=`; rows carry `name`, `phone` | | `transaction_management` |
+
+Setting keys: `app_web, firebase, analytics, ai, react_site, join_us, login_setup, email_templates, theme, react_registration, offline_payment, notification_channels, addon_activation, third_party, withdraw_methods, wallet_bonus, landing_admin, landing_react`. Any field named like a key, token, secret, password or credential is masked on read; sending the masked value back keeps the stored one.
+
+- Admin wallet credits are capped at ₹50,000 each, need a reason, and a repeated `requestId` credits once.
+- `wallet_bonus` = `{ enabled, rules: [{ title, minAmount, bonusType: flat|percentage, value, maxBonus, startDate, endDate, isActive }] }`. The best matching rule is credited once per confirmed wallet top-up.
+- Bulk-imported restaurants are `pending` with no documents; the owner finishes onboarding after OTP login.
