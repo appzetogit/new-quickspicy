@@ -171,10 +171,14 @@ export default function AddZone() {
       const apiKey = await getGoogleMapsApiKey()
       setGoogleMapsApiKey(apiKey || "loaded")
       
-      // Wait for Google Maps to be loaded from main.jsx if it's loading
+      // Wait for Google Maps only if another page already started loading it.
+      // With no script on the page, nothing is coming: waiting the full 5
+      // seconds first is why the map took so long to appear.
+      const mapsScriptPending = Array.from(document.getElementsByTagName("script"))
+        .some((s) => s.src?.includes("maps.googleapis.com/maps/api/js"))
       let retries = 0
-      const maxRetries = 50 // Wait up to 5 seconds (50 * 100ms)
-      
+      const maxRetries = mapsScriptPending ? 50 : 0 // up to 5 seconds (50 * 100ms)
+
       while (!window.google && retries < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, 100))
         retries++

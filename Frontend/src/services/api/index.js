@@ -1056,6 +1056,16 @@ export const adminAPI = {
     apiClient.delete(`/food/admin/offers/${String(offerId)}`, {
       contextModule: "admin",
     }),
+  /** Same body as create; replaces the coupon's editable fields. */
+  updateAdminOffer: (offerId, data) =>
+    apiClient.patch(`/food/admin/offers/${String(offerId)}`, data, {
+      contextModule: "admin",
+    }),
+  /** "active" | "inactive" */
+  setAdminOfferStatus: (offerId, status) =>
+    apiClient.patch(`/food/admin/offers/${String(offerId)}/status`, { status }, {
+      contextModule: "admin",
+    }),
 
   /** Delivery Partner Bonus (admin) */
   getDeliveryPartnerBonusTransactions: (params = {}) =>

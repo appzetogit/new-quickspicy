@@ -77,7 +77,10 @@ export async function getAllOffers(_query = {}) {
                       : 'all',
             customerIds: Array.isArray(o.customerIds) ? o.customerIds : [],
             customerCount: Array.isArray(o.customerIds) ? o.customerIds.length : 0,
-            discountType: o.discountType,
+            // Prisma gives the enum's name (flat_price); the admin page and the
+            // create form use the stored spelling (flat-price). Sent raw, every
+            // flat coupon was listed as "0% OFF".
+            discountType: o.discountType === 'flat_price' ? 'flat-price' : o.discountType,
             discountPercentage: o.discountType === 'percentage' ? num(o.discountValue) : 0,
             originalPrice: o.discountType === 'flat_price' ? num(o.discountValue) : 0,
             discountedPrice: 0,
@@ -98,6 +101,14 @@ export async function getAllOffers(_query = {}) {
             // written before the columns existed.
             adminBearPercentage: num(o.adminBearPercentage),
             restaurantBearPercentage: num(o.restaurantBearPercentage),
+            // What the edit form needs to show the coupon as it was saved.
+            discountValue: num(o.discountValue),
+            perUserLimit: o.perUserLimit ?? null,
+            startDate: o.startDate || null,
+            restaurantIds: selectedIds,
+            isFirstOrderOnly: Boolean(o.isFirstOrderOnly),
+            storedStatus: o.status || 'active',
+            customerScope: o.customerScope === 'first_time' ? 'first-time' : o.customerScope,
         };
     });
 
@@ -175,6 +186,59 @@ export async function createAdminOffer(body = {}) {
     }
 
     return offer;
+}
+
+/**
+ * Edit a coupon. Takes the same body as create (the admin form sends the whole
+ * thing back) and replaces the editable fields. Usage counts are kept.
+ */
+export async function updateAdminOffer(id, body = {}) {
+    if (!isId(id)) throw new ValidationError('Invalid offer id');
+    const selected = body.restaurantScope === 'selected';
+    const endDate = body.endDate ? new Date(body.endDate) : null;
+    try {
+        return await prisma.foodOffer.update({
+            where: { id: String(id) },
+            data: {
+                couponCode: body.couponCode,
+                discountType: body.discountType,
+                discountValue: body.discountValue,
+                customerScope: body.customerScope,
+                restaurantScope: body.restaurantScope,
+                restaurantId: selected && isId(body.restaurantId) ? String(body.restaurantId) : null,
+                restaurantIds: selected ? (body.restaurantIds || []).map(String).filter(isId) : [],
+                customerIds: body.customerIds ?? [],
+                minOrderValue: body.minOrderValue ?? 0,
+                maxDiscount: body.maxDiscount ?? null,
+                usageLimit: body.usageLimit ?? null,
+                perUserLimit: body.perUserLimit ?? null,
+                startDate: body.startDate ? new Date(body.startDate) : null,
+                endDate,
+                isFirstOrderOnly: body.isFirstOrderOnly ?? false,
+                ...(body.category !== undefined ? { category: body.category ?? null } : {}),
+                adminBearPercentage: body.adminBearPercentage ?? 100,
+                restaurantBearPercentage: body.restaurantBearPercentage ?? 0,
+                // Moving the end date into the past ends it now.
+                ...(endDate && endDate.getTime() <= Date.now() ? { status: 'inactive' } : {}),
+            },
+        });
+    } catch (error) {
+        if (error?.code === 'P2002') throw new ValidationError('Coupon code already exists');
+        if (error?.code === 'P2025') throw new ValidationError('Offer not found');
+        throw error;
+    }
+}
+
+/** Pause or resume a coupon. An expired one cannot be resumed without a new end date. */
+export async function setAdminOfferStatus(id, status) {
+    if (!isId(id)) throw new ValidationError('Invalid offer id');
+    if (!['active', 'inactive'].includes(status)) throw new ValidationError('status must be active or inactive');
+    const offer = await prisma.foodOffer.findUnique({ where: { id: String(id) }, select: { endDate: true } });
+    if (!offer) throw new ValidationError('Offer not found');
+    if (status === 'active' && offer.endDate && offer.endDate.getTime() <= Date.now()) {
+        throw new ValidationError('This coupon has expired. Edit it and set a later end date first.');
+    }
+    return prisma.foodOffer.update({ where: { id: String(id) }, data: { status } });
 }
 
 /** Sets or clears a coupon's category (bank, free_delivery, ...). */

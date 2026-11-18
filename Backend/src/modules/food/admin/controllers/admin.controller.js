@@ -798,6 +798,25 @@ export async function updateAdminOfferCartVisibility(req, res, next) {
     }
 }
 
+export async function updateAdminOffer(req, res, next) {
+    try {
+        const body = validateCreateOfferDto(req.body || {});
+        const offer = await adminService.updateAdminOffer(req.params.id, body);
+        res.status(200).json({ success: true, message: 'Offer updated successfully', data: { offer } });
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function setAdminOfferStatus(req, res, next) {
+    try {
+        const offer = await adminService.setAdminOfferStatus(req.params.id, String(req.body?.status || ''));
+        res.status(200).json({ success: true, message: offer.status === 'active' ? 'Coupon resumed' : 'Coupon paused', data: { offer } });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export async function deleteAdminOffer(req, res, next) {
     try {
         const { id } = req.params;
