@@ -237,10 +237,10 @@ test('admin cancel needs a reason, and the restaurant alert carries it as string
     const { adminCancelFields } = await import('./order.service.js');
     const { rejectOrderAdminController } = await import('../controllers/order.controller.js');
 
-    assert.deepEqual(adminCancelFields({ id: 'abc', order_id: 'MFB24102610001' }, ' Restaurant closed early '), {
+    assert.deepEqual(adminCancelFields({ id: 'abc', order_id: 'QS24102610001' }, ' Restaurant closed early '), {
         orderStatus: 'cancelled_by_admin',
         orderId: 'abc',
-        orderDisplayId: 'MFB24102610001',
+        orderDisplayId: 'QS24102610001',
         cancellationReason: 'Restaurant closed early',
     });
 

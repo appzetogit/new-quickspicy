@@ -322,7 +322,7 @@ test('a new order gets an ETA, and the rider position lands on it by order numbe
     const fetched = await getOrderById(liveOrderId, { userId: user.id });
     assert.equal(fetched.etaMinutes, row.etaMinutes);
 
-    // A rider takes it, and pings with the MFB number.
+    // A rider takes it, and pings with the QS number.
     await prisma.foodOrder.update({
         where: { id: liveOrderId },
         data: { dispatchDeliveryPartnerId: rider.id, dispatchAcceptedAt: new Date(), orderStatus: 'picked_up', etaComputedAt: null },

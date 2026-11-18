@@ -616,8 +616,8 @@ async function incrementCouponUsageForOrder(order, userId) {
 // ----- Create order -----
 
 /**
- * The order number people see: "MFB" + the order date as DDMMYY (India time)
- * + a running number that never resets, e.g. MFB03102610004 for the 10,004th
+ * The order number people see: "QS" + the order date as DDMMYY (India time)
+ * + a running number that never resets, e.g. QS03102610004 for the 10,004th
  * order, placed on 3 Oct 2026.
  *
  * The number comes from a Postgres sequence (food_order_number_seq, from
@@ -629,7 +629,7 @@ export function formatOrderDisplayId(sequenceNumber, at = new Date()) {
   const dd = String(ist.getUTCDate()).padStart(2, "0");
   const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
   const yy = String(ist.getUTCFullYear()).slice(-2);
-  return `MFB${dd}${mm}${yy}${sequenceNumber}`;
+  return `QS${dd}${mm}${yy}${sequenceNumber}`;
 }
 
 async function nextOrderDisplayId(at = new Date()) {

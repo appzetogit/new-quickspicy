@@ -118,7 +118,7 @@ function emitOrderUpdate(order, deliveryPartnerId, customerEvent = null) {
     if (!['picked_up', 'reached_drop', 'delivered'].includes(status)) return;
 
     const orderId = order.id;
-    // The rider reads the order number (MFB...), not the database id the app
+    // The rider reads the order number (QS...), not the database id the app
     // uses to open the order -- that one stays in `data` below.
     const orderNumber = order.order_id || order.orderId || orderId;
     let riderTitle = '';
