@@ -1,55 +1,47 @@
-import { useState, useMemo } from "react"
-import { Monitor, Info, Check, Copy, Edit, ExternalLink, Settings, ArrowUpDown, Columns } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Monitor, Info, Check, Copy, Edit, ExternalLink, Settings, ArrowUpDown, Columns, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
-
-const panelLoginUrls = [
-  {
-    id: 1,
-    panelName: "Admin Panel",
-    loginUrl: "https://admin.stackfood.com/login",
-    status: "active"
-  },
-  {
-    id: 2,
-    panelName: "Restaurant Panel",
-    loginUrl: "https://restaurant.stackfood.com/login",
-    status: "active"
-  },
-  {
-    id: 3,
-    panelName: "Deliveryman Panel",
-    loginUrl: "https://delivery.stackfood.com/login",
-    status: "active"
-  },
-  {
-    id: 4,
-    panelName: "Customer Panel",
-    loginUrl: "https://app.stackfood.com/login",
-    status: "active"
-  }
-]
-
-export default function LoginSetup() {
-  const [activeTab, setActiveTab] = useState("customer-login")
-  const [loginOptions, setLoginOptions] = useState({
+const DEFAULTS = {
+  loginOptions: {
     manualLogin: true,
     otpLogin: true,
     socialMediaLogin: true
-  })
-  const [socialMedia, setSocialMedia] = useState({
+  },
+  socialMedia: {
     google: true,
     facebook: false,
     apple: false
-  })
-  const [verification, setVerification] = useState({
+  },
+  verification: {
     emailVerification: true,
     phoneVerification: true
-  })
-  const [panelUrls, setPanelUrls] = useState(panelLoginUrls)
+  },
+  panelUrls: [
+    { id: 1, panelName: "Admin Panel", loginUrl: "", status: "active" },
+    { id: 2, panelName: "Restaurant Panel", loginUrl: "", status: "active" },
+    { id: 3, panelName: "Deliveryman Panel", loginUrl: "", status: "active" },
+    { id: 4, panelName: "Customer Panel", loginUrl: "", status: "active" }
+  ]
+}
+
+export default function LoginSetup() {
+  const { value, setValue, update, save, loading, saving } = usePlatformSetting("login_setup", DEFAULTS)
+  // Last value loaded from (or saved to) the server, for Reset.
+  const loadedRef = useRef(DEFAULTS)
+  useEffect(() => {
+    if (!loading) loadedRef.current = value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const loginOptions = { ...DEFAULTS.loginOptions, ...(value.loginOptions || {}) }
+  const socialMedia = { ...DEFAULTS.socialMedia, ...(value.socialMedia || {}) }
+  const verification = { ...DEFAULTS.verification, ...(value.verification || {}) }
+  const panelUrls = Array.isArray(value.panelUrls) ? value.panelUrls : DEFAULTS.panelUrls
+
+  const [activeTab, setActiveTab] = useState("customer-login")
   const [editingId, setEditingId] = useState(null)
   const [editUrl, setEditUrl] = useState("")
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -62,62 +54,38 @@ export default function LoginSetup() {
   })
 
   const handleLoginOptionChange = (option) => {
-    setLoginOptions(prev => ({
-      ...prev,
-      [option]: !prev[option]
-    }))
+    update("loginOptions", { ...loginOptions, [option]: !loginOptions[option] })
   }
 
   const handleSocialMediaChange = (platform) => {
-    setSocialMedia(prev => ({
-      ...prev,
-      [platform]: !prev[platform]
-    }))
+    update("socialMedia", { ...socialMedia, [platform]: !socialMedia[platform] })
   }
 
   const handleVerificationChange = (type) => {
-    setVerification(prev => ({
-      ...prev,
-      [type]: !prev[type]
-    }))
+    update("verification", { ...verification, [type]: !verification[type] })
   }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    if (activeTab === "customer-login") {
-      debugLog("Form submitted:", { loginOptions, socialMedia, verification })
-    } else {
-      debugLog("Panel URLs submitted:", panelUrls)
-    }
-    alert("Settings saved successfully!")
-  }
-
-  const handleReset = () => {
-    if (activeTab === "customer-login") {
-      setLoginOptions({
-        manualLogin: true,
-        otpLogin: true,
-        socialMediaLogin: true
-      })
-      setSocialMedia({
-        google: true,
-        facebook: false,
-        apple: false
-      })
-      setVerification({
-        emailVerification: true,
-        phoneVerification: true
-      })
-    } else {
-      setPanelUrls(panelLoginUrls)
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.()
+    const ok = await save()
+    if (ok) {
+      loadedRef.current = value
       setEditingId(null)
       setEditUrl("")
     }
   }
 
+  const handleReset = () => {
+    setValue(loadedRef.current)
+    setEditingId(null)
+    setEditUrl("")
+  }
+
   const handleCopyUrl = (url) => {
+    if (!url) return
     navigator.clipboard.writeText(url)
-    alert("URL copied to clipboard!")
+      .then(() => toast.success("URL copied to clipboard"))
+      .catch(() => toast.error("Could not copy the URL"))
   }
 
   const handleEditUrl = (id, currentUrl) => {
@@ -126,8 +94,8 @@ export default function LoginSetup() {
   }
 
   const handleSaveUrl = (id) => {
-    setPanelUrls(prev => prev.map(panel => 
-      panel.id === id ? { ...panel, loginUrl: editUrl } : panel
+    update("panelUrls", panelUrls.map(panel =>
+      panel.id === id ? { ...panel, loginUrl: editUrl.trim() } : panel
     ))
     setEditingId(null)
     setEditUrl("")
@@ -170,6 +138,7 @@ export default function LoginSetup() {
               <Monitor className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-900">Login Setup</h1>
+            {loading && <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />}
           </div>
         </div>
 
@@ -462,16 +431,18 @@ export default function LoginSetup() {
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-slate-600 break-all">{panel.loginUrl}</span>
-                                <a
-                                  href={panel.loginUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-orange-500 hover:text-orange-600"
-                                  title="Open in new tab"
-                                >
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
+                                <span className="text-sm text-slate-600 break-all">{panel.loginUrl || "Not set"}</span>
+                                {panel.loginUrl && (
+                                  <a
+                                    href={panel.loginUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-orange-500 hover:text-orange-600"
+                                    title="Open in new tab"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </a>
+                                )}
                               </div>
                             )}
                           </td>
@@ -521,16 +492,18 @@ export default function LoginSetup() {
           <button
             type="button"
             onClick={handleReset}
-            className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+            disabled={loading || saving}
+            className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium disabled:opacity-60"
           >
             Reset
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+            disabled={loading || saving}
+            className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium disabled:opacity-60"
           >
-            Submit
+            {saving ? "Saving..." : "Submit"}
           </button>
         </div>
       </div>

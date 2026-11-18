@@ -1,346 +1,116 @@
-import { useState, useMemo } from "react"
-import { Search, Wallet, Info, Calendar, Edit, Trash2 } from "lucide-react"
-import { emptyWalletBonuses } from "@food/utils/adminFallbackData"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+import { useState } from "react"
+import { Gift, Loader2, Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
+/**
+ * Bonus money for topping up the wallet: "add ₹1000 or more, get 10% extra (up
+ * to ₹150)". The best matching rule pays once per top-up, straight after the
+ * payment is confirmed (adminTools.service.js applyTopupBonus). Customers see
+ * the rules through /platform-settings/public (wallet_bonus).
+ */
+const BLANK = { title: "", minAmount: "", bonusType: "flat", value: "", maxBonus: "", startDate: "", endDate: "", isActive: true }
+const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`
+
+const describe = (r) => {
+  const amount = r.bonusType === "percentage" ? `${Number(r.value) || 0}% extra${Number(r.maxBonus) ? ` (up to ${rupees(r.maxBonus)})` : ""}` : `${rupees(r.value)} extra`
+  return `Add ${rupees(r.minAmount)} or more, get ${amount}`
+}
 
 export default function Bonus() {
-  const [activeLanguage, setActiveLanguage] = useState("default")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [bonuses, setBonuses] = useState(emptyWalletBonuses)
-  const [formData, setFormData] = useState({
-    bonusTitle: "",
-    shortDescription: "",
-    bonusType: "Percentage (%)",
-    bonusAmount: "",
-    minAddMoney: "",
-    maxBonus: "",
-    startDate: "",
-    expireDate: "",
-  })
+  const { value, setValue, save, loading, saving } = usePlatformSetting("wallet_bonus", { enabled: false, rules: [] })
+  const [draft, setDraft] = useState(BLANK)
+  const [editing, setEditing] = useState(null) // index being edited, or null for a new rule
+  const rules = Array.isArray(value.rules) ? value.rules : []
 
-  const languageTabs = [
-    { key: "default", label: "Default" },
-    { key: "en", label: "English(EN)" },
-    { key: "bn", label: "Bengali - বাংলা(BN)" },
-    { key: "ar", label: "Arabic - العربية (AR)" },
-    { key: "es", label: "Spanish - espa�ol(ES)" },
-  ]
-
-  const filteredBonuses = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return bonuses
-    }
-    
-    const query = searchQuery.toLowerCase().trim()
-    return bonuses.filter(bonus =>
-      bonus.bonusTitle.toLowerCase().includes(query)
-    )
-  }, [bonuses, searchQuery])
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+  const persist = (next, message) => {
+    setValue(next)
+    return save(next, { successMessage: message })
   }
 
-  const handleSubmit = (e) => {
+  const submitRule = async (e) => {
     e.preventDefault()
-    debugLog("Form submitted:", formData)
-    alert("Bonus setup saved successfully!")
-  }
-
-  const handleReset = () => {
-    setFormData({
-      bonusTitle: "",
-      shortDescription: "",
-      bonusType: "Percentage (%)",
-      bonusAmount: "",
-      minAddMoney: "",
-      maxBonus: "",
-      startDate: "",
-      expireDate: "",
-    })
-  }
-
-  const handleToggleStatus = (sl) => {
-    setBonuses(bonuses.map(bonus =>
-      bonus.sl === sl ? { ...bonus, status: !bonus.status } : bonus
-    ))
-  }
-
-  const handleDelete = (sl) => {
-    if (window.confirm("Are you sure you want to delete this bonus?")) {
-      setBonuses(bonuses.filter(bonus => bonus.sl !== sl))
+    const rule = {
+      ...draft,
+      title: draft.title.trim(),
+      minAmount: Number(draft.minAmount),
+      value: Number(draft.value),
+      maxBonus: draft.maxBonus === "" ? 0 : Number(draft.maxBonus),
     }
+    if (!rule.title) return toast.error("Give the bonus a name")
+    if (!(rule.minAmount > 0)) return toast.error("Minimum top-up must be above 0")
+    if (!(rule.value > 0)) return toast.error("Bonus must be above 0")
+    if (rule.bonusType === "percentage" && rule.value > 100) return toast.error("A percentage cannot be over 100")
+    if (rule.startDate && rule.endDate && rule.endDate < rule.startDate) return toast.error("End date is before the start date")
+    const nextRules = editing === null ? [...rules, rule] : rules.map((r, i) => (i === editing ? rule : r))
+    const ok = await persist({ ...value, rules: nextRules }, editing === null ? "Bonus added" : "Bonus updated")
+    if (ok) { setDraft(BLANK); setEditing(null) }
   }
+
+  const input = "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
 
   return (
     <div className="p-4 lg:p-6 bg-slate-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Bonus Setup Form */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">Wallet Bonus Setup</h1>
+      <div className="max-w-5xl mx-auto space-y-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Gift className="w-6 h-6 text-orange-600" /> Wallet Bonus</h1>
+            <p className="text-sm text-slate-500 mt-1">Extra money for topping up the wallet. The best matching rule is paid once per top-up, right after payment.</p>
           </div>
-
-          {/* Language Tabs */}
-          <div className="flex items-center gap-2 border-b border-slate-200 mb-6">
-            {languageTabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveLanguage(tab.key)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeLanguage === tab.key
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Bonus Title ({activeLanguage === "default" ? "Default" : languageTabs.find(t => t.key === activeLanguage)?.label})
-                </label>
-                <input
-                  type="text"
-                  value={formData.bonusTitle}
-                  onChange={(e) => handleInputChange("bonusTitle", e.target.value)}
-                  placeholder="Ex: EID Dhamaka"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Short Description ({activeLanguage === "default" ? "Default" : languageTabs.find(t => t.key === activeLanguage)?.label})
-                </label>
-                <input
-                  type="text"
-                  value={formData.shortDescription}
-                  onChange={(e) => handleInputChange("shortDescription", e.target.value)}
-                  placeholder="Ex: EID Dhamaka"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Bonus Type
-                </label>
-                <select
-                  value={formData.bonusType}
-                  onChange={(e) => handleInputChange("bonusType", e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="Percentage (%)">Percentage (%)</option>
-                  <option value="Amount ($)">Amount ($)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span>Bonus Amount ({formData.bonusType === "Percentage (%)" ? "%" : "₹"})</span>
-                    <Info className="w-4 h-4 text-slate-400" />
-                  </div>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.bonusAmount}
-                  onChange={(e) => handleInputChange("bonusAmount", e.target.value)}
-                  placeholder="Ex: 100"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span>Minimum Add Money Amount ($)</span>
-                    <Info className="w-4 h-4 text-slate-400" />
-                  </div>
-                </label>
-                <input
-                  type="number"
-                  value={formData.minAddMoney}
-                  onChange={(e) => handleInputChange("minAddMoney", e.target.value)}
-                  placeholder="Ex: 10"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span>Maximum Bonus ($)</span>
-                    <Info className="w-4 h-4 text-slate-400" />
-                  </div>
-                </label>
-                <input
-                  type="number"
-                  value={formData.maxBonus}
-                  onChange={(e) => handleInputChange("maxBonus", e.target.value)}
-                  placeholder="Ex: 1000"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Start Date
-                </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) => handleInputChange("startDate", e.target.value)}
-                    className="w-full px-4 py-2.5 pr-10 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Expire Date
-                </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={formData.expireDate}
-                    onChange={(e) => handleInputChange("expireDate", e.target.value)}
-                    className="w-full px-4 py-2.5 pr-10 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-4 mt-6">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-6 py-2.5 text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all"
-              >
-                Reset
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-md"
-              >
-                Submit
-              </button>
-            </div>
-          </form>
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 whitespace-nowrap">
+            <input type="checkbox" className="h-5 w-5 accent-orange-600" disabled={loading || saving} checked={Boolean(value.enabled)}
+              onChange={(e) => persist({ ...value, enabled: e.target.checked }, e.target.checked ? "Top-up bonus is on" : "Top-up bonus is off")} />
+            {value.enabled ? "On" : "Off"}
+          </label>
         </div>
 
-        {/* Bonus List Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900">Bonus List</h2>
-              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-slate-100 text-slate-700">
-                {filteredBonuses.length}
-              </span>
-            </div>
-
-            <div className="relative flex-1 sm:flex-initial min-w-[200px]">
-              <input
-                type="text"
-                placeholder="Ex: Search by bonus title"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            </div>
+        <form onSubmit={submitRule} className="bg-white rounded-xl border border-slate-200 p-5 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <h2 className="md:col-span-4 font-semibold text-slate-900">{editing === null ? "New bonus" : "Edit bonus"}</h2>
+          <label className="text-sm font-medium text-slate-700 md:col-span-2">Name<input className={input} maxLength={60} placeholder="e.g. Weekend top-up" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
+          <label className="text-sm font-medium text-slate-700">Minimum top-up (₹)<input type="number" min="1" className={input} value={draft.minAmount} onChange={(e) => setDraft({ ...draft, minAmount: e.target.value })} /></label>
+          <label className="text-sm font-medium text-slate-700">Type
+            <select className={input} value={draft.bonusType} onChange={(e) => setDraft({ ...draft, bonusType: e.target.value })}>
+              <option value="flat">Fixed amount</option><option value="percentage">Percentage</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium text-slate-700">{draft.bonusType === "percentage" ? "Bonus (%)" : "Bonus (₹)"}<input type="number" min="0" step="0.01" className={input} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} /></label>
+          <label className="text-sm font-medium text-slate-700">Maximum bonus (₹)<input type="number" min="0" disabled={draft.bonusType !== "percentage"} className={`${input} disabled:bg-slate-100`} placeholder="No cap" value={draft.maxBonus} onChange={(e) => setDraft({ ...draft, maxBonus: e.target.value })} /></label>
+          <label className="text-sm font-medium text-slate-700">Starts<input type="date" className={input} value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} /></label>
+          <label className="text-sm font-medium text-slate-700">Ends<input type="date" className={input} value={draft.endDate} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} /></label>
+          <div className="md:col-span-4 flex justify-end gap-2">
+            {editing !== null && <button type="button" onClick={() => { setEditing(null); setDraft(BLANK) }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Cancel</button>}
+            <button type="submit" disabled={saving || loading} className="inline-flex items-center gap-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"><Plus className="w-4 h-4" />{editing === null ? "Add bonus" : "Save bonus"}</button>
           </div>
+        </form>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">SI</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Bonus Title</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Bonus Info</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Bonus Amount</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Started On</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Expires On</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-100">
-                {filteredBonuses.map((bonus) => (
-                  <tr key={bonus.sl} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-slate-700">{bonus.sl}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm font-medium text-slate-900">{bonus.bonusTitle}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-slate-700">{bonus.bonusInfo}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-slate-900">{bonus.bonusAmount}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-slate-700">{bonus.startedOn}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-slate-700">{bonus.expiresOn}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleToggleStatus(bonus.sl)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                          bonus.status ? "bg-blue-600" : "bg-slate-300"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            bonus.status ? "translate-x-6" : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(bonus.sl)}
-                          className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          {loading ? (
+            <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div>
+          ) : !rules.length ? (
+            <p className="p-8 text-center text-sm text-slate-500">No bonus rules yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3 text-left">Bonus</th><th className="px-4 py-3 text-left">Rule</th><th className="px-4 py-3 text-left">Dates</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-right">Actions</th></tr></thead>
+              <tbody>{rules.map((r, i) => (
+                <tr key={`${r.title}-${i}`} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium">{r.title}</td>
+                  <td className="px-4 py-3 text-slate-600">{describe(r)}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.startDate || "Now"} → {r.endDate || "No end"}</td>
+                  <td className="px-4 py-3">
+                    <button type="button" disabled={saving} onClick={() => persist({ ...value, rules: rules.map((x, j) => (j === i ? { ...x, isActive: x.isActive === false } : x)) }, "Saved")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${r.isActive === false ? "bg-slate-200 text-slate-700" : "bg-green-100 text-green-800"}`}>{r.isActive === false ? "Paused" : "Active"}</button>
+                  </td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap space-x-2">
+                    <button type="button" onClick={() => { setEditing(i); setDraft({ ...BLANK, ...r, maxBonus: r.maxBonus || "" }) }} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold">Edit</button>
+                    <button type="button" disabled={saving} onClick={() => window.confirm(`Delete the bonus "${r.title}"?`) && persist({ ...value, rules: rules.filter((_, j) => j !== i) }, "Bonus deleted")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"><Trash2 className="w-3.5 h-3.5" />Delete</button>
+                  </td>
+                </tr>))}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
       </div>
     </div>
   )
 }
-

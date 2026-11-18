@@ -1,40 +1,36 @@
-import { useState } from "react"
-import { ChevronDown, Settings } from "lucide-react"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
-
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
 const addons = [
   {
-    id: 1,
+    key: "restaurant_app",
     title: "Restaurant app",
     description: "With this app your vendor will mange their business through mobile app",
-    enabled: true,
-    hasSettings: true
   },
   {
-    id: 2,
+    key: "deliveryman_app",
     title: "Deliveryman app",
     description: "With this app your all your deliveryman will mange their orders through mobile app",
-    enabled: false,
-    hasSettings: false
   },
   {
-    id: 3,
+    key: "react_user_website",
     title: "React user website",
     description: "With this react website your customers will experience your system in a more attractive and seamless way",
-    enabled: false,
-    hasSettings: false
-  }
+  },
 ]
 
-function ToggleSwitch({ enabled, onToggle }) {
+const DEFAULTS = {
+  restaurant_app: true,
+  deliveryman_app: false,
+  react_user_website: false,
+}
+
+function ToggleSwitch({ enabled, onToggle, disabled }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all ${
+      disabled={disabled}
+      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all disabled:opacity-60 ${
         enabled
           ? "bg-blue-600 border-blue-600 justify-end"
           : "bg-slate-200 border-slate-300 justify-start"
@@ -46,26 +42,11 @@ function ToggleSwitch({ enabled, onToggle }) {
 }
 
 export default function AddonActivation() {
-  const [addonStates, setAddonStates] = useState(
-    addons.reduce((acc, addon) => {
-      acc[addon.id] = addon.enabled
-      return acc
-    }, {})
-  )
+  const { value, save, loading, saving } = usePlatformSetting("addon_activation", DEFAULTS)
 
-  const handleToggle = (id) => {
-    setAddonStates(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }))
-  }
-
-  const handleView = (id) => {
-    debugLog("View addon:", id)
-  }
-
-  const handleSettings = (id) => {
-    debugLog("Settings for addon:", id)
+  const handleToggle = (key) => {
+    const next = { ...value, [key]: !value[key] }
+    save(next, { successMessage: `${addons.find(a => a.key === key)?.title || "Add-on"} ${next[key] ? "activated" : "deactivated"}` })
   }
 
   return (
@@ -76,59 +57,42 @@ export default function AddonActivation() {
           <h1 className="text-lg font-bold text-slate-900">Add on activation</h1>
         </div>
 
-        {/* Addon Cards */}
-        <div className="space-y-3">
-          {addons.map((addon) => (
-            <div
-              key={addon.id}
-              className="bg-white rounded-lg shadow-sm border border-slate-200 p-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                {/* Left: Title and Description */}
-                <div className="flex-1">
-                  <h2 className="text-sm font-semibold text-slate-900 mb-1">
-                    {addon.title}
-                  </h2>
-                  <p className="text-xs text-slate-600">
-                    {addon.description}
-                  </p>
-                </div>
+        {loading ? (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 text-xs text-slate-500">
+            Loading...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {addons.map((addon) => (
+              <div
+                key={addon.key}
+                className="bg-white rounded-lg shadow-sm border border-slate-200 p-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  {/* Left: Title and Description */}
+                  <div className="flex-1">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1">
+                      {addon.title}
+                    </h2>
+                    <p className="text-xs text-slate-600">
+                      {addon.description}
+                    </p>
+                  </div>
 
-                {/* Right: Actions */}
-                <div className="flex items-center gap-3">
-                  {/* View Dropdown */}
-                  <button
-                    type="button"
-                    onClick={() => handleView(addon.id)}
-                    className="flex items-center gap-1 text-xs text-slate-700 hover:text-slate-900"
-                  >
-                    <span>View</span>
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-
-                  {/* Toggle Switch */}
-                  <ToggleSwitch
-                    enabled={addonStates[addon.id]}
-                    onToggle={() => handleToggle(addon.id)}
-                  />
-
-                  {/* Settings Icon (only for Restaurant app) */}
-                  {addon.hasSettings && (
-                    <button
-                      type="button"
-                      onClick={() => handleSettings(addon.id)}
-                      className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                  )}
+                  {/* Right: Toggle */}
+                  <div className="flex items-center gap-3">
+                    <ToggleSwitch
+                      enabled={!!value[addon.key]}
+                      disabled={saving}
+                      onToggle={() => handleToggle(addon.key)}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
 }
-

@@ -3,6 +3,8 @@ import { Bell, Info, Search, Download, ChevronDown, Settings, FileText, FileSpre
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@food/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
 import { exportNotificationsToCSV, exportNotificationsToExcel, exportNotificationsToPDF, exportNotificationsToJSON } from "@food/components/admin/notifications/notificationsExportUtils"
+import { toast } from "sonner"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
 const adminNotifications = [
   {
@@ -279,12 +281,30 @@ const tabs = [
   { id: "deliveryman", label: "Deliveryman" }
 ]
 
-function ToggleSwitch({ enabled, onToggle }) {
+const topicsByTab = {
+  admin: adminNotifications,
+  restaurant: restaurantNotifications,
+  customers: customerNotifications,
+  deliveryman: deliverymanNotifications,
+}
+
+const slugify = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")
+
+// Stored shape: { [tab]: { [topic_slug]: { mail, sms } } }
+const DEFAULTS = Object.fromEntries(
+  Object.entries(topicsByTab).map(([tab, list]) => [
+    tab,
+    Object.fromEntries(list.map((n) => [slugify(n.topic), { mail: n.mail, sms: n.sms }])),
+  ])
+)
+
+function ToggleSwitch({ enabled, onToggle, disabled }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all ${
+      disabled={disabled}
+      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all disabled:opacity-60 ${
         enabled
           ? "bg-blue-600 border-blue-600 justify-end"
           : "bg-slate-200 border-slate-300 justify-start"
@@ -307,22 +327,17 @@ export default function NotificationChannels() {
     sms: true,
   })
   
-  const getNotificationsForTab = (tab) => {
-    switch(tab) {
-      case "admin":
-        return adminNotifications
-      case "restaurant":
-        return restaurantNotifications
-      case "customers":
-        return customerNotifications
-      case "deliveryman":
-        return deliverymanNotifications
-      default:
-        return adminNotifications
-    }
-  }
+  const { value, save, loading, saving } = usePlatformSetting("notification_channels", DEFAULTS)
 
-  const [notifications, setNotifications] = useState(() => getNotificationsForTab("admin"))
+  const notifications = useMemo(() => {
+    const list = topicsByTab[activeTab] || adminNotifications
+    const stored = { ...(DEFAULTS[activeTab] || {}), ...(value[activeTab] || {}) }
+    return list.map((n) => {
+      const slug = slugify(n.topic)
+      const channels = { ...(DEFAULTS[activeTab]?.[slug] || {}), ...(stored[slug] || {}) }
+      return { ...n, slug, mail: !!channels.mail, sms: !!channels.sms }
+    })
+  }, [activeTab, value])
 
   const filteredNotifications = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -339,28 +354,27 @@ export default function NotificationChannels() {
   // Update notifications when tab changes
   const handleTabChange = (tabId) => {
     setActiveTab(tabId)
-    setNotifications(getNotificationsForTab(tabId))
     setSearchQuery("") // Reset search when changing tabs
   }
 
-  const handleMailToggle = (id) => {
-    setNotifications(prev => prev.map(notif => 
-      notif.id === id ? { ...notif, mail: !notif.mail } : notif
-    ))
-  }
-
-  const handleSMSToggle = (id) => {
-    setNotifications(prev => prev.map(notif => 
-      notif.id === id ? { ...notif, sms: !notif.sms } : notif
-    ))
+  const toggleChannel = (notification, channel) => {
+    const tabValue = { ...(DEFAULTS[activeTab] || {}), ...(value[activeTab] || {}) }
+    const current = { mail: notification.mail, sms: notification.sms }
+    const next = {
+      ...value,
+      [activeTab]: {
+        ...tabValue,
+        [notification.slug]: { ...current, [channel]: !current[channel] },
+      },
+    }
+    save(next, { successMessage: `${notification.topic}: ${channel === "mail" ? "Mail" : "SMS"} ${!current[channel] ? "on" : "off"}` })
   }
 
   const handleExport = (format) => {
     if (filteredNotifications.length === 0) {
-      alert("No data to export")
+      toast.error("No data to export")
       return
     }
-    const tabName = activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
     const filename = `notifications_${activeTab}`
     switch (format) {
       case "csv": exportNotificationsToCSV(filteredNotifications, filename); break
@@ -404,7 +418,7 @@ export default function NotificationChannels() {
             <h1 className="text-lg font-bold text-slate-900">Notification Channels Setup</h1>
           </div>
           <p className="text-xs text-slate-600 ml-9">
-            From here you setup who can see what types of notification from StackFood
+            From here you setup who can see what types of notification
           </p>
         </div>
 
@@ -535,7 +549,13 @@ export default function NotificationChannels() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {filteredNotifications.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={Object.values(visibleColumns).filter(v => v).length} className="px-6 py-8 text-center">
+                      <p className="text-xs text-slate-500">Loading...</p>
+                    </td>
+                  </tr>
+                ) : filteredNotifications.length === 0 ? (
                   <tr>
                     <td colSpan={Object.values(visibleColumns).filter(v => v).length} className="px-6 py-8 text-center">
                       <p className="text-xs text-slate-500">No notifications found</p>
@@ -563,37 +583,27 @@ export default function NotificationChannels() {
                       )}
                       {visibleColumns.pushNotification && (
                         <td className="px-3 py-3">
-                          <button
-                            type="button"
-                            className="px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
-                          >
+                          <span className="inline-block px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-600 rounded">
                             {notification.pushNotification}
-                          </button>
+                          </span>
                         </td>
                       )}
                       {visibleColumns.mail && (
                         <td className="px-3 py-3">
                           <ToggleSwitch
                             enabled={notification.mail}
-                            onToggle={() => handleMailToggle(notification.id)}
+                            disabled={saving}
+                            onToggle={() => toggleChannel(notification, "mail")}
                           />
                         </td>
                       )}
                       {visibleColumns.sms && (
                         <td className="px-3 py-3">
-                          {notification.sms !== false ? (
-                            <ToggleSwitch
-                              enabled={notification.sms}
-                              onToggle={() => handleSMSToggle(notification.id)}
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              className="px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
-                            >
-                              N/A
-                            </button>
-                          )}
+                          <ToggleSwitch
+                            enabled={notification.sms}
+                            disabled={saving}
+                            onToggle={() => toggleChannel(notification, "sms")}
+                          />
                         </td>
                       )}
                     </tr>

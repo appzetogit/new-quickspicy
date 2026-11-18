@@ -45,8 +45,6 @@ const RestaurantSettings = lazy(() => import("@food/pages/admin/restaurant/Resta
 const FoodsList = lazy(() => import("@food/pages/admin/foods/FoodsList"));
 const AddonsList = lazy(() => import("@food/pages/admin/addons/AddonsList"));
 // Promotions Management
-const BasicCampaign = lazy(() => import("@food/pages/admin/campaigns/BasicCampaign"));
-const FoodCampaign = lazy(() => import("@food/pages/admin/campaigns/FoodCampaign"));
 const Coupons = lazy(() => import("@food/pages/admin/Coupons"));
 const Cuisines = lazy(() => import("@food/pages/admin/Cuisines"));
 const Cashback = lazy(() => import("@food/pages/admin/Cashback"));
@@ -58,9 +56,6 @@ const SurgePricing = lazy(() => import("@food/pages/admin/SurgePricing"));
 const PriceManagement = lazy(() => import("@food/pages/admin/PriceManagement"));
 const AssignRider = lazy(() => import("@food/pages/admin/dispatch/AssignRider"));
 const DispatchSettings = lazy(() => import("@food/pages/admin/dispatch/DispatchSettings"));
-const NewAdvertisement = lazy(() => import("@food/pages/admin/advertisement/NewAdvertisement"));
-const AdRequests = lazy(() => import("@food/pages/admin/advertisement/AdRequests"));
-const AdsList = lazy(() => import("@food/pages/admin/advertisement/AdsList"));
 
 // Help & Support
 const Chattings = lazy(() => import("@food/pages/admin/Chattings"));
@@ -104,14 +99,12 @@ const CampaignOrderReport = lazy(() => import("@food/pages/admin/reports/Campaig
 const RestaurantReport = lazy(() => import("@food/pages/admin/reports/RestaurantReport"));
 const FeedbackExperienceReport = lazy(() => import("@food/pages/admin/reports/FeedbackExperienceReport"));
 const TaxReport = lazy(() => import("@food/pages/admin/reports/TaxReport"));
-const RestaurantVATReport = lazy(() => import("@food/pages/admin/reports/RestaurantVATReport"));
 // Transaction Management
 const RestaurantWithdraws = lazy(() => import("@food/pages/admin/transactions/RestaurantWithdraws"));
 const BankChangeRequests = lazy(() => import("@food/pages/admin/transactions/BankChangeRequests"));
 const WithdrawMethod = lazy(() => import("@food/pages/admin/transactions/WithdrawMethod"));
 // Employee Management
 const EmployeeRole = lazy(() => import("@food/pages/admin/employees/EmployeeRole"));
-const AddEmployee = lazy(() => import("@food/pages/admin/employees/AddEmployee"));
 const EmployeeList = lazy(() => import("@food/pages/admin/employees/EmployeeList"));
 // Business Settings
 const BusinessSetup = lazy(() => import("@food/pages/admin/settings/BusinessSetup"));
@@ -303,8 +296,9 @@ export default function AdminRouter() {
             <Route path="addons" element={<AddonsList />} />
 
             {/* PROMOTIONS, CUSTOMERS, DELIVERYMEN, etc. */}
-            <Route path="campaigns/basic" element={<BasicCampaign />} />
-            <Route path="campaigns/food" element={<FoodCampaign />} />
+            {/* Campaigns are coupons here: Coupons can invite chosen restaurants. */}
+            <Route path="campaigns/basic" element={<Navigate to="/admin/food/coupons" replace />} />
+            <Route path="campaigns/food" element={<Navigate to="/admin/food/coupons" replace />} />
             <Route path="coupons" element={<Coupons />} />
             <Route path="cuisines" element={<Cuisines />} />
             <Route path="cashback" element={<Cashback />} />
@@ -316,9 +310,10 @@ export default function AdminRouter() {
             <Route path="price-management" element={<PriceManagement />} />
             <Route path="dispatch/assign" element={<AssignRider />} />
             <Route path="dispatch/settings" element={<DispatchSettings />} />
-            <Route path="advertisement" element={<AdsList />} />
-            <Route path="advertisement/new" element={<NewAdvertisement />} />
-            <Route path="advertisement/requests" element={<AdRequests />} />
+            {/* Ads are promotional banners (home, or paid slots on the order tracking page). */}
+            <Route path="advertisement" element={<Navigate to="/admin/food/promotional-banner" replace />} />
+            <Route path="advertisement/new" element={<Navigate to="/admin/food/promotional-banner" replace />} />
+            <Route path="advertisement/requests" element={<Navigate to="/admin/food/promotional-banner" replace />} />
             
             <Route path="chattings" element={<Chattings />} />
             <Route path="contact-messages" element={<ContactMessages />} />
@@ -361,7 +356,8 @@ export default function AdminRouter() {
             <Route path="restaurant-report" element={<RestaurantReport />} />
             <Route path="customer-report/feedback-experience" element={<FeedbackExperienceReport />} />
             <Route path="tax-report" element={<TaxReport />} />
-            <Route path="restaurant-vat-report" element={<RestaurantVATReport />} />
+            {/* The Tax Report already covers GST per restaurant. */}
+            <Route path="restaurant-vat-report" element={<Navigate to="/admin/food/tax-report" replace />} />
             
             <Route path="restaurant-withdraws" element={<RestaurantWithdraws />} />
             <Route path="bank-change-requests" element={<BankChangeRequests />} />
@@ -370,7 +366,8 @@ export default function AdminRouter() {
             
             <Route path="employee-role" element={<EmployeeRole />} />
             <Route path="employees" element={<EmployeeList />} />
-            <Route path="employees/add" element={<AddEmployee />} />
+            {/* Admins are created as sub admins on the Employees page. */}
+            <Route path="employees/add" element={<Navigate to="/admin/food/employees" replace />} />
 
             {/* SYSTEM & BUSINESS SETTINGS */}
             <Route path="business-setup" element={<BusinessSetup />} />
@@ -392,6 +389,7 @@ export default function AdminRouter() {
             <Route path="pages-social-media/cancellation" element={<CancellationPolicy />} />
             <Route path="pages-social-media/react-registration" element={<ReactRegistration />} />
 
+            <Route path="3rd-party-configurations" element={<ThirdParty />} />
             <Route path="3rd-party-configurations/firebase" element={<FirebaseNotification />} />
             <Route path="3rd-party-configurations/offline-payment" element={<OfflinePaymentSetup />} />
             <Route path="3rd-party-configurations/join-us" element={<JoinUsPageSetup />} />

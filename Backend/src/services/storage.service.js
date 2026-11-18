@@ -461,3 +461,58 @@ export const saveImageFromUrl = async (imageUrl, folder) => {
         originalname: path.basename(new URL(url).pathname) || 'remote.jpg'
     });
 };
+
+/**
+ * One folder of the upload store, for the admin file manager: sub-folders and
+ * files (newest first), with each file's public URL. Read-only on purpose:
+ * deleting a file a record still points at would break that record silently.
+ */
+export const listStoredFiles = async (folder = '', { limit = 200 } = {}) => {
+    const safeFolder = folder ? sanitizeUploadFolder(folder) : '';
+    const cap = Math.max(1, Math.min(1000, Number(limit) || 200));
+
+    if (useS3) {
+        const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+        const client = await getS3();
+        const prefix = safeFolder ? `${s3Key(safeFolder)}/` : s3Key('') ? `${s3Key('')}/` : '';
+        const res = await client.send(new ListObjectsV2Command({
+            Bucket: process.env.UPLOAD_S3_BUCKET, Prefix: prefix, Delimiter: '/', MaxKeys: cap,
+        }));
+        const strip = (key) => key.slice(prefix.length);
+        const base = safeFolder ? `${safeFolder}/` : '';
+        return {
+            folder: safeFolder,
+            folders: (res.CommonPrefixes || []).map((p) => base + strip(p.Prefix).replace(/\/$/, '')),
+            files: (res.Contents || [])
+                .filter((o) => !o.Key.endsWith('/'))
+                .sort((a, b) => new Date(b.LastModified) - new Date(a.LastModified))
+                .map((o) => {
+                    const relativePath = base + strip(o.Key);
+                    return { path: relativePath, name: strip(o.Key), size: o.Size, modifiedAt: o.LastModified, url: buildPublicUrl(relativePath) };
+                }),
+        };
+    }
+
+    const dir = safeFolder ? getAbsolutePath(safeFolder) : path.resolve(config.uploadStorageRoot);
+    let entries = [];
+    try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+        if (error?.code === 'ENOENT') return { folder: safeFolder, folders: [], files: [] };
+        throw error;
+    }
+    const base = safeFolder ? `${safeFolder}/` : '';
+    const files = await Promise.all(
+        entries.filter((e) => e.isFile()).map(async (e) => {
+            const stat = await fs.stat(path.join(dir, e.name));
+            const relativePath = base + e.name;
+            return { path: relativePath, name: e.name, size: stat.size, modifiedAt: stat.mtime, url: buildPublicUrl(relativePath) };
+        }),
+    );
+    files.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+    return {
+        folder: safeFolder,
+        folders: entries.filter((e) => e.isDirectory()).map((e) => base + e.name).sort(),
+        files: files.slice(0, cap),
+    };
+};

@@ -1,25 +1,21 @@
 import { useState, useMemo } from "react"
+import { toast } from "sonner"
 import { Briefcase, Search, Plus, Pencil, Trash2, Settings, Download, ChevronDown, FileText, FileSpreadsheet, Code, Check, Columns, ArrowUpDown } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@food/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
 import { exportPaymentMethodsToCSV, exportPaymentMethodsToExcel, exportPaymentMethodsToPDF, exportPaymentMethodsToJSON } from "@food/components/admin/payment-methods/paymentMethodsExportUtils"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
-const paymentMethods = [
-  {
-    id: 1,
-    name: "bkash",
-    paymentInfo: "Account Number : 017**********",
-    requiredInfo: "Name | Transaction Number",
-    status: true
-  }
-]
+const DEFAULTS = { methods: [] }
+const EMPTY_FORM = { name: "", paymentInfo: "", requiredInfo: "", status: true }
 
-function ToggleSwitch({ enabled, onToggle }) {
+function ToggleSwitch({ enabled, onToggle, disabled }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all ${
+      disabled={disabled}
+      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all disabled:opacity-60 ${
         enabled
           ? "bg-blue-600 border-blue-600 justify-end"
           : "bg-slate-200 border-slate-300 justify-start"
@@ -31,11 +27,15 @@ function ToggleSwitch({ enabled, onToggle }) {
 }
 
 export default function OfflinePaymentSetup() {
+  const { value, save, loading, saving } = usePlatformSetting("offline_payment", DEFAULTS)
+  const methods = useMemo(() => (Array.isArray(value.methods) ? value.methods : []), [value.methods])
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const [methods, setMethods] = useState(paymentMethods)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
   const [selectedMethod, setSelectedMethod] = useState(null)
   const [visibleColumns, setVisibleColumns] = useState({
     sl: true,
@@ -52,23 +52,68 @@ export default function OfflinePaymentSetup() {
       if (activeTab === "inactive") return !method.status
       return true
     })
-    
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim()
       filtered = filtered.filter(method =>
-        method.name.toLowerCase().includes(query) ||
-        method.paymentInfo.toLowerCase().includes(query) ||
-        method.requiredInfo.toLowerCase().includes(query)
+        String(method.name || "").toLowerCase().includes(query) ||
+        String(method.paymentInfo || "").toLowerCase().includes(query) ||
+        String(method.requiredInfo || "").toLowerCase().includes(query)
       )
     }
-    
+
     return filtered
   }, [methods, activeTab, searchQuery])
 
+  const saveMethods = (nextMethods, successMessage) =>
+    save({ ...value, methods: nextMethods }, { successMessage })
+
   const handleStatusToggle = (id) => {
-    setMethods(prev => prev.map(method => 
-      method.id === id ? { ...method, status: !method.status } : method
-    ))
+    saveMethods(
+      methods.map(method => (method.id === id ? { ...method, status: !method.status } : method)),
+      "Status updated"
+    )
+  }
+
+  const openAdd = () => {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setIsFormOpen(true)
+  }
+
+  const openEdit = (method) => {
+    setEditingId(method.id)
+    setForm({
+      name: method.name || "",
+      paymentInfo: method.paymentInfo || "",
+      requiredInfo: method.requiredInfo || "",
+      status: method.status !== false,
+    })
+    setIsFormOpen(true)
+  }
+
+  const submitForm = async (e) => {
+    e.preventDefault()
+    const entry = {
+      name: form.name.trim(),
+      paymentInfo: form.paymentInfo.trim(),
+      requiredInfo: form.requiredInfo.trim(),
+      status: !!form.status,
+    }
+    if (!entry.name) {
+      toast.error("Payment method name is required")
+      return
+    }
+    const isEdit = editingId != null
+    const nextMethods = isEdit
+      ? methods.map(m => (m.id === editingId ? { ...m, ...entry } : m))
+      : [...methods, { id: Date.now(), ...entry }]
+    const ok = await saveMethods(nextMethods, isEdit ? "Payment method updated" : "Payment method added")
+    if (ok) {
+      setIsFormOpen(false)
+      setEditingId(null)
+      setForm(EMPTY_FORM)
+    }
   }
 
   const handleDelete = (id) => {
@@ -77,9 +122,13 @@ export default function OfflinePaymentSetup() {
     setIsDeleteOpen(true)
   }
 
-  const confirmDelete = () => {
-    if (selectedMethod) {
-      setMethods(prev => prev.filter(method => method.id !== selectedMethod.id))
+  const confirmDelete = async () => {
+    if (!selectedMethod) return
+    const ok = await saveMethods(
+      methods.filter(method => method.id !== selectedMethod.id),
+      "Payment method deleted"
+    )
+    if (ok) {
       setIsDeleteOpen(false)
       setSelectedMethod(null)
     }
@@ -87,7 +136,7 @@ export default function OfflinePaymentSetup() {
 
   const handleExport = (format) => {
     if (filteredMethods.length === 0) {
-      alert("No data to export")
+      toast.error("No data to export")
       return
     }
     switch (format) {
@@ -121,6 +170,8 @@ export default function OfflinePaymentSetup() {
     status: "Status",
     actions: "Actions",
   }
+
+  const visibleCount = Object.values(visibleColumns).filter(v => v).length
 
   return (
     <div className="p-2 lg:p-3 bg-slate-50 min-h-screen">
@@ -196,13 +247,18 @@ export default function OfflinePaymentSetup() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <button 
+            <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-all"
             >
               <Settings className="w-4 h-4" />
             </button>
-            <button className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1">
+            <button
+              type="button"
+              onClick={openAdd}
+              disabled={loading || saving}
+              className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1 disabled:opacity-60"
+            >
               <Plus className="w-3.5 h-3.5" />
               <span>Add New Method</span>
             </button>
@@ -269,9 +325,15 @@ export default function OfflinePaymentSetup() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {filteredMethods.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td colSpan={Object.values(visibleColumns).filter(v => v).length} className="px-6 py-8 text-center">
+                    <td colSpan={visibleCount} className="px-6 py-8 text-center">
+                      <p className="text-xs text-slate-500">Loading...</p>
+                    </td>
+                  </tr>
+                ) : filteredMethods.length === 0 ? (
+                  <tr>
+                    <td colSpan={visibleCount} className="px-6 py-8 text-center">
                       <p className="text-xs text-slate-500">No payment methods found</p>
                     </td>
                   </tr>
@@ -302,6 +364,7 @@ export default function OfflinePaymentSetup() {
                         <td className="px-3 py-2.5">
                           <ToggleSwitch
                             enabled={method.status}
+                            disabled={saving}
                             onToggle={() => handleStatusToggle(method.id)}
                           />
                         </td>
@@ -311,6 +374,7 @@ export default function OfflinePaymentSetup() {
                           <div className="flex items-center justify-center gap-2">
                             <button
                               type="button"
+                              onClick={() => openEdit(method)}
                               className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               title="Edit"
                             >
@@ -336,6 +400,72 @@ export default function OfflinePaymentSetup() {
         </div>
       </div>
 
+      {/* Add / Edit Dialog */}
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+        <DialogContent className="max-w-md bg-white p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle>{editingId != null ? "Edit Payment Method" : "Add New Method"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitForm} className="px-6 pb-6 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Payment Method Name</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Bank transfer"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Payment Info</label>
+              <textarea
+                rows={2}
+                value={form.paymentInfo}
+                onChange={(e) => setForm(prev => ({ ...prev, paymentInfo: e.target.value }))}
+                placeholder="e.g. Account Number : XXXXXXXXXX"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Required Info From Customer</label>
+              <input
+                type="text"
+                value={form.requiredInfo}
+                onChange={(e) => setForm(prev => ({ ...prev, requiredInfo: e.target.value }))}
+                placeholder="e.g. Name | Transaction Number"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.status}
+                onChange={(e) => setForm(prev => ({ ...prev, status: e.target.checked }))}
+                className="w-4 h-4"
+              />
+              Active
+            </label>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsFormOpen(false)}
+                className="px-4 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-md disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <DialogContent className="max-w-md bg-white p-0">
@@ -356,9 +486,10 @@ export default function OfflinePaymentSetup() {
             </button>
             <button
               onClick={confirmDelete}
-              className="px-4 py-2 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-all shadow-md"
+              disabled={saving}
+              className="px-4 py-2 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-all shadow-md disabled:opacity-60"
             >
-              Delete
+              {saving ? "Deleting..." : "Delete"}
             </button>
           </div>
         </DialogContent>

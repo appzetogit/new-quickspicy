@@ -1240,6 +1240,32 @@ export const adminAPI = {
       contextModule: "admin",
     }),
 
+  /** Settings pages stored as one JSON per page (app_web, theme, login_setup ...). */
+  getPlatformSetting: (key) =>
+    apiClient.get(`/food/admin/platform-settings/${String(key)}`, { contextModule: "admin" }),
+  savePlatformSetting: (key, value) =>
+    apiClient.put(`/food/admin/platform-settings/${String(key)}`, { value }, { contextModule: "admin" }),
+  /** Cashback on delivered orders (one global setting). */
+  getCashbackSettings: () =>
+    apiClient.get("/food/admin/cashback-settings", { contextModule: "admin" }),
+  saveCashbackSettings: (body) =>
+    apiClient.put("/food/admin/cashback-settings", body ?? {}, { contextModule: "admin" }),
+  /** Add money to a customer's wallet; requestId makes a retry credit once. */
+  creditCustomerWallet: (customerId, body) =>
+    apiClient.post(`/food/admin/customers/${String(customerId)}/wallet/credit`, body ?? {}, { contextModule: "admin" }),
+  getCustomerWalletCredits: (params = {}) =>
+    apiClient.get("/food/admin/customers/wallet-credits", { params, contextModule: "admin" }),
+  getCouponOrderReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/coupon-orders", { params, contextModule: "admin" }),
+  getCustomerRewardsReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/customer-rewards", { params, contextModule: "admin" }),
+  /** rows: [{ restaurantName, ownerName, ownerPhone, zone, ... }] */
+  bulkImportRestaurants: (rows) =>
+    apiClient.post("/food/admin/restaurants/bulk-import", { rows }, { contextModule: "admin" }),
+  /** One folder of the upload store: { folders, files: [{ path, name, size, url, modifiedAt }] } */
+  listFiles: (folder = "") =>
+    apiClient.get("/food/admin/files", { params: { folder }, contextModule: "admin" }),
+
   /** The cuisine vocabulary restaurants are filed under. */
   getCuisines: (params = {}) =>
     apiClient.get("/food/admin/cuisines", { params, contextModule: "admin" }),

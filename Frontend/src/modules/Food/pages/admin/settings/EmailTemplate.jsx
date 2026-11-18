@@ -1,269 +1,229 @@
-import { useState } from "react"
-import { 
-  Mail, 
-  Info, 
-  Folder, 
-  Upload, 
-  FileText,
+import { useEffect, useRef, useState } from "react"
+import {
+  Info,
+  Folder,
   Facebook,
   Instagram,
   Twitter,
   Linkedin,
   Save,
-  RotateCcw
+  RotateCcw,
+  Loader2,
+  X
 } from "lucide-react"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+import { toast } from "sonner"
+import { uploadAPI } from "@food/api"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
+const UPLOAD_FOLDER = "quickspicy/admin/email-templates"
+
+const COMMON_FOOTER = {
+  pageLinks: {
+    privacyPolicy: true,
+    refundPolicy: true,
+    cancellationPolicy: true,
+    contactUs: true
+  },
+  socialMediaLinks: {
+    facebook: true,
+    instagram: true,
+    twitter: true,
+    linkedin: true,
+    pinterest: true
+  },
+  copyrightContent: "Â© Quick Spicy. All rights reserved."
+}
+
+// Template-specific default data, keyed by template id.
+const TEMPLATE_DEFAULTS = {
+  "forgot-password": {
+    enabled: true,
+    icon: "",
+    mainTitle: "Change Password Request",
+    mailBody: "The following user has forgotten his password & requested to change/reset their password. User Name: {userName}",
+    footerText: "Footer Text Please contact us for any queries; we're always happy to help.",
+    ...COMMON_FOOTER
+  },
+  "new-restaurant": {
+    enabled: true,
+    icon: "",
+    mainTitle: "New Restaurant Registration",
+    mailBody: "A new restaurant has been registered on the platform. Restaurant Name: {restaurantName}, Owner: {ownerName}, Email: {email}, Phone: {phone}",
+    footerText: "Please review and approve the restaurant registration. Contact us for any queries.",
+    ...COMMON_FOOTER
+  },
+  "new-deliveryman": {
+    enabled: true,
+    icon: "",
+    mainTitle: "New Deliveryman Registration",
+    mailBody: "A new deliveryman has registered on the platform. Name: {deliverymanName}, Email: {email}, Phone: {phone}, Vehicle Type: {vehicleType}",
+    footerText: "Please review and approve the deliveryman registration. Contact us for any queries.",
+    ...COMMON_FOOTER
+  },
+  "withdraw-request": {
+    enabled: true,
+    icon: "",
+    mainTitle: "Withdraw Request",
+    mailBody: "A withdraw request has been submitted. Request ID: {requestId}, Amount: {amount}, Requested By: {requestedBy}, Account Details: {accountDetails}",
+    footerText: "Please process the withdraw request. Contact us for any queries.",
+    ...COMMON_FOOTER
+  },
+  "campaign-join": {
+    enabled: true,
+    icon: "",
+    mainTitle: "Campaign Join Request",
+    mailBody: "A new campaign join request has been received. Campaign: {campaignName}, Restaurant: {restaurantName}, Requested By: {requestedBy}",
+    footerText: "Please review and approve the campaign join request. Contact us for any queries.",
+    ...COMMON_FOOTER
+  },
+  "refund-request": {
+    enabled: true,
+    icon: "",
+    mainTitle: "Refund Request",
+    mailBody: "A refund request has been submitted. Order ID: {orderId}, Amount: {amount}, Customer: {customerName}, Reason: {reason}",
+    footerText: "Please process the refund request. Contact us for any queries.",
+    ...COMMON_FOOTER
+  },
+  "new-advertisement": {
+    enabled: true,
+    icon: "",
+    mainTitle: "New Advertisement",
+    mailBody: "A new advertisement has been created. Ad Title: {adTitle}, Advertiser: {advertiserName}, Start Date: {startDate}, End Date: {endDate}",
+    footerText: "Please review the advertisement details. Contact us for any queries.",
+    ...COMMON_FOOTER
+  }
+}
+
+const DEFAULTS = { templates: TEMPLATE_DEFAULTS }
+
+const templates = [
+  { id: "forgot-password", label: "Forgot Password", toggleLabel: "Send Mail On Forget Password" },
+  { id: "new-restaurant", label: "New Restaurant Registration", toggleLabel: "Send Mail On New Restaurant Registration" },
+  { id: "new-deliveryman", label: "New Deliveryman Registration", toggleLabel: "Send Mail On New Deliveryman Registration" },
+  { id: "withdraw-request", label: "Withdraw Request", toggleLabel: "Send Mail On Withdraw Request" },
+  { id: "campaign-join", label: "Campaign Join Request", toggleLabel: "Send Mail On Campaign Join Request" },
+  { id: "refund-request", label: "Refund Request", toggleLabel: "Send Mail On Refund Request" },
+  { id: "new-advertisement", label: "New Advertisement", toggleLabel: "Send Mail On New Advertisement" }
+]
+
+// Placeholder values used only to render the preview.
+const PREVIEW_VALUES = {
+  userName: "John Doe",
+  restaurantName: "Sample Restaurant",
+  ownerName: "Jane Smith",
+  email: "owner@example.com",
+  phone: "+911234567890",
+  deliverymanName: "Mike Johnson",
+  vehicleType: "Motorcycle",
+  requestId: "REQ-12345",
+  amount: "â‚¹500.00",
+  requestedBy: "Restaurant Owner",
+  accountDetails: "Account: ****1234",
+  campaignName: "Summer Special",
+  orderId: "ORD-100156",
+  customerName: "John Doe",
+  reason: "Order not delivered",
+  adTitle: "Summer Promotion",
+  advertiserName: "Food Company",
+  startDate: "2024-06-01",
+  endDate: "2024-08-31"
+}
+
+const mergeTemplate = (id, stored) => {
+  const base = TEMPLATE_DEFAULTS[id] || TEMPLATE_DEFAULTS["forgot-password"]
+  const saved = stored && typeof stored === "object" ? stored : {}
+  return {
+    ...base,
+    ...saved,
+    pageLinks: { ...base.pageLinks, ...(saved.pageLinks || {}) },
+    socialMediaLinks: { ...base.socialMediaLinks, ...(saved.socialMediaLinks || {}) }
+  }
+}
 
 export default function EmailTemplate() {
   const [activeTemplate, setActiveTemplate] = useState("forgot-password")
-  const [activeLanguage, setActiveLanguage] = useState("default")
-  const [sendMailEnabled, setSendMailEnabled] = useState(true)
-  
-  // Template-specific default data
-  const templateDefaults = {
-    "forgot-password": {
-      icon: null,
-      mainTitle: "Change Password Request",
-      mailBody: "The following user has forgotten his password & requested to change/reset their password. User Name: {userName}",
-      footerText: "Footer Text Please contact us for any queries; we're always happy to help.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "new-restaurant": {
-      icon: null,
-      mainTitle: "New Restaurant Registration",
-      mailBody: "A new restaurant has been registered on the platform. Restaurant Name: {restaurantName}, Owner: {ownerName}, Email: {email}, Phone: {phone}",
-      footerText: "Please review and approve the restaurant registration. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "new-deliveryman": {
-      icon: null,
-      mainTitle: "New Deliveryman Registration",
-      mailBody: "A new deliveryman has registered on the platform. Name: {deliverymanName}, Email: {email}, Phone: {phone}, Vehicle Type: {vehicleType}",
-      footerText: "Please review and approve the deliveryman registration. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "withdraw-request": {
-      icon: null,
-      mainTitle: "Withdraw Request",
-      mailBody: "A withdraw request has been submitted. Request ID: {requestId}, Amount: {amount}, Requested By: {requestedBy}, Account Details: {accountDetails}",
-      footerText: "Please process the withdraw request. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "campaign-join": {
-      icon: null,
-      mainTitle: "Campaign Join Request",
-      mailBody: "A new campaign join request has been received. Campaign: {campaignName}, Restaurant: {restaurantName}, Requested By: {requestedBy}",
-      footerText: "Please review and approve the campaign join request. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "refund-request": {
-      icon: null,
-      mainTitle: "Refund Request",
-      mailBody: "A refund request has been submitted. Order ID: {orderId}, Amount: {amount}, Customer: {customerName}, Reason: {reason}",
-      footerText: "Please process the refund request. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    },
-    "new-advertisement": {
-      icon: null,
-      mainTitle: "New Advertisement",
-      mailBody: "A new advertisement has been created. Ad Title: {adTitle}, Advertiser: {advertiserName}, Start Date: {startDate}, End Date: {endDate}",
-      footerText: "Please review the advertisement details. Contact us for any queries.",
-      pageLinks: {
-        privacyPolicy: true,
-        refundPolicy: true,
-        cancellationPolicy: true,
-        contactUs: true
-      },
-      socialMediaLinks: {
-        facebook: true,
-        instagram: true,
-        twitter: true,
-        linkedin: true,
-        pinterest: true
-      },
-      copyrightContent: "© 2023 StackFood. All rights reserved."
-    }
-  }
-  
-  const [formData, setFormData] = useState(templateDefaults["forgot-password"])
+  const [uploadingIcon, setUploadingIcon] = useState(false)
+  const { value, setValue, save, loading, saving } = usePlatformSetting("email_templates", DEFAULTS)
+  // Last value loaded from (or saved to) the server, for Reset.
+  const loadedRef = useRef(DEFAULTS)
+  useEffect(() => {
+    if (!loading) loadedRef.current = value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
-  const templates = [
-    { id: "forgot-password", label: "Forgot Password" },
-    { id: "new-restaurant", label: "New Restaurant Registration" },
-    { id: "new-deliveryman", label: "New Deliveryman Registration" },
-    { id: "withdraw-request", label: "Withdraw Request" },
-    { id: "campaign-join", label: "Campaign Join Request" },
-    { id: "refund-request", label: "Refund Request" },
-    { id: "new-advertisement", label: "New Advertisement" }
-  ]
+  const formData = mergeTemplate(activeTemplate, value.templates?.[activeTemplate])
+  const sendMailEnabled = formData.enabled !== false
 
-  const languages = [
-    { id: "default", label: "Default" },
-    { id: "en", label: "English(EN)" },
-    { id: "bn", label: "Bengali - à¦¬à¦¾à¦‚à¦²à¦¾ (BN)" },
-    { id: "ar", label: "Arabic - Ø§Ù„Ø¹Ø±Ø¨ÙŠØ© (AR)" },
-    { id: "es", label: "Spanish - español (ES)" }
-  ]
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
+  const setTemplate = (patch) => {
+    setValue(prev => ({
       ...prev,
-      [field]: value
+      templates: {
+        ...(prev.templates || {}),
+        [activeTemplate]: { ...mergeTemplate(activeTemplate, prev.templates?.[activeTemplate]), ...patch }
+      }
     }))
+  }
+
+  const handleInputChange = (field, fieldValue) => {
+    setTemplate({ [field]: fieldValue })
   }
 
   const handleCheckboxChange = (section, field, checked) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: checked
-      }
-    }))
+    setTemplate({ [section]: { ...formData[section], [field]: checked } })
   }
 
-  const handleFileUpload = (field, file) => {
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          [field]: reader.result
-        }))
-      }
-      reader.readAsDataURL(file)
+  // The icon goes to the media store; only its URL is kept in the settings.
+  const handleFileUpload = async (field, file) => {
+    if (!file) return
+    setUploadingIcon(true)
+    try {
+      const res = await uploadAPI.uploadMedia(file, { folder: UPLOAD_FOLDER })
+      const url = res?.data?.data?.url
+      if (!url) throw new Error("No URL returned")
+      setTemplate({ [field]: url })
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Could not upload the icon")
+    } finally {
+      setUploadingIcon(false)
     }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    debugLog("Form submitted:", formData)
-    // Handle form submission
+    const ok = await save(undefined, { successMessage: "Email templates saved" })
+    if (ok) loadedRef.current = value
   }
 
-  // Update form data when template changes
   const handleTemplateChange = (templateId) => {
     setActiveTemplate(templateId)
-    setFormData(templateDefaults[templateId] || templateDefaults["forgot-password"])
   }
 
   const handleReset = () => {
-    setFormData(templateDefaults[activeTemplate] || templateDefaults["forgot-password"])
+    setValue(loadedRef.current)
   }
-  
-  // Get preview content based on active template
-  const getPreviewContent = () => {
-    const content = formData.mailBody
-    // Replace placeholders with sample data
-    return content
-      .replace(/{userName}/g, "John Doe")
-      .replace(/{restaurantName}/g, "Café Monarch")
-      .replace(/{ownerName}/g, "Jane Smith")
-      .replace(/{email}/g, "owner@example.com")
-      .replace(/{phone}/g, "+1234567890")
-      .replace(/{deliverymanName}/g, "Mike Johnson")
-      .replace(/{vehicleType}/g, "Motorcycle")
-      .replace(/{requestId}/g, "REQ-12345")
-      .replace(/{amount}/g, "$500.00")
-      .replace(/{requestedBy}/g, "Restaurant Owner")
-      .replace(/{accountDetails}/g, "Account: ****1234")
-      .replace(/{campaignName}/g, "Summer Special")
-      .replace(/{orderId}/g, "ORD-100156")
-      .replace(/{customerName}/g, "John Doe")
-      .replace(/{reason}/g, "Order not delivered")
-      .replace(/{adTitle}/g, "Summer Promotion")
-      .replace(/{advertiserName}/g, "Food Company")
-      .replace(/{startDate}/g, "2024-06-01")
-      .replace(/{endDate}/g, "2024-08-31")
+
+  // Preview text with sample values filled in; escaped because it is rendered as HTML.
+  const getPreviewHtml = () => {
+    const escape = (s) => String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+    const filled = String(formData.mailBody || "").replace(/{(\w+)}/g, (match, name) =>
+      Object.prototype.hasOwnProperty.call(PREVIEW_VALUES, name) ? PREVIEW_VALUES[name] : match
+    )
+    return filled.split("\n").map(line => `<p>${escape(line)}</p>`).join("")
   }
+
+  const activeTemplateMeta = templates.find(t => t.id === activeTemplate)
 
   return (
     <div className="p-4 lg:p-6 bg-slate-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         {/* Page Header */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center gap-2">
           <h1 className="text-2xl font-bold text-slate-900">Email Templates</h1>
+          {loading && <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />}
         </div>
 
         {/* Template Navigation */}
@@ -288,19 +248,13 @@ export default function EmailTemplate() {
           <div className="flex items-center justify-between pt-4 border-t border-slate-200">
             <div className="flex items-center gap-2">
               <label className="text-sm font-semibold text-slate-700">
-                {activeTemplate === "forgot-password" && "Send Mail On Forget Password"}
-                {activeTemplate === "new-restaurant" && "Send Mail On New Restaurant Registration"}
-                {activeTemplate === "new-deliveryman" && "Send Mail On New Deliveryman Registration"}
-                {activeTemplate === "withdraw-request" && "Send Mail On Withdraw Request"}
-                {activeTemplate === "campaign-join" && "Send Mail On Campaign Join Request"}
-                {activeTemplate === "refund-request" && "Send Mail On Refund Request"}
-                {activeTemplate === "new-advertisement" && "Send Mail On New Advertisement"}
+                {activeTemplateMeta?.toggleLabel}
               </label>
               <Info className="w-4 h-4 text-slate-400" />
             </div>
             <button
               type="button"
-              onClick={() => setSendMailEnabled(!sendMailEnabled)}
+              onClick={() => setTemplate({ enabled: !sendMailEnabled })}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 sendMailEnabled ? "bg-blue-600" : "bg-slate-300"
               }`}
@@ -319,54 +273,51 @@ export default function EmailTemplate() {
           {/* Left Column - Email Preview */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                <Folder className="w-6 h-6 text-orange-600" />
+              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center overflow-hidden">
+                {formData.icon ? (
+                  <img src={formData.icon} alt="" className="w-full h-full object-contain" />
+                ) : (
+                  <Folder className="w-6 h-6 text-orange-600" />
+                )}
               </div>
               <h2 className="text-lg font-bold text-slate-900">{formData.mainTitle}</h2>
             </div>
 
             <div className="space-y-4 text-sm text-slate-700">
-              <div dangerouslySetInnerHTML={{ __html: getPreviewContent().split('\n').map(line => `<p>${line}</p>`).join('') }} />
+              <div dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
             </div>
 
             <div className="mt-8 pt-6 border-t border-slate-200">
               <p className="text-sm text-slate-600 mb-4">
-                {formData.footerText} Thanks & Regards, StackFood
+                {formData.footerText} Thanks & Regards, Quick Spicy
               </p>
-              
-              {/* Logo placeholder */}
-              <div className="mb-4">
-                <div className="w-32 h-12 bg-slate-200 rounded flex items-center justify-center">
-                  <span className="text-xs text-slate-500">StackFood Logo</span>
-                </div>
-              </div>
 
               {/* Page Links */}
-              {(formData.pageLinks.privacyPolicy || 
-                formData.pageLinks.refundPolicy || 
-                formData.pageLinks.cancellationPolicy || 
+              {(formData.pageLinks.privacyPolicy ||
+                formData.pageLinks.refundPolicy ||
+                formData.pageLinks.cancellationPolicy ||
                 formData.pageLinks.contactUs) && (
                 <div className="flex flex-wrap gap-2 mb-4 text-xs text-slate-600">
                   {formData.pageLinks.privacyPolicy && (
-                    <span>• Privacy Policy</span>
+                    <span>â€¢ Privacy Policy</span>
                   )}
                   {formData.pageLinks.refundPolicy && (
-                    <span>• Refund Policy</span>
+                    <span>â€¢ Refund Policy</span>
                   )}
                   {formData.pageLinks.cancellationPolicy && (
-                    <span>• Cancelation Policy</span>
+                    <span>â€¢ Cancelation Policy</span>
                   )}
                   {formData.pageLinks.contactUs && (
-                    <span>• Contact us</span>
+                    <span>â€¢ Contact us</span>
                   )}
                 </div>
               )}
 
               {/* Social Media Icons */}
-              {(formData.socialMediaLinks.facebook || 
-                formData.socialMediaLinks.instagram || 
-                formData.socialMediaLinks.twitter || 
-                formData.socialMediaLinks.linkedin || 
+              {(formData.socialMediaLinks.facebook ||
+                formData.socialMediaLinks.instagram ||
+                formData.socialMediaLinks.twitter ||
+                formData.socialMediaLinks.linkedin ||
                 formData.socialMediaLinks.pinterest) && (
                 <div className="flex gap-3 mb-4">
                   {formData.socialMediaLinks.facebook && (
@@ -406,31 +357,11 @@ export default function EmailTemplate() {
 
           {/* Right Column - Editing Controls */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-            {/* Language Tabs */}
-            <div className="flex gap-2 mb-6 border-b border-slate-200 pb-4">
-              {languages.map((lang) => (
-                <button
-                  key={lang.id}
-                  onClick={() => setActiveLanguage(lang.id)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
-                    activeLanguage === lang.id
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  {lang.label}
-                </button>
-              ))}
-            </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Read Instructions Link */}
-              <div className="flex items-center gap-2 mb-4">
-                <a href="#" className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                  Read Instructions
-                  <Info className="w-4 h-4" />
-                </a>
-              </div>
+              {/* Placeholder help */}
+              <p className="text-xs text-slate-500">
+                Use placeholders such as {"{userName}"} or {"{orderId}"} in the mail body; the preview fills them with sample values.
+              </p>
 
               {/* Icon Section */}
               <div>
@@ -442,16 +373,30 @@ export default function EmailTemplate() {
                   <input
                     type="text"
                     placeholder="Choose File"
-                    value={formData.icon ? "File selected" : ""}
+                    value={uploadingIcon ? "Uploading..." : formData.icon ? "File selected" : ""}
                     readOnly
                     className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
-                  <label className="px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors text-sm font-medium">
+                  {formData.icon && !uploadingIcon && (
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange("icon", "")}
+                      className="px-3 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50"
+                      title="Remove icon"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  <label className={`px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors text-sm font-medium ${uploadingIcon ? "opacity-60 pointer-events-none" : ""}`}>
                     Browse
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) => handleFileUpload("icon", e.target.files[0])}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ""
+                        handleFileUpload("icon", file)
+                      }}
                       className="hidden"
                     />
                   </label>
@@ -483,23 +428,12 @@ export default function EmailTemplate() {
                   Mail Body Message(Default)
                   <Info className="w-4 h-4 text-slate-400" />
                 </label>
-                {/* Rich Text Editor Placeholder - Simple textarea for now */}
                 <div className="border border-slate-300 rounded-lg">
-                  {/* Toolbar Placeholder */}
-                  <div className="border-b border-slate-200 p-2 flex flex-wrap gap-1 bg-slate-50">
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">B</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">I</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">U</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">S</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">Color</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">Link</button>
-                    <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-xs">Image</button>
-                  </div>
                   <textarea
                     value={formData.mailBody}
                     onChange={(e) => handleInputChange("mailBody", e.target.value)}
                     rows={8}
-                    className="w-full px-4 py-2 border-0 rounded-b-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                    className="w-full px-4 py-2 border-0 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
                   />
                 </div>
               </div>
@@ -510,7 +444,7 @@ export default function EmailTemplate() {
                   Footer Content
                   <Folder className="w-4 h-4 text-slate-400" />
                 </label>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">
@@ -537,7 +471,7 @@ export default function EmailTemplate() {
                         <label key={item.key} className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.pageLinks[item.key]}
+                            checked={!!formData.pageLinks[item.key]}
                             onChange={(e) => handleCheckboxChange("pageLinks", item.key, e.target.checked)}
                             className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                           />
@@ -561,7 +495,7 @@ export default function EmailTemplate() {
                         <label key={item.key} className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.socialMediaLinks[item.key]}
+                            checked={!!formData.socialMediaLinks[item.key]}
                             onChange={(e) => handleCheckboxChange("socialMediaLinks", item.key, e.target.checked)}
                             className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                           />
@@ -591,17 +525,19 @@ export default function EmailTemplate() {
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium flex items-center gap-2"
+                  disabled={loading || saving || uploadingIcon}
+                  className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium flex items-center gap-2 disabled:opacity-60"
                 >
                   <RotateCcw className="w-4 h-4" />
                   Reset
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+                  disabled={loading || saving || uploadingIcon}
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-60"
                 >
-                  <Save className="w-4 h-4" />
-                  Save
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {saving ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>
@@ -611,4 +547,3 @@ export default function EmailTemplate() {
     </div>
   )
 }
-

@@ -1,105 +1,98 @@
-import { useState } from "react"
-import { Settings, Info, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
-
+import { useEffect, useState } from "react"
+import { Settings, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
 const thirdPartyServices = [
   {
-    id: 1,
+    id: "stripe",
     name: "Stripe",
     category: "Payment Gateway",
     description: "Online payment processing",
-    enabled: true,
-    configured: true,
     fields: [
-      { key: "publishableKey", label: "Publishable Key", value: "pk_test_...", type: "password" },
-      { key: "secretKey", label: "Secret Key", value: "sk_test_...", type: "password" }
+      { key: "publishableKey", label: "Publishable Key", type: "password" },
+      { key: "secretKey", label: "Secret Key", type: "password" }
     ]
   },
   {
-    id: 2,
+    id: "paypal",
     name: "PayPal",
     category: "Payment Gateway",
     description: "PayPal payment integration",
-    enabled: true,
-    configured: true,
     fields: [
-      { key: "clientId", label: "Client ID", value: "AeA1QIZXiflr1...", type: "text" },
-      { key: "clientSecret", label: "Client Secret", value: "ECm...", type: "password" }
+      { key: "clientId", label: "Client ID", type: "text" },
+      { key: "clientSecret", label: "Client Secret", type: "password" }
     ]
   },
   {
-    id: 3,
+    id: "razorpay",
     name: "Razorpay",
     category: "Payment Gateway",
     description: "Razorpay payment gateway",
-    enabled: false,
-    configured: false,
     fields: [
-      { key: "keyId", label: "Key ID", value: "", type: "text" },
-      { key: "keySecret", label: "Key Secret", value: "", type: "password" }
+      { key: "keyId", label: "Key ID", type: "text" },
+      { key: "keySecret", label: "Key Secret", type: "password" }
     ]
   },
   {
-    id: 4,
+    id: "twilio",
     name: "Twilio",
     category: "SMS Service",
     description: "SMS and messaging service",
-    enabled: true,
-    configured: true,
     fields: [
-      { key: "accountSid", label: "Account SID", value: "AC...", type: "text" },
-      { key: "authToken", label: "Auth Token", value: "...", type: "password" },
-      { key: "phoneNumber", label: "Phone Number", value: "+1234567890", type: "text" }
+      { key: "accountSid", label: "Account SID", type: "text" },
+      { key: "authToken", label: "Auth Token", type: "password" },
+      { key: "phoneNumber", label: "Phone Number", type: "text" }
     ]
   },
   {
-    id: 5,
+    id: "sendgrid",
     name: "SendGrid",
     category: "Email Service",
     description: "Transactional email service",
-    enabled: false,
-    configured: false,
     fields: [
-      { key: "apiKey", label: "API Key", value: "", type: "password" },
-      { key: "fromEmail", label: "From Email", value: "", type: "email" }
+      { key: "apiKey", label: "API Key", type: "password" },
+      { key: "fromEmail", label: "From Email", type: "email" }
     ]
   },
   {
-    id: 6,
+    id: "google_maps",
     name: "Google Maps",
     category: "Map Service",
     description: "Google Maps API integration",
-    enabled: true,
-    configured: true,
     fields: [
-      { key: "apiKey", label: "API Key", value: "AIzaSy...", type: "password" }
+      { key: "apiKey", label: "API Key", type: "password" }
     ]
   },
   {
-    id: 7,
+    id: "aws_s3",
     name: "AWS S3",
     category: "Storage Service",
     description: "Amazon S3 file storage",
-    enabled: false,
-    configured: false,
     fields: [
-      { key: "accessKeyId", label: "Access Key ID", value: "", type: "text" },
-      { key: "secretAccessKey", label: "Secret Access Key", value: "", type: "password" },
-      { key: "bucketName", label: "Bucket Name", value: "", type: "text" },
-      { key: "region", label: "Region", value: "", type: "text" }
+      { key: "accessKeyId", label: "Access Key ID", type: "text" },
+      { key: "secretAccessKey", label: "Secret Access Key", type: "password" },
+      { key: "bucketName", label: "Bucket Name", type: "text" },
+      { key: "region", label: "Region", type: "text" }
     ]
   }
 ]
 
-function ToggleSwitch({ enabled, onToggle }) {
+// One entry per service: { enabled, ...fieldValues }
+const DEFAULTS = thirdPartyServices.reduce((acc, service) => {
+  acc[service.id] = service.fields.reduce(
+    (fields, field) => ({ ...fields, [field.key]: "" }),
+    { enabled: false }
+  )
+  return acc
+}, {})
+
+function ToggleSwitch({ enabled, onToggle, disabled }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all ${
+      disabled={disabled}
+      className={`inline-flex items-center w-11 h-6 rounded-full border transition-all disabled:opacity-60 ${
         enabled
           ? "bg-blue-600 border-blue-600 justify-end"
           : "bg-slate-200 border-slate-300 justify-start"
@@ -111,40 +104,48 @@ function ToggleSwitch({ enabled, onToggle }) {
 }
 
 export default function ThirdParty() {
-  const [services, setServices] = useState(thirdPartyServices)
+  const { value, setValue, save, loading, saving } = usePlatformSetting("third_party", DEFAULTS)
+  const [saved, setSaved] = useState(DEFAULTS)
   const [expandedService, setExpandedService] = useState(null)
   const [visibleFields, setVisibleFields] = useState({})
-  const [fieldValues, setFieldValues] = useState(
-    services.reduce((acc, service) => {
-      service.fields.forEach(field => {
-        acc[`${service.id}-${field.key}`] = field.value
-      })
-      return acc
-    }, {})
-  )
 
-  const handleToggle = (id) => {
-    setServices(prev => prev.map(service => 
-      service.id === id ? { ...service, enabled: !service.enabled } : service
-    ))
+  // Remember the last stored state so Reset can return to it.
+  useEffect(() => {
+    if (!loading) setSaved(value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const serviceValue = (serviceId) => ({ ...DEFAULTS[serviceId], ...(value[serviceId] || {}) })
+  const savedServiceValue = (serviceId) => ({ ...DEFAULTS[serviceId], ...(saved[serviceId] || {}) })
+
+  const isConfigured = (service) => {
+    const stored = savedServiceValue(service.id)
+    return service.fields.some(field => String(stored[field.key] || "").trim() !== "")
   }
 
-  const handleFieldChange = (serviceId, fieldKey, value) => {
-    const key = `${serviceId}-${fieldKey}`
-    setFieldValues(prev => ({ ...prev, [key]: value }))
-    
-    // Mark as configured if at least one field has value
-    const service = services.find(s => s.id === serviceId)
-    const hasValue = service.fields.some(f => {
-      const fieldKey = `${serviceId}-${f.key}`
-      return fieldValues[fieldKey] || (f.key === fieldKey.split('-')[1] && value)
+  const persist = async (next, successMessage) => {
+    const ok = await save(next, { successMessage })
+    if (ok) setSaved(next)
+    return ok
+  }
+
+  const handleToggle = (service) => {
+    // Only the stored state of this service changes; unsaved edits in other services stay local.
+    const current = savedServiceValue(service.id)
+    const nextService = { ...current, enabled: !current.enabled }
+    const next = { ...saved, [service.id]: nextService }
+    persist(next, `${service.name} ${nextService.enabled ? "enabled" : "disabled"}`).then(ok => {
+      if (ok) {
+        setValue(prev => ({ ...prev, [service.id]: { ...serviceValue(service.id), enabled: nextService.enabled } }))
+      }
     })
-    
-    if (hasValue && !service.configured) {
-      setServices(prev => prev.map(s => 
-        s.id === serviceId ? { ...s, configured: true } : s
-      ))
-    }
+  }
+
+  const handleFieldChange = (serviceId, fieldKey, fieldValue) => {
+    setValue(prev => ({
+      ...prev,
+      [serviceId]: { ...DEFAULTS[serviceId], ...(prev[serviceId] || {}), [fieldKey]: fieldValue }
+    }))
   }
 
   const toggleFieldVisibility = (serviceId, fieldKey) => {
@@ -155,29 +156,16 @@ export default function ThirdParty() {
     }))
   }
 
-  const handleSave = (serviceId) => {
-    const service = services.find(s => s.id === serviceId)
-    const serviceFields = service.fields.map(field => ({
-      key: field.key,
-      value: fieldValues[`${serviceId}-${field.key}`] || field.value
-    }))
-    debugLog("Saving service:", service.name, serviceFields)
-    alert(`${service.name} configuration saved successfully!`)
-    
-    setServices(prev => prev.map(s => 
-      s.id === serviceId ? { ...s, configured: true } : s
-    ))
+  const handleSave = (service) => {
+    const next = { ...saved, [service.id]: serviceValue(service.id) }
+    persist(next, `${service.name} configuration saved`)
   }
 
   const handleReset = (serviceId) => {
-    const service = services.find(s => s.id === serviceId)
-    service.fields.forEach(field => {
-      const key = `${serviceId}-${field.key}`
-      setFieldValues(prev => ({ ...prev, [key]: field.value || "" }))
-    })
+    setValue(prev => ({ ...prev, [serviceId]: savedServiceValue(serviceId) }))
   }
 
-  const categories = [...new Set(services.map(s => s.category))]
+  const categories = [...new Set(thirdPartyServices.map(s => s.category))]
 
   return (
     <div className="p-2 lg:p-3 bg-slate-50 min-h-screen">
@@ -192,120 +180,131 @@ export default function ThirdParty() {
           </div>
         </div>
 
-        {/* Services by Category */}
-        <div className="space-y-4">
-          {categories.map((category) => {
-            const categoryServices = services.filter(s => s.category === category)
-            return (
-              <div key={category} className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-                <h2 className="text-sm font-semibold text-slate-900 mb-3">{category}</h2>
-                <div className="space-y-3">
-                  {categoryServices.map((service) => (
-                    <div
-                      key={service.id}
-                      className="border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-xs font-semibold text-slate-900">{service.name}</h3>
-                            <div className="flex items-center gap-1">
-                              {service.configured ? (
-                                <>
-                                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                                  <span className="text-[10px] text-green-600">Configured</span>
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="w-3.5 h-3.5 text-red-600" />
-                                  <span className="text-[10px] text-red-600">Not Configured</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-slate-600">{service.description}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <ToggleSwitch
-                            enabled={service.enabled}
-                            onToggle={() => handleToggle(service.id)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setExpandedService(expandedService === service.id ? null : service.id)}
-                            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                          >
-                            {expandedService === service.id ? "Hide" : "Configure"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Configuration Fields */}
-                      {expandedService === service.id && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
-                          {service.fields.map((field) => {
-                            const fieldKey = `${service.id}-${field.key}`
-                            const isPassword = field.type === "password"
-                            const isVisible = visibleFields[fieldKey]
-                            const value = fieldValues[fieldKey] || field.value || ""
-
-                            return (
-                              <div key={field.key}>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                                  {field.label}
-                                </label>
-                                <div className="relative">
-                                  <input
-                                    type={isPassword && !isVisible ? "password" : "text"}
-                                    value={value}
-                                    onChange={(e) => handleFieldChange(service.id, field.key, e.target.value)}
-                                    placeholder={`Enter ${field.label.toLowerCase()}`}
-                                    className="w-full px-3 py-2 pr-10 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  />
-                                  {isPassword && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleFieldVisibility(service.id, field.key)}
-                                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
-                                    >
-                                      {isVisible ? (
-                                        <EyeOff className="w-3.5 h-3.5" />
-                                      ) : (
-                                        <Eye className="w-3.5 h-3.5" />
-                                      )}
-                                    </button>
+        {loading ? (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 text-xs text-slate-500">
+            Loading...
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {categories.map((category) => {
+              const categoryServices = thirdPartyServices.filter(s => s.category === category)
+              return (
+                <div key={category} className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+                  <h2 className="text-sm font-semibold text-slate-900 mb-3">{category}</h2>
+                  <div className="space-y-3">
+                    {categoryServices.map((service) => {
+                      const current = serviceValue(service.id)
+                      const configured = isConfigured(service)
+                      return (
+                        <div
+                          key={service.id}
+                          className="border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition-colors"
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-xs font-semibold text-slate-900">{service.name}</h3>
+                                <div className="flex items-center gap-1">
+                                  {configured ? (
+                                    <>
+                                      <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                                      <span className="text-[10px] text-green-600">Configured</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <XCircle className="w-3.5 h-3.5 text-red-600" />
+                                      <span className="text-[10px] text-red-600">Not Configured</span>
+                                    </>
                                   )}
                                 </div>
                               </div>
-                            )
-                          })}
-                          <div className="flex justify-end gap-2 pt-2">
-                            <button
-                              type="button"
-                              onClick={() => handleReset(service.id)}
-                              className="px-3 py-1.5 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                            >
-                              Reset
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSave(service.id)}
-                              className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                              Save
-                            </button>
+                              <p className="text-[10px] text-slate-600">{service.description}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <ToggleSwitch
+                                enabled={!!savedServiceValue(service.id).enabled}
+                                disabled={saving}
+                                onToggle={() => handleToggle(service)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setExpandedService(expandedService === service.id ? null : service.id)}
+                                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                              >
+                                {expandedService === service.id ? "Hide" : "Configure"}
+                              </button>
+                            </div>
                           </div>
+
+                          {/* Configuration Fields */}
+                          {expandedService === service.id && (
+                            <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
+                              {service.fields.map((field) => {
+                                const fieldKey = `${service.id}-${field.key}`
+                                const isPassword = field.type === "password"
+                                const isVisible = visibleFields[fieldKey]
+                                const fieldValue = current[field.key] ?? ""
+
+                                return (
+                                  <div key={field.key}>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                      {field.label}
+                                    </label>
+                                    <div className="relative">
+                                      <input
+                                        type={isPassword && !isVisible ? "password" : field.type === "email" ? "email" : "text"}
+                                        value={fieldValue}
+                                        onChange={(e) => handleFieldChange(service.id, field.key, e.target.value)}
+                                        placeholder={`Enter ${field.label.toLowerCase()}`}
+                                        className="w-full px-3 py-2 pr-10 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                      />
+                                      {isPassword && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleFieldVisibility(service.id, field.key)}
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                                        >
+                                          {isVisible ? (
+                                            <EyeOff className="w-3.5 h-3.5" />
+                                          ) : (
+                                            <Eye className="w-3.5 h-3.5" />
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReset(service.id)}
+                                  disabled={saving}
+                                  className="px-3 py-1.5 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+                                >
+                                  Reset
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSave(service)}
+                                  disabled={saving}
+                                  className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+                                >
+                                  {saving ? "Saving..." : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
 }
-

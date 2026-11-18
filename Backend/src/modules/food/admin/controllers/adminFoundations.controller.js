@@ -6,6 +6,9 @@ import { languageFromQuery } from '../../shared/language.js';
 import * as statements from '../services/payoutStatement.service.js';
 import { renderStatementPdf } from '../services/payoutStatementPdf.js';
 import * as riderDocs from '../../delivery/services/riderDocuments.service.js';
+import * as platformSettings from '../services/platformSettings.service.js';
+import * as adminTools from '../services/adminTools.service.js';
+import { listStoredFiles } from '../../../../services/storage.service.js';
 
 /** Thin handlers: the same { success, message, data } envelope as the rest of /admin. */
 const handle = (status, message, run) => async (req, res, next) => {
@@ -103,3 +106,14 @@ export const reviewRiderDocument = handle(200, 'Document reviewed',
 export const getOwnDocuments = handle(200, 'Documents fetched', (req) => riderDocs.getOwnDocuments(req.user?.userId));
 export const reuploadOwnDocument = handle(200, 'Document uploaded', (req) => riderDocs.reuploadOwnDocument(
     req.user?.userId, req.params.key, req.file || req.files?.[0], { number: req.body?.number }));
+
+// ----- Settings pages, reports and tools that used to be UI-only -----
+export const getPlatformSetting = handle(200, 'Settings fetched', (req) => platformSettings.getPlatformSetting(req.params.key));
+export const savePlatformSetting = handle(200, 'Settings saved', (req) => platformSettings.savePlatformSetting(req.params.key, req.body?.value ?? req.body ?? {}, adminIdOf(req)));
+export const getPublicPlatformSettings = handle(200, 'Settings fetched', () => platformSettings.getPublicPlatformSettings());
+export const couponOrderReport = handle(200, 'Report fetched', (req) => adminTools.couponOrderReport(req.query));
+export const customerRewardsReport = handle(200, 'Report fetched', (req) => adminTools.customerRewardsReport(req.query));
+export const creditCustomerWallet = handle(200, 'Money added to the wallet', (req) => adminTools.creditCustomerWallet(req.params.id, req.body || {}, adminIdOf(req)));
+export const listCustomerWalletCredits = handle(200, 'Credits fetched', (req) => adminTools.listCustomerWalletCredits(req.query));
+export const bulkImportRestaurants = handle(200, (d) => `${d.created} created, ${d.failed} not created`, (req) => adminTools.bulkImportRestaurants(req.body?.rows));
+export const listFiles = handle(200, 'Files fetched', (req) => listStoredFiles(String(req.query.folder || ''), { limit: req.query.limit }));

@@ -1,9 +1,17 @@
-import { useState } from "react"
-import { Bot, Settings, Info, Store } from "lucide-react"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+import { useEffect, useRef, useState } from "react"
+import { Bot, Settings, Store, Loader2 } from "lucide-react"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
+const DEFAULTS = {
+  enabled: true,
+  apiKey: "",
+  organization: "",
+  sectionWiseLimit: "60",
+  imageUploadLimit: "20",
+}
+
+const inputClass =
+  "w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 
 function ToggleSwitch({ enabled, onToggle }) {
   return (
@@ -23,33 +31,52 @@ function ToggleSwitch({ enabled, onToggle }) {
 
 export default function AISetup() {
   const [activeTab, setActiveTab] = useState("ai-configuration")
-  const [isEnabled, setIsEnabled] = useState(true)
-  const [apiKey, setApiKey] = useState("")
-  const [organization, setOrganization] = useState("")
-  const [sectionWiseLimit, setSectionWiseLimit] = useState("60")
-  const [imageUploadLimit, setImageUploadLimit] = useState("20")
+  const { value, setValue, update, save, loading, saving } = usePlatformSetting("ai", DEFAULTS)
+  const loadedRef = useRef(DEFAULTS)
 
-  const handleReset = () => {
-    setApiKey("")
-    setOrganization("")
+  useEffect(() => {
+    if (!loading) loadedRef.current = value
+    // Snapshot what the server returned once loading finishes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const resetFields = (...fields) => {
+    setValue((prev) => {
+      const next = { ...prev }
+      fields.forEach((f) => {
+        next[f] = loadedRef.current[f] ?? DEFAULTS[f]
+      })
+      return next
+    })
   }
 
-  const handleAIConfigSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault()
-    debugLog("Saving AI Configuration:", { apiKey, organization, isEnabled })
-    alert("AI Configuration saved successfully!")
+    const ok = await save()
+    if (ok) loadedRef.current = value
   }
 
-  const handleAISettingsReset = () => {
-    setSectionWiseLimit("60")
-    setImageUploadLimit("20")
-  }
+  const saveButton = (label) => (
+    <button
+      type="submit"
+      disabled={saving}
+      className="px-4 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center gap-1"
+    >
+      {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+      {saving ? "Saving..." : label}
+    </button>
+  )
 
-  const handleAISettingsSave = (e) => {
-    e.preventDefault()
-    debugLog("Saving AI Settings:", { sectionWiseLimit, imageUploadLimit })
-    alert("AI Settings saved successfully!")
-  }
+  const resetButton = (onClick) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={saving}
+      className="px-4 py-2 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+    >
+      Reset
+    </button>
+  )
 
   return (
     <div className="p-2 lg:p-3 bg-slate-50 min-h-screen">
@@ -90,85 +117,67 @@ export default function AISetup() {
           </div>
         </div>
 
+        {loading && (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 flex items-center justify-center gap-2 text-xs text-slate-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading settings...
+          </div>
+        )}
+
         {/* AI Configuration Content */}
-        {activeTab === "ai-configuration" && (
+        {!loading && activeTab === "ai-configuration" && (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-slate-600" />
-                <h2 className="text-sm font-semibold text-slate-900">OpenAI Configuration</h2>
-              </div>
-              <a
-                href="#"
-                className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
-              >
-                How it Works
-                <Info className="w-3 h-3" />
-              </a>
+            <div className="flex items-center gap-2 mb-4">
+              <Settings className="w-4 h-4 text-slate-600" />
+              <h2 className="text-sm font-semibold text-slate-900">OpenAI Configuration</h2>
             </div>
 
-            <form onSubmit={handleAIConfigSave}>
+            <form onSubmit={handleSave}>
               {/* Toggle Switch */}
               <div className="flex items-center justify-between mb-4 p-3 bg-slate-50 rounded-lg">
-                <span className="text-xs font-medium text-slate-700">Turn OFF</span>
-                <ToggleSwitch
-                  enabled={isEnabled}
-                  onToggle={() => setIsEnabled(!isEnabled)}
-                />
+                <span className="text-xs font-medium text-slate-700">
+                  {value.enabled ? "AI features are ON" : "AI features are OFF"}
+                </span>
+                <ToggleSwitch enabled={!!value.enabled} onToggle={() => update("enabled", !value.enabled)} />
               </div>
 
               {/* API Key Input */}
               <div className="mb-4">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  OpenAI API Key
-                </label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">OpenAI API Key</label>
                 <input
                   type="text"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  value={value.apiKey || ""}
+                  onChange={(e) => update("apiKey", e.target.value)}
                   placeholder="Ex: sk-proj-K0LhsdcbHJ......."
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={inputClass}
                 />
               </div>
 
               {/* Organization Input */}
               <div className="mb-4">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  OpenAI Organization
-                </label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">OpenAI Organization</label>
                 <input
                   type="text"
-                  value={organization}
-                  onChange={(e) => setOrganization(e.target.value)}
+                  value={value.organization || ""}
+                  onChange={(e) => update("organization", e.target.value)}
                   placeholder="Ex: org-xxxxxxxxxxxx"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={inputClass}
                 />
               </div>
 
               {/* Action Buttons */}
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="px-4 py-2 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                >
-                  Reset
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Save
-                </button>
+                {resetButton(() => resetFields("enabled", "apiKey", "organization"))}
+                {saveButton("Save")}
               </div>
             </form>
           </div>
         )}
 
         {/* AI Settings Content */}
-        {activeTab === "ai-settings" && (
+        {!loading && activeTab === "ai-settings" && (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-            <form onSubmit={handleAISettingsSave}>
+            <form onSubmit={handleSave}>
               {/* Restaurant Limits Section */}
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-4">
@@ -187,9 +196,10 @@ export default function AISetup() {
                     </label>
                     <input
                       type="number"
-                      value={sectionWiseLimit}
-                      onChange={(e) => setSectionWiseLimit(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      min="0"
+                      value={value.sectionWiseLimit ?? ""}
+                      onChange={(e) => update("sectionWiseLimit", e.target.value)}
+                      className={inputClass}
                     />
                   </div>
                 </div>
@@ -205,9 +215,10 @@ export default function AISetup() {
                     </label>
                     <input
                       type="number"
-                      value={imageUploadLimit}
-                      onChange={(e) => setImageUploadLimit(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      min="0"
+                      value={value.imageUploadLimit ?? ""}
+                      onChange={(e) => update("imageUploadLimit", e.target.value)}
+                      className={inputClass}
                     />
                   </div>
                 </div>
@@ -215,19 +226,8 @@ export default function AISetup() {
 
               {/* Action Buttons */}
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleAISettingsReset}
-                  className="px-4 py-2 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                >
-                  Reset
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Save Information
-                </button>
+                {resetButton(() => resetFields("sectionWiseLimit", "imageUploadLimit"))}
+                {saveButton("Save Information")}
               </div>
             </form>
           </div>
@@ -236,4 +236,3 @@ export default function AISetup() {
     </div>
   )
 }
-

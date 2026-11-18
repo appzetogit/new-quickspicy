@@ -4176,3 +4176,17 @@ model FoodSharedCart {
   @@index([expiresAt])
   @@map("food_shared_carts")
 }
+
+/// Admin-managed settings pages (app & web, login setup, theme, email
+/// templates, analytics, withdraw methods, wallet bonus ...), one row per page.
+/// Secrets inside value are masked when read back; only fields a page marks
+/// public are served on /platform-settings/public.
+model FoodPlatformSetting {
+  key       String   @id @db.VarChar(48)
+  value     Json     @default("{}")
+  updatedBy String?  @db.VarChar(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("food_platform_settings")
+}

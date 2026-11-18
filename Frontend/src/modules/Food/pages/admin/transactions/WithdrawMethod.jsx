@@ -1,304 +1,122 @@
-import { useState, useMemo } from "react"
-import { Search, Plus, Eye, Edit, Settings, ArrowUpDown, Check, Columns } from "lucide-react"
-import { emptyWithdrawMethods } from "@food/utils/adminFallbackData"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
+import { useState } from "react"
+import { Banknote, Loader2, Plus, Trash2, X } from "lucide-react"
+import { toast } from "sonner"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
+
+/**
+ * The ways restaurants and riders can be paid (bank transfer, UPI ...) and the
+ * details each needs. The apps read the active ones from
+ * /platform-settings/public (withdraw_methods).
+ */
+const BLANK_FIELD = { label: "", type: "text", placeholder: "", required: true }
+const BLANK = { name: "", forRestaurants: true, forRiders: true, isActive: true, isDefault: false, fields: [{ ...BLANK_FIELD }] }
+const DEFAULTS = {
+  methods: [
+    { name: "Bank transfer", forRestaurants: true, forRiders: true, isActive: true, isDefault: true, fields: [
+      { label: "Account holder name", type: "text", placeholder: "As on the bank account", required: true },
+      { label: "Account number", type: "number", placeholder: "", required: true },
+      { label: "IFSC code", type: "text", placeholder: "e.g. SBIN0001234", required: true },
+    ] },
+    { name: "UPI", forRestaurants: true, forRiders: true, isActive: true, isDefault: false, fields: [
+      { label: "UPI id", type: "text", placeholder: "name@bank", required: true },
+    ] },
+  ],
+}
 
 export default function WithdrawMethod() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [methods, setMethods] = useState(emptyWithdrawMethods)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState({
-    si: true,
-    paymentMethodName: true,
-    methodFields: true,
-    activeStatus: true,
-    defaultMethod: true,
-    actions: true,
-  })
+  const { value, setValue, save, loading, saving } = usePlatformSetting("withdraw_methods", DEFAULTS)
+  const [draft, setDraft] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const methods = Array.isArray(value.methods) ? value.methods : []
 
-  const filteredMethods = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return methods
-    }
-    
-    const query = searchQuery.toLowerCase().trim()
-    return methods.filter(method =>
-      method.paymentMethodName?.toLowerCase().includes(query)
-    )
-  }, [methods, searchQuery])
-
-  const handleToggleActive = (index) => {
-    const updated = [...methods]
-    updated[index].activeStatus = !updated[index].activeStatus
-    setMethods(updated)
+  const persist = (nextMethods, message) => {
+    const next = { ...value, methods: nextMethods }
+    setValue(next)
+    return save(next, { successMessage: message })
   }
 
-  const handleToggleDefault = (index) => {
-    const updated = [...methods]
-    // Only one can be default, so set all to false first
-    updated.forEach(m => m.defaultMethod = false)
-    updated[index].defaultMethod = !updated[index].defaultMethod
-    setMethods(updated)
+  const submit = async (e) => {
+    e.preventDefault()
+    const name = draft.name.trim()
+    if (!name) return toast.error("Give the method a name")
+    const fields = draft.fields.map((f) => ({ ...f, label: f.label.trim() })).filter((f) => f.label)
+    if (!fields.length) return toast.error("Add at least one detail to collect")
+    if (!draft.forRestaurants && !draft.forRiders) return toast.error("Choose who can use it")
+    if (methods.some((m, i) => i !== editing && m.name.toLowerCase() === name.toLowerCase())) return toast.error("A method with this name already exists")
+    let next = editing === null ? [...methods, { ...draft, name, fields }] : methods.map((m, i) => (i === editing ? { ...draft, name, fields } : m))
+    const idx = editing === null ? next.length - 1 : editing
+    if (next[idx].isDefault) next = next.map((m, i) => ({ ...m, isDefault: i === idx }))
+    if (await persist(next, editing === null ? "Method added" : "Method updated")) { setDraft(null); setEditing(null) }
   }
 
-  const toggleColumn = (columnKey) => {
-    setVisibleColumns(prev => ({ ...prev, [columnKey]: !prev[columnKey] }))
-  }
-
-  const resetColumns = () => {
-    setVisibleColumns({
-      si: true,
-      paymentMethodName: true,
-      methodFields: true,
-      activeStatus: true,
-      defaultMethod: true,
-      actions: true,
-    })
-  }
-
-  const columnsConfig = {
-    si: "Serial Number",
-    paymentMethodName: "Payment Method Name",
-    methodFields: "Method Fields",
-    activeStatus: "Active Status",
-    defaultMethod: "Default Method",
-    actions: "Actions",
-  }
+  const input = "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+  const setField = (i, key, v) => setDraft((d) => ({ ...d, fields: d.fields.map((f, j) => (j === i ? { ...f, [key]: v } : f)) }))
 
   return (
     <div className="p-4 lg:p-6 bg-slate-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6 relative">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-slate-900">Withdraw Method List</h1>
-              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-slate-100 text-slate-700">
-                {filteredMethods.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1 sm:flex-initial min-w-[250px]">
-                <input
-                  type="text"
-                  placeholder="Search Method Name"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-                />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              </div>
-              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-all"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-              <button className="px-4 py-2.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center gap-2 shadow-md">
-                <Plus className="w-4 h-4" />
-                Add Method
-              </button>
-            </div>
+      <div className="max-w-5xl mx-auto space-y-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Banknote className="w-6 h-6 text-orange-600" /> Withdraw Methods</h1>
+            <p className="text-sm text-slate-500 mt-1">How restaurants and riders can ask to be paid, and the details each method collects.</p>
           </div>
+          {!draft && <button type="button" onClick={() => { setEditing(null); setDraft({ ...BLANK, fields: [{ ...BLANK_FIELD }] }) }} className="inline-flex items-center gap-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white"><Plus className="w-4 h-4" />Add method</button>}
         </div>
 
-        {/* Methods Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {visibleColumns.si && (
-                    <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <span>SI</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 cursor-pointer hover:text-slate-600" />
-                      </div>
-                    </th>
-                  )}
-                  {visibleColumns.paymentMethodName && (
-                    <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <span>Payment Method Name</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 cursor-pointer hover:text-slate-600" />
-                      </div>
-                    </th>
-                  )}
-                  {visibleColumns.methodFields && (
-                    <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <span>Method Fields</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 cursor-pointer hover:text-slate-600" />
-                      </div>
-                    </th>
-                  )}
-                  {visibleColumns.activeStatus && (
-                    <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <span>Active Status</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 cursor-pointer hover:text-slate-600" />
-                      </div>
-                    </th>
-                  )}
-                  {visibleColumns.defaultMethod && (
-                    <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <span>Default Method</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 cursor-pointer hover:text-slate-600" />
-                      </div>
-                    </th>
-                  )}
-                  {visibleColumns.actions && (
-                    <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">Action</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-100">
-                {filteredMethods.length === 0 ? (
-                  <tr>
-                    <td colSpan={Object.values(visibleColumns).filter(v => v).length} className="px-6 py-8 text-center text-slate-500">
-                      No methods found
-                    </td>
-                  </tr>
-                ) : (
-                  filteredMethods.map((method, index) => (
-                    <tr key={method.sl} className="hover:bg-slate-50 transition-colors">
-                      {visibleColumns.si && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-slate-700">{method.sl}</span>
-                        </td>
-                      )}
-                      {visibleColumns.paymentMethodName && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-slate-700">{method.paymentMethodName}</span>
-                        </td>
-                      )}
-                      {visibleColumns.methodFields && (
-                        <td className="px-6 py-4">
-                          <div className="space-y-2">
-                            {method.methodFields.map((field, fieldIndex) => (
-                              <div key={fieldIndex} className="flex items-start gap-2">
-                                <span className="text-sm text-slate-700">
-                                  Name: <span className="font-medium">{field.name}</span> Type: <span className="font-medium">{field.type}</span> Placeholder: <span className="font-medium">{field.placeholder}</span>
-                                </span>
-                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                  field.required
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-blue-100 text-blue-700"
-                                }`}>
-                                  {field.required ? "Required" : "Optional"}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.activeStatus && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <button
-                            onClick={() => handleToggleActive(index)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              method.activeStatus ? "bg-blue-600" : "bg-slate-300"
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                method.activeStatus ? "translate-x-6" : "translate-x-1"
-                              }`}
-                            />
-                          </button>
-                        </td>
-                      )}
-                      {visibleColumns.defaultMethod && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <button
-                            onClick={() => handleToggleDefault(index)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              method.defaultMethod ? "bg-blue-600" : "bg-slate-300"
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                method.defaultMethod ? "translate-x-6" : "translate-x-1"
-                              }`}
-                            />
-                          </button>
-                        </td>
-                      )}
-                      {visibleColumns.actions && (
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" title="View">
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
+        {draft && (
+          <form onSubmit={submit} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <div className="flex items-center justify-between"><h2 className="font-semibold text-slate-900">{editing === null ? "New method" : "Edit method"}</h2><button type="button" onClick={() => setDraft(null)} aria-label="Close"><X className="w-5 h-5 text-slate-400" /></button></div>
+            <label className="block text-sm font-medium text-slate-700">Name<input className={input} maxLength={40} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Bank transfer" /></label>
+            <div className="flex flex-wrap gap-5 text-sm text-slate-700">
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-orange-600" checked={draft.forRestaurants} onChange={(e) => setDraft({ ...draft, forRestaurants: e.target.checked })} />Restaurants</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-orange-600" checked={draft.forRiders} onChange={(e) => setDraft({ ...draft, forRiders: e.target.checked })} />Riders</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-orange-600" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />Active</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-orange-600" checked={draft.isDefault} onChange={(e) => setDraft({ ...draft, isDefault: e.target.checked })} />Default</label>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700">Details to collect</p>
+              {draft.fields.map((f, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                  <input className="col-span-4 rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Label, e.g. IFSC code" value={f.label} onChange={(e) => setField(i, "label", e.target.value)} />
+                  <select className="col-span-2 rounded-lg border border-slate-300 px-2 py-2 text-sm" value={f.type} onChange={(e) => setField(i, "type", e.target.value)}><option value="text">Text</option><option value="number">Number</option><option value="email">Email</option><option value="phone">Phone</option></select>
+                  <input className="col-span-4 rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Hint (optional)" value={f.placeholder} onChange={(e) => setField(i, "placeholder", e.target.value)} />
+                  <label className="col-span-1 flex items-center gap-1 text-xs"><input type="checkbox" className="accent-orange-600" checked={f.required} onChange={(e) => setField(i, "required", e.target.checked)} />Req.</label>
+                  <button type="button" className="col-span-1 text-red-600 justify-self-end" aria-label="Remove detail" onClick={() => setDraft((d) => ({ ...d, fields: d.fields.filter((_, j) => j !== i) }))}><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setDraft((d) => ({ ...d, fields: [...d.fields, { ...BLANK_FIELD }] }))} className="text-sm font-semibold text-orange-600">+ Add a detail</button>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setDraft(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Cancel</button>
+              <button type="submit" disabled={saving} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Saving…" : "Save method"}</button>
+            </div>
+          </form>
+        )}
+
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          {loading ? (
+            <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div>
+          ) : !methods.length ? (
+            <p className="p-8 text-center text-sm text-slate-500">No withdraw methods yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3 text-left">Method</th><th className="px-4 py-3 text-left">Collects</th><th className="px-4 py-3 text-left">For</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-right">Actions</th></tr></thead>
+              <tbody>{methods.map((m, i) => (
+                <tr key={`${m.name}-${i}`} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium">{m.name}{m.isDefault && <span className="ml-2 rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-orange-700">Default</span>}</td>
+                  <td className="px-4 py-3 text-slate-600">{(m.fields || []).map((f) => f.label).join(", ")}</td>
+                  <td className="px-4 py-3 text-slate-600">{[m.forRestaurants && "Restaurants", m.forRiders && "Riders"].filter(Boolean).join(", ")}</td>
+                  <td className="px-4 py-3"><button type="button" disabled={saving} onClick={() => persist(methods.map((x, j) => (j === i ? { ...x, isActive: !x.isActive } : x)), "Saved")} className={`rounded-full px-3 py-1 text-xs font-semibold ${m.isActive ? "bg-green-100 text-green-800" : "bg-slate-200 text-slate-700"}`}>{m.isActive ? "Active" : "Off"}</button></td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap space-x-2">
+                    <button type="button" onClick={() => { setEditing(i); setDraft({ ...BLANK, ...m, fields: (m.fields || []).map((f) => ({ ...BLANK_FIELD, ...f })) }) }} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold">Edit</button>
+                    <button type="button" disabled={saving} onClick={() => window.confirm(`Delete the withdraw method "${m.name}"?`) && persist(methods.filter((_, j) => j !== i), "Method deleted")} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white">Delete</button>
+                  </td>
+                </tr>))}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
       </div>
-
-      {/* Settings Dialog */}
-      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="max-w-md bg-white p-0 opacity-0 data-[state=open]:opacity-100 data-[state=closed]:opacity-0 transition-opacity duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:scale-100 data-[state=closed]:scale-100">
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="w-5 h-5" />
-              Table Settings
-            </DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                <Columns className="w-4 h-4" />
-                Visible Columns
-              </h3>
-              <div className="space-y-2">
-                {Object.entries(columnsConfig).map(([key, label]) => (
-                  <label
-                    key={key}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns[key]}
-                      onChange={() => toggleColumn(key)}
-                      className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
-                    />
-                    <span className="text-sm text-slate-700">{label}</span>
-                    {visibleColumns[key] && (
-                      <Check className="w-4 h-4 text-emerald-600 ml-auto" />
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-              <button
-                onClick={resetColumns}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all"
-              >
-                Reset
-              </button>
-              <button
-                onClick={() => setIsSettingsOpen(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-md"
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
-

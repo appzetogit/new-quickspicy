@@ -155,7 +155,12 @@ export const verifyWalletTopupPayment = async (userId, payload) => {
         }
     });
 
-    return { wallet: await getUserWallet(id) };
+    // The admin's top-up bonus, if a rule matches. Keyed on the same gateway
+    // order, so a replayed callback cannot pay it twice; never throws.
+    const { applyTopupBonus } = await import('../../admin/services/adminTools.service.js');
+    const bonus = await applyTopupBonus(id, creditedInr, orderId);
+
+    return { wallet: await getUserWallet(id), ...(bonus > 0 ? { bonus } : {}) };
 };
 
 export const deductWalletBalance = async (userId, amountInr, description = 'Order payment', metadata = {}) => {

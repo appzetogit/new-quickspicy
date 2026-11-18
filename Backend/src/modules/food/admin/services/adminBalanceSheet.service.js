@@ -1,4 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
+import { dayRange } from '../../../../utils/timezone.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 
@@ -411,7 +412,9 @@ export async function getSettlementHistory(query = {}) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(200, Math.max(1, Number(query.limit) || 50));
 
+    const range = dayRange(query);
     const where = {
+        ...(range ? { createdAt: range } : {}),
         ...(query.entityType === 'restaurant' ? { entityType: 'restaurant' } : {}),
         ...(query.entityType === 'rider' ? { entityType: 'deliveryBoy' } : {}),
         ...(isId(query.entityId) ? { entityId: String(query.entityId) } : {}),
@@ -427,11 +430,25 @@ export async function getSettlementHistory(query = {}) {
         prisma.settlement.count({ where }),
     ]);
 
+    // Names, so a disbursement report can say who was paid.
+    const restaurantIds = rows.filter((r) => r.entityType === 'restaurant').map((r) => r.entityId);
+    const riderIds = rows.filter((r) => r.entityType === 'deliveryBoy').map((r) => r.entityId);
+    const [restaurants, riders] = await Promise.all([
+        restaurantIds.length ? prisma.foodRestaurant.findMany({ where: { id: { in: restaurantIds } }, select: { id: true, restaurantName: true, ownerPhone: true } }) : [],
+        riderIds.length ? prisma.foodDeliveryPartner.findMany({ where: { id: { in: riderIds } }, select: { id: true, name: true, phone: true } }) : [],
+    ]);
+    const names = new Map([
+        ...restaurants.map((r) => [r.id, { name: r.restaurantName, phone: r.ownerPhone }]),
+        ...riders.map((r) => [r.id, { name: r.name, phone: r.phone }]),
+    ]);
+
     return {
         settlements: rows.map((row) => ({
             id: row.id,
             entityType: row.entityType === 'deliveryBoy' ? 'rider' : row.entityType,
             entityId: row.entityId,
+            name: names.get(row.entityId)?.name || '',
+            phone: names.get(row.entityId)?.phone || '',
             amount: money(row.amount),
             status: row.status,
             payoutRef: row.payoutRef,

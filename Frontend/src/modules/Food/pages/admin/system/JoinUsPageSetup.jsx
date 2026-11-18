@@ -1,8 +1,6 @@
-import { useState } from "react"
-import { Plus, Trash2, Settings, ChevronDown } from "lucide-react"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+import { useEffect, useRef, useState } from "react"
+import { Plus, Trash2, Settings, ChevronDown, Loader2 } from "lucide-react"
+import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
 
 
 const defaultFields = [
@@ -16,37 +14,55 @@ const defaultFields = [
 
 const fieldTypes = ["Text", "Date", "File Upload", "Number", "Email", "Phone"]
 
+const RESTAURANT_DEFAULT_FIELDS = [
+  {
+    id: 1,
+    type: "Text",
+    title: "Enter Your Tin Number",
+    placeholder: "Enter TIN",
+    isRequired: true,
+    uploadMultiple: false,
+    fileFormats: { jpg: true, pdf: true, docs: true }
+  },
+  {
+    id: 2,
+    type: "Date",
+    title: "Date",
+    placeholder: "Enter Date",
+    isRequired: true,
+    uploadMultiple: false,
+    fileFormats: { jpg: false, pdf: false, docs: false }
+  },
+  {
+    id: 3,
+    type: "File Upload",
+    title: "License Document",
+    placeholder: "",
+    isRequired: true,
+    uploadMultiple: false,
+    fileFormats: { jpg: true, pdf: true, docs: true }
+  }
+]
+
+// Custom fields are kept per registration form (one list per tab).
+const DEFAULTS = {
+  restaurant: { customFields: RESTAURANT_DEFAULT_FIELDS },
+  deliveryman: { customFields: [] }
+}
+
 export default function JoinUsPageSetup() {
   const [activeTab, setActiveTab] = useState("restaurant")
-  const [customFields, setCustomFields] = useState([
-    {
-      id: 1,
-      type: "Text",
-      title: "Enter Your Tin Number",
-      placeholder: "Enter TIN",
-      isRequired: true,
-      uploadMultiple: false,
-      fileFormats: { jpg: true, pdf: true, docs: true }
-    },
-    {
-      id: 2,
-      type: "Date",
-      title: "Date",
-      placeholder: "Enter Date",
-      isRequired: true,
-      uploadMultiple: false,
-      fileFormats: { jpg: false, pdf: false, docs: false }
-    },
-    {
-      id: 3,
-      type: "File Upload",
-      title: "License Document",
-      placeholder: "",
-      isRequired: true,
-      uploadMultiple: false,
-      fileFormats: { jpg: true, pdf: true, docs: true }
-    }
-  ])
+  const { value, setValue, update, save, loading, saving } = usePlatformSetting("join_us", DEFAULTS)
+  // Last value loaded from (or saved to) the server, for Reset.
+  const loadedRef = useRef(DEFAULTS)
+  useEffect(() => {
+    if (!loading) loadedRef.current = value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const tabValue = value[activeTab] || DEFAULTS[activeTab]
+  const customFields = Array.isArray(tabValue?.customFields) ? tabValue.customFields : []
+  const setCustomFields = (fields) => update(activeTab, { ...(tabValue || {}), customFields: fields })
 
   const handleAddField = () => {
     const newField = {
@@ -79,42 +95,14 @@ export default function JoinUsPageSetup() {
     ))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    debugLog("Form submitted:", { activeTab, customFields })
-    alert("Join Request Form Setup saved successfully!")
+    const ok = await save(undefined, { successMessage: "Join request form setup saved" })
+    if (ok) loadedRef.current = value
   }
 
   const handleReset = () => {
-    setCustomFields([
-      {
-        id: 1,
-        type: "Text",
-        title: "Enter Your Tin Number",
-        placeholder: "Enter TIN",
-        isRequired: true,
-        uploadMultiple: false,
-        fileFormats: { jpg: true, pdf: true, docs: true }
-      },
-      {
-        id: 2,
-        type: "Date",
-        title: "Date",
-        placeholder: "Enter Date",
-        isRequired: true,
-        uploadMultiple: false,
-        fileFormats: { jpg: false, pdf: false, docs: false }
-      },
-      {
-        id: 3,
-        type: "File Upload",
-        title: "License Document",
-        placeholder: "",
-        isRequired: true,
-        uploadMultiple: false,
-        fileFormats: { jpg: true, pdf: true, docs: true }
-      }
-    ])
+    setValue(loadedRef.current)
   }
 
   return (
@@ -122,7 +110,10 @@ export default function JoinUsPageSetup() {
       <div className="w-full mx-auto max-w-7xl">
         {/* Page Title */}
         <div className="mb-3">
-          <h1 className="text-lg font-bold text-slate-900">New Join Request Form Setup</h1>
+          <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            New Join Request Form Setup
+            {loading && <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />}
+          </h1>
         </div>
 
         {/* Tabs */}
@@ -317,15 +308,17 @@ export default function JoinUsPageSetup() {
             <button
               type="button"
               onClick={handleReset}
-              className="px-4 py-2 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              disabled={loading || saving}
+              className="px-4 py-2 text-xs font-medium bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
             >
               Reset
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={loading || saving}
+              className="px-4 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
             >
-              Submit
+              {saving ? "Saving..." : "Submit"}
             </button>
           </div>
         </form>

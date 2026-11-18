@@ -246,6 +246,9 @@ router.get(
     ]),
     adminController.getCustomers
 );
+// Before /customers/:id, which would take "wallet-credits" for an id.
+router.get('/customers/wallet-credits', foundations.listCustomerWalletCredits);
+router.post('/customers/:id/wallet/credit', requireAdminPermission('customer_management', 'edit'), foundations.creditCustomerWallet);
 router.get('/customers/:id', adminController.getCustomerById);
 router.patch('/customers/:id/status', adminController.updateCustomerStatus);
 
@@ -276,6 +279,8 @@ router.get(
     adminController.getRestaurants
 );
 router.get('/dashboard-stats', adminController.getDashboardStats);
+router.get('/reports/coupon-orders', foundations.couponOrderReport);
+router.get('/reports/customer-rewards', foundations.customerRewardsReport);
 router.get('/reports/restaurants', adminController.getRestaurantReport);
 router.get('/reports/transactions', adminController.getTransactionReport);
 router.get('/reports/tax', adminController.getTaxReport);
@@ -323,6 +328,7 @@ router.get(
 );
 router.get('/restaurants/:id/menu', adminController.getRestaurantMenuById);
 router.post('/restaurants', adminController.createRestaurant);
+router.post('/restaurants/bulk-import', requireAdminPermission('restaurant_management', 'create'), foundations.bulkImportRestaurants);
 router.patch('/restaurants/:id', adminController.updateRestaurantById);
 // Signs the restaurant out on every phone (a lost or shared device).
 router.post('/restaurants/:id/logout-all-devices', async (req, res, next) => {
@@ -685,6 +691,11 @@ router.delete('/restaurants/:id/outlets', requireAdminPermission('restaurant_man
 
 // ----- Telugu translations of dishes, categories and verticals -----
 router.get('/translations', requireAdminPermission('food_management', 'view'), foundations.listTranslations);
+
+// Settings pages stored as one JSON per page, and the file manager.
+router.get('/platform-settings/:key', requireAdminPermission('system_settings', 'view'), foundations.getPlatformSetting);
+router.put('/platform-settings/:key', requireAdminPermission('system_settings', 'edit'), foundations.savePlatformSetting);
+router.get('/files', requireAdminPermission('system_settings', 'view'), foundations.listFiles);
 router.put('/translations', requireAdminPermission('food_management', 'edit'), foundations.bulkUpdateTranslations);
 router.patch('/translations/:entity/:id', requireAdminPermission('food_management', 'edit'), foundations.updateTranslation);
 
