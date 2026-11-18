@@ -75,7 +75,8 @@ export async function listRestaurantCategories(restaurantId, query = {}) {
         AND.push({ name: { contains: search.slice(0, 80), mode: 'insensitive' } });
     }
     if (compact && context.pureVegRestaurant) {
-        AND.push({ foodTypeScope: 'Veg' });
+        // Veg and Both: the shared categories are Both, and a veg dish fits them.
+        AND.push({ foodTypeScope: { in: ['Veg', 'Both'] } });
     }
 
     const where = { AND, ...(includeInactive ? {} : { isActive: true }) };

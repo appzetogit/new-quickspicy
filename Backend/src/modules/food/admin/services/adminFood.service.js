@@ -13,7 +13,7 @@ import {
     serializeFoodVariants,
     syncFoodVariants,
 } from './foodVariant.service.js';
-import { categoryAllowsFoodType } from '../../shared/categoryWorkflow.js';
+import { categoryAllowsFoodType, normalizeCategoryFoodTypeScope } from '../../shared/categoryWorkflow.js';
 
 /**
  * Admin-side dish management, extracted from admin.service.js.
@@ -131,8 +131,8 @@ const resolveAdminFoodCategory = async ({ categoryId, categoryName, foodType, pu
     if (!resolvedName) throw new ValidationError('Category is required');
 
     if (category?.foodTypeScope) {
-        if (pureVegRestaurant && category.foodTypeScope !== 'Veg') {
-            throw new ValidationError('Pure veg restaurants can only use veg categories');
+        if (pureVegRestaurant && normalizeCategoryFoodTypeScope(category.foodTypeScope) === 'Non-Veg') {
+            throw new ValidationError('Pure veg restaurants cannot use non-veg categories');
         }
         if (!categoryAllowsFoodType(category.foodTypeScope, foodType)) {
             throw new ValidationError(

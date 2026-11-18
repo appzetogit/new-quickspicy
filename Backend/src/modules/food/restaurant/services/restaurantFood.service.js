@@ -19,6 +19,7 @@ import {
     APPROVED_CATEGORY_FILTER,
     categoryAllowsFoodType,
     GLOBAL_CATEGORY_FILTER,
+    normalizeCategoryFoodTypeScope,
 } from '../../shared/categoryWorkflow.js';
 
 const toStr = (v) => (v != null ? String(v).trim() : '');
@@ -177,7 +178,9 @@ const resolveCategoryForRestaurant = async (context, body = {}) => {
     const baseFilter = {
         ...getAccessibleCategoryFilter(context),
         isActive: true,
-        ...(context.pureVegRestaurant ? { foodTypeScope: 'Veg' } : {}),
+        // A veg dish fits a Veg or a Both category. Veg-only hid every global
+        // category (Biryani, Starters ... are Both) from pure veg restaurants.
+        ...(context.pureVegRestaurant ? { foodTypeScope: { in: ['Veg', 'Both'] } } : {}),
     };
 
     let category = null;
@@ -208,8 +211,8 @@ const resolveCategoryForRestaurant = async (context, body = {}) => {
     if (String(category.approvalStatus || '') !== 'approved') {
         throw new ValidationError('This category is awaiting admin approval');
     }
-    if (context.pureVegRestaurant && String(category.foodTypeScope || '') !== 'Veg') {
-        throw new ValidationError('Pure veg restaurants can only use veg categories');
+    if (context.pureVegRestaurant && normalizeCategoryFoodTypeScope(category.foodTypeScope) === 'Non-Veg') {
+        throw new ValidationError('Pure veg restaurants cannot use non-veg categories');
     }
     if (!categoryAllowsFoodType(category.foodTypeScope, foodType)) {
         throw new ValidationError(

@@ -34,7 +34,9 @@ export const normalizeCategoryApprovalStatus = (value, fallback = 'pending') => 
 };
 
 export const normalizeCategoryFoodTypeScope = (value, fallback = 'Both') => {
-    const normalized = String(value || '').trim();
+    // Prisma hands back the enum's name, NonVeg (stored as "Non-Veg"). Unknown
+    // here, it fell to the fallback, so a Non-Veg category read as Both.
+    const normalized = String(value || '').trim() === 'NonVeg' ? 'Non-Veg' : String(value || '').trim();
     return CATEGORY_FOOD_TYPE_SCOPES.includes(normalized) ? normalized : fallback;
 };
 

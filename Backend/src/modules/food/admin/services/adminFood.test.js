@@ -168,10 +168,12 @@ test('a base price cannot be edited on a dish that has sizes', async () => {
 
 test('a pure veg restaurant cannot be given a non-veg dish', async () => {
     const veg = await makeRestaurant({ pureVegRestaurant: true });
-    // The rule is strict: a pure-veg restaurant may only use Veg-scoped
-    // categories, not even a 'Both' one.
+    // A pure-veg restaurant's dishes must be veg, and may sit in a Veg or a
+    // Both category (the shared ones are Both), never a Non-Veg one. Veg-only
+    // left pure veg restaurants with no usable shared categories.
     const category = await makeCategory({ foodTypeScope: 'Veg' });
     const mixed = await makeCategory({ foodTypeScope: 'Both' });
+    const nonVeg = await makeCategory({ foodTypeScope: 'NonVeg' });
 
     await assert.rejects(
         () => createFood({
@@ -184,10 +186,15 @@ test('a pure veg restaurant cannot be given a non-veg dish', async () => {
     await assert.rejects(
         () => createFood({
             restaurantId: veg.id, name: 'Paneer', price: 200,
-            categoryId: mixed.id, foodType: 'Veg',
+            categoryId: nonVeg.id, foodType: 'Veg',
         }),
-        /only use veg categories/,
+        /cannot use non-veg categories/,
     );
+
+    track(await createFood({
+        restaurantId: veg.id, name: 'Paneer Tikka', price: 200,
+        categoryId: mixed.id, foodType: 'Veg',
+    }));
 
     const ok = track(await createFood({
         restaurantId: veg.id, name: 'Paneer', price: 200,
