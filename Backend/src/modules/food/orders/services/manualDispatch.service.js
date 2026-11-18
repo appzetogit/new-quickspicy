@@ -471,7 +471,7 @@ async function notifyRiderOfAssignment(row, partnerId, windowMs) {
       title: 'New order assigned to you',
       body: `Order #${row.order_id || row.id} has been assigned to you. Tap to accept.`,
       androidTag: `order_${row.id}`,
-      androidChannelId: 'incoming_orders_channel_v3',
+      androidChannelId: 'incoming_orders_channel_v4',
       data: buildIncomingOrderPushData(order, payload, acceptanceDeadlineAt, windowMs),
     });
   } catch (err) {

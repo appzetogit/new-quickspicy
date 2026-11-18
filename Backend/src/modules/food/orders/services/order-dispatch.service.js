@@ -600,7 +600,7 @@ export async function tryAutoAssign(orderId, options = {}) {
         // The app's incoming channel is the _v3 id; the service default is the
         // stale v1 name, and Android silently downgrades an unknown channel to
         // low importance — no sound, no heads-up.
-        androidChannelId: 'incoming_orders_channel_v3',
+        androidChannelId: 'incoming_orders_channel_v4',
         data: {
           ...buildIncomingOrderPushData(order, payload, expiresAt, windowMs),
           offerId: offer.id,
