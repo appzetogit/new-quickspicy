@@ -6,6 +6,8 @@ import { CANCELLED_ORDER_STATUSES } from '../../orders/services/order.helpers.js
 import { logger } from '../../../../utils/logger.js';
 import { parseDayBound } from '../../../../utils/timezone.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { countLiveDeliveryAgents } from './reportDelivery.service.js';
+import { getOnlinePaymentsSummary } from './reportOnlinePayments.service.js';
 
 /**
  * The admin dashboard: headline totals over a preset period or a custom
@@ -266,6 +268,16 @@ export async function getDashboardStats(query = {}) {
     if (range) orderWhere.createdAt = { gte: range.start, lte: range.end };
     if (zoneId) orderWhere.zoneId = zoneId;
 
+    // The "Online payments received" tile. Started now, awaited at the end; a
+    // failure blanks the tile rather than the dashboard.
+    const onlinePaymentsPending = getOnlinePaymentsSummary({
+        window: range ? { gte: range.start, lte: range.end } : null,
+        zoneId,
+    }).catch((error) => {
+        logger.error(`Dashboard online payments failed: ${error?.message || error}`);
+        return null;
+    });
+
     const restaurantWhere = zoneId ? { zoneId } : {};
     // Menu counts follow the zone through the restaurant that owns the dish.
     const menuScope = zoneId ? { restaurant: { zoneId } } : {};
@@ -380,6 +392,12 @@ export async function getDashboardStats(query = {}) {
     const pending = countFor(PENDING_ORDER_STATUSES);
 
     const sums = deliveredTotals._sum;
+    // Riders online right now (not the period): see countLiveDeliveryAgents.
+    // A failure blanks the tile rather than the dashboard.
+    const liveDeliveryAgents = await countLiveDeliveryAgents(zoneId).catch((error) => {
+        logger.error(`Dashboard live delivery agents failed: ${error?.message || error}`);
+        return null;
+    });
     // Net of what was refunded on those orders: that money went back.
     const revenueTotal = Math.max(0, num(sums.total) - num(sums.refundAmount));
     const commissionTotal = num(sums.restaurantCommission);
@@ -399,6 +417,7 @@ export async function getDashboardStats(query = {}) {
         deliveryProfit: adminNetProfit - commissionTotal - platformFeeTotal,
         restaurants: { total: restaurantsTotal, pendingRequests: restaurantsPending },
         deliveryBoys: { total: deliveryTotal, pendingRequests: deliveryPending },
+        liveDeliveryAgents,
         foods: { total: foodsTotal },
         addons: { total: addonsTotal },
         customers: { total: customersTotal },
@@ -409,6 +428,8 @@ export async function getDashboardStats(query = {}) {
         monthlyData: monthlyData.buckets,
         trendGranularity: monthlyData.granularity,
         liveSignals,
+        // { total, count, orders, topups, refundedOnOrders }, or null if it failed.
+        onlinePayments: await onlinePaymentsPending,
     };
 }
 

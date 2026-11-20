@@ -1012,6 +1012,15 @@ export const adminAPI = {
       params,
       contextModule: "admin",
     }),
+  // Popular items, peak hours and busiest zones (delivered orders).
+  getPopularItemsReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/popular-items", { params, contextModule: "admin" }),
+  // Cancellations by who cancelled, value lost, refunds and reasons.
+  getCancellationReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/cancellations", { params, contextModule: "admin" }),
+  // Dishes in and out of stock per restaurant.
+  getInventoryReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/inventory", { params, contextModule: "admin" }),
   /** Get single zone by id */
   getZoneById: (id) =>
     apiClient.get(`/food/admin/zones/${id}`, { contextModule: "admin" }),
@@ -1275,6 +1284,21 @@ export const adminAPI = {
     apiClient.get("/food/admin/reports/coupon-orders", { params, contextModule: "admin" }),
   getCustomerRewardsReport: (params = {}) =>
     apiClient.get("/food/admin/reports/customer-rewards", { params, contextModule: "admin" }),
+  /** One row per IST day: { range, rows, totals }. params: fromDate, toDate (YYYY-MM-DD), zoneId */
+  getEodReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/eod", { params, contextModule: "admin" }),
+  /** { summary, creditsBySource, customers, pagination }. params: fromDate, toDate, search, sort */
+  getCustomerWalletReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/customer-wallet", { params, contextModule: "admin" }),
+  /** { summary, payments, pagination }. params: fromDate, toDate, zoneId, kind (all|orders|topups) */
+  getOnlinePaymentsReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/online-payments", { params, contextModule: "admin" }),
+  /** Per rider and overall: pickup/transit/total times, late deliveries, utilisation. */
+  getDeliveryPerformanceReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/delivery-performance", { params, contextModule: "admin" }),
+  /** Per coupon usage, funding split and ROI, plus referral and cashback payouts. */
+  getPromoUsageReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/promo-usage", { params, contextModule: "admin" }),
   /** rows: [{ restaurantName, ownerName, ownerPhone, zone, ... }] */
   bulkImportRestaurants: (rows) =>
     apiClient.post("/food/admin/restaurants/bulk-import", { rows }, { contextModule: "admin" }),

@@ -1,130 +1,118 @@
-import { useState, useMemo, useEffect } from "react"
-import { Search, Download, ChevronDown, Filter, Wallet, RefreshCw, Calendar, Plus, ArrowUpDown, Settings, FileText, FileSpreadsheet, Code, Loader2 } from "lucide-react"
+import usePagedRows from "@food/components/admin/usePagedRows"
+import { useEffect, useState } from "react"
+import { Wallet, ChevronDown, FileText, FileSpreadsheet, Loader2, Calendar } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@food/components/ui/dropdown-menu"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@food/components/ui/dialog"
-import { exportReportsToCSV, exportReportsToExcel, exportReportsToPDF, exportReportsToJSON } from "@food/components/admin/reports/reportsExportUtils"
+import { exportReportsToCSV, exportReportsToExcel } from "@food/components/admin/reports/reportsExportUtils"
 import { adminAPI } from "@food/api"
 import { toast } from "sonner"
+import searchIcon from "@food/assets/Dashboard-icons/image8.png"
+import exportIcon from "@food/assets/Dashboard-icons/image9.png"
 
-// Import icons from Dashboard-icons
-import debitIcon from "@food/assets/Dashboard-icons/image2.png"
-import creditIcon from "@food/assets/Dashboard-icons/image1.png"
-import balanceIcon from "@food/assets/Dashboard-icons/image6.png"
-const debugLog = (...args) => {}
-const debugWarn = (...args) => {}
-const debugError = (...args) => {}
+const money = (n) => `₹ ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+const EMPTY_SUMMARY = {
+  totalCredited: 0, spentOnOrders: 0, otherDebits: 0, totalDebited: 0, net: 0,
+  customersUsingWallet: 0, customersSpentFromWallet: 0, outstandingBalance: 0, customersWithBalance: 0,
+}
 
+const SORTS = [
+  { value: "spent", label: "Most spent" },
+  { value: "credited", label: "Most credited" },
+  { value: "balance", label: "Highest balance" },
+  { value: "recent", label: "Recently used" },
+]
+
+/**
+ * Customer wallet utilisation: credits by source (top-up, cashback, referral,
+ * refund, admin...), spend on orders, and per customer.
+ */
 export default function CustomerWalletReport() {
+  const [filters, setFilters] = useState({ fromDate: "", toDate: "", sort: "spent" })
   const [searchQuery, setSearchQuery] = useState("")
-  const [transactions, setTransactions] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [walletStats, setWalletStats] = useState({
-    debit: "? 0.00",
-    credit: "? 0.00",
-    balance: "? 0.00"
-  })
+  const [summary, setSummary] = useState(EMPTY_SUMMARY)
+  const [sources, setSources] = useState([])
   const [customers, setCustomers] = useState([])
-  const [filters, setFilters] = useState({
-    fromDate: "",
-    toDate: "",
-    all: "All",
-    customer: "Select Customer",
-  })
-  const [isFilterOpen, setIsFilterOpen] = useState(true)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  // Fetch customer wallet report data
   useEffect(() => {
-    const fetchCustomerWalletReport = async () => {
+    let stale = false
+    const load = async () => {
       try {
-        setLoading(true)
-        
-        const params = {
+        setRefreshing(true)
+        const res = await adminAPI.getCustomerWalletReport({
           fromDate: filters.fromDate || undefined,
           toDate: filters.toDate || undefined,
-          all: filters.all !== "All" ? filters.all : undefined,
-          customer: filters.customer !== "Select Customer" ? filters.customer : undefined,
-          search: searchQuery || undefined
-        }
-
-        const response = await adminAPI.getCustomerWalletReport(params)
-
-        if (response?.data?.success && response.data.data) {
-          setTransactions(response.data.data.transactions || [])
-          setWalletStats(response.data.data.stats || {
-            debit: "? 0.00",
-            credit: "? 0.00",
-            balance: "? 0.00"
-          })
-          setCustomers(response.data.data.customers || [])
-        } else {
-          setTransactions([])
-          if (response?.data?.message) {
-            toast.error(response.data.message)
-          }
-        }
+          sort: filters.sort,
+          search: searchQuery.trim() || undefined,
+          limit: 1000,
+        })
+        if (stale) return
+        const data = res?.data?.data
+        setSummary({ ...EMPTY_SUMMARY, ...(data?.summary || {}) })
+        setSources(data?.creditsBySource || [])
+        setCustomers(data?.customers || [])
+        setTotalCount(data?.pagination?.total ?? (data?.customers || []).length)
       } catch (error) {
-        debugError("Error fetching customer wallet report:", error)
-        toast.error("Failed to fetch customer wallet report")
-        setTransactions([])
+        if (stale) return
+        toast.error(error?.response?.data?.message || "Failed to fetch customer wallet report")
+        setCustomers([])
+        setSources([])
+        setSummary(EMPTY_SUMMARY)
       } finally {
-        setLoading(false)
+        if (!stale) {
+          setRefreshing(false)
+          setLoading(false)
+        }
       }
     }
+    load()
+    return () => { stale = true }
+  }, [filters, searchQuery, refreshTick])
 
-    fetchCustomerWalletReport()
-  }, [filters, searchQuery])
-
-  const filteredTransactions = useMemo(() => {
-    return transactions // Backend already filters, so just return transactions
-  }, [transactions])
-
-  const totalTransactions = filteredTransactions.length
+  const { pageRows, offset, pager } = usePagedRows(customers)
 
   const handleReset = () => {
-    setFilters({
-      fromDate: "",
-      toDate: "",
-      all: "All",
-      customer: "Select Customer",
-    })
+    setFilters({ fromDate: "", toDate: "", sort: "spent" })
     setSearchQuery("")
   }
 
   const handleExport = (format) => {
-    if (filteredTransactions.length === 0) {
-      alert("No data to export")
+    if (!customers.length) {
+      toast.error("No data to export")
       return
     }
+    const sourceKeys = sources.map((s) => s.key)
+    const data = customers.map((c, i) => ({
+      sl: String(i + 1),
+      name: c.name || (c.deleted ? "Deleted customer" : ""),
+      phone: c.phone,
+      ...Object.fromEntries(sourceKeys.map((k) => [k, Number(c.credits?.[k] || 0).toFixed(2)])),
+      credited: Number(c.credited).toFixed(2),
+      spentOnOrders: Number(c.spentOnOrders).toFixed(2),
+      otherDebits: Number(c.otherDebits).toFixed(2),
+      currentBalance: Number(c.currentBalance).toFixed(2),
+    }))
     const headers = [
       { key: "sl", label: "SI" },
-      { key: "transactionId", label: "Transaction ID" },
-      { key: "customer", label: "Customer" },
-      { key: "credit", label: "Credit" },
-      { key: "debit", label: "Debit" },
-      { key: "balance", label: "Balance" },
-      { key: "transactionType", label: "Transaction Type" },
-      { key: "reference", label: "Reference" },
-      { key: "createdAt", label: "Created At" },
+      { key: "name", label: "Customer" },
+      { key: "phone", label: "Phone" },
+      ...sources.map((s) => ({ key: s.key, label: s.label })),
+      { key: "credited", label: "Total Credited" },
+      { key: "spentOnOrders", label: "Spent on Orders" },
+      { key: "otherDebits", label: "Other Debits" },
+      { key: "currentBalance", label: "Current Balance" },
     ]
-    switch (format) {
-      case "csv": exportReportsToCSV(filteredTransactions, headers, "customer_wallet_report"); break
-      case "excel": exportReportsToExcel(filteredTransactions, headers, "customer_wallet_report"); break
-      case "pdf": exportReportsToPDF(filteredTransactions, headers, "customer_wallet_report", "Customer Wallet Report"); break
-      case "json": exportReportsToJSON(filteredTransactions, "customer_wallet_report"); break
-    }
+    const name = "customer_wallet_report"
+    if (format === "csv") exportReportsToCSV(data, headers, name)
+    else exportReportsToExcel(data, headers, name)
   }
-
-  const handleFilterApply = () => {
-    // Filters are already applied via useMemo
-  }
-
-  const activeFiltersCount = (filters.fromDate ? 1 : 0) + (filters.toDate ? 1 : 0) + (filters.all !== "All" ? 1 : 0) + (filters.customer !== "Select Customer" ? 1 : 0)
 
   if (loading) {
     return (
-      <div className="p-4 lg:p-6 bg-slate-50 min-h-screen flex items-center justify-center">
+      <div className="p-2 lg:p-3 bg-slate-50 min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-gray-600">Loading customer wallet report...</p>
@@ -133,328 +121,189 @@ export default function CustomerWalletReport() {
     )
   }
 
+  const cards = [
+    { label: "Total credited", value: money(summary.totalCredited), sub: "Into customer wallets", tone: "text-green-600" },
+    { label: "Spent on orders", value: money(summary.spentOnOrders), sub: summary.otherDebits ? `Other debits ${money(summary.otherDebits)}` : "Paid from wallets", tone: "text-orange-600" },
+    { label: "Net", value: money(summary.net), sub: "Credited less debited", tone: "text-slate-900" },
+    { label: "Customers using wallet", value: Number(summary.customersUsingWallet).toLocaleString("en-IN"), sub: `${summary.customersSpentFromWallet} spent from it`, tone: "text-slate-900" },
+    { label: "Balance held now", value: money(summary.outstandingBalance), sub: `${summary.customersWithBalance} customers, all time`, tone: "text-blue-600" },
+  ]
+
   return (
-    <div className="p-4 lg:p-6 bg-slate-50 min-h-screen overflow-x-hidden">
-      <div className="w-full max-w-full">
-        {/* Page Header */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-white" />
+    <div className="p-2 lg:p-3 bg-slate-50 min-h-screen">
+      <div className="w-full mx-auto">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+              <Wallet className="w-3.5 h-3.5 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">Customer Wallet Report</h1>
+            <h1 className="text-lg font-bold text-slate-900">Customer Wallet Report</h1>
           </div>
         </div>
 
-        {/* Filter Options Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-          <button
-            onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className="flex items-center justify-between w-full mb-4"
-          >
-            <h3 className="text-sm font-semibold text-slate-700">Filter Options</h3>
-            <ChevronDown
-              className={`w-5 h-5 text-slate-600 transition-transform ${isFilterOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          
-          {isFilterOpen && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    From Date
-                  </label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="date"
-                      value={filters.fromDate}
-                      onChange={(e) => setFilters(prev => ({ ...prev, fromDate: e.target.value }))}
-                      className="w-full pl-10 pr-4 py-2.5 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="dd-mm-yyyy"
-                    />
-                  </div>
-                </div>
-
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    To Date
-                  </label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="date"
-                      value={filters.toDate}
-                      onChange={(e) => setFilters(prev => ({ ...prev, toDate: e.target.value }))}
-                      className="w-full pl-10 pr-4 py-2.5 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="dd-mm-yyyy"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    All
-                  </label>
-                  <select
-                    value={filters.all}
-                    onChange={(e) => setFilters(prev => ({ ...prev, all: e.target.value }))}
-                    className="w-full px-4 py-2.5 pr-8 text-sm rounded-lg border border-slate-300 bg-white text-slate-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="All">All</option>
-                    <option value="Credit">Credit</option>
-                    <option value="Debit">Debit</option>
-                  </select>
-                  <ChevronDown className="absolute right-2 bottom-2.5 w-4 h-4 text-slate-500 pointer-events-none" />
-                </div>
-
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    Customer
-                  </label>
-                  <select
-                    value={filters.customer}
-                    onChange={(e) => setFilters(prev => ({ ...prev, customer: e.target.value }))}
-                    className="w-full px-4 py-2.5 pr-8 text-sm rounded-lg border border-slate-300 bg-white text-slate-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Select Customer">Select Customer</option>
-                    {customers.map(customer => (
-                      <option key={customer} value={customer}>{customer}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 bottom-2.5 w-4 h-4 text-slate-500 pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  onClick={handleReset}
-                  className="px-6 py-2.5 text-sm font-medium rounded-lg border border-blue-500 text-blue-600 bg-white hover:bg-blue-50 transition-all flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Reset
-                </button>
-                <button 
-                  onClick={handleFilterApply}
-                  className={`px-6 py-2.5 text-sm font-medium rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-all flex items-center gap-2 relative ${
-                    activeFiltersCount > 0 ? "ring-2 ring-blue-300" : ""
-                  }`}
-                >
-                  <Filter className="w-4 h-4" />
-                  Filter
-                  {activeFiltersCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold">
-                      {activeFiltersCount}
-                    </span>
-                  )}
-                </button>
-              </div>
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="date"
+                value={filters.fromDate}
+                max={filters.toDate || undefined}
+                onChange={(e) => setFilters((prev) => ({ ...prev, fromDate: e.target.value }))}
+                className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="From date"
+              />
             </div>
-          )}
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {/* Debit Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Debit</p>
-                <p className="text-2xl font-bold text-slate-900">{walletStats.debit}</p>
-              </div>
-              <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
-                <img src={debitIcon} alt="Debit" className="w-8 h-8" />
-              </div>
+            <div className="relative flex-1 min-w-0">
+              <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="date"
+                value={filters.toDate}
+                min={filters.fromDate || undefined}
+                onChange={(e) => setFilters((prev) => ({ ...prev, toDate: e.target.value }))}
+                className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="To date"
+              />
             </div>
-          </div>
-
-          {/* Credit Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Credit</p>
-                <p className="text-2xl font-bold text-slate-900">{walletStats.credit}</p>
-              </div>
-              <div className="w-12 h-12 rounded-lg bg-pink-100 flex items-center justify-center">
-                <img src={creditIcon} alt="Credit" className="w-8 h-8" />
-              </div>
+            <div className="relative flex-1 min-w-0">
+              <select
+                value={filters.sort}
+                onChange={(e) => setFilters((prev) => ({ ...prev, sort: e.target.value }))}
+                className="w-full px-2.5 py-1.5 pr-5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs appearance-none cursor-pointer"
+                aria-label="Sort"
+              >
+                {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" />
             </div>
-          </div>
-
-          {/* Balance Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Balance</p>
-                <p className="text-2xl font-bold text-slate-900">{walletStats.balance}</p>
-              </div>
-              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                <img src={balanceIcon} alt="Balance" className="w-8 h-8" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Transactions Table Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <div className="flex items-center gap-2">
-              <Plus className="w-5 h-5 text-slate-600" />
-              <h2 className="text-xl font-bold text-slate-900">Transactions</h2>
-            </div>
-
-            <button className="px-4 py-2.5 text-sm font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-all">
-              <Download className="w-4 h-4" />
-              <span>Export</span>
-              <ChevronDown className="w-3 h-3" />
+            <button
+              onClick={() => setRefreshTick((t) => t + 1)}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all whitespace-nowrap"
+            >
+              Filter
+            </button>
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all whitespace-nowrap"
+            >
+              Reset
             </button>
           </div>
+          <p className="text-[11px] text-slate-500 mt-2">No dates: all time. Dates are India days.</p>
+        </div>
 
-          {/* Table */}
+        {/* Summary */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+          {cards.map((card) => (
+            <div key={card.label} className="rounded-lg shadow-sm border border-slate-200 p-3" style={{ backgroundColor: "#f1f5f9" }}>
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">{card.label}</p>
+              <p className={`text-base font-bold mt-1 ${card.tone}`}>{card.value}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{card.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Credits by source */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 mb-3">
+          <h2 className="text-sm font-bold text-slate-900 mb-2">Credited by source</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {sources.map((s) => (
+              <div key={s.key} className="rounded-lg border border-slate-200 px-3 py-2">
+                <p className="text-[11px] text-slate-500">{s.label}</p>
+                <p className="text-sm font-semibold text-slate-900">{money(s.amount)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Per customer */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h2 className="text-base font-bold text-slate-900">Customers {totalCount}</h2>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:flex-initial min-w-[180px]">
+                <input
+                  type="text"
+                  placeholder="Search by name or phone"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 pr-2 py-1.5 w-full text-[11px] rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <img src={searchIcon} alt="Search" className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3" />
+                {refreshing && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 animate-spin" />}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 transition-all">
+                    <img src={exportIcon} alt="Export" className="w-3 h-3" />
+                    <span>Export</span>
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-50">
+                  <DropdownMenuLabel>Export Format</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleExport("csv")} className="cursor-pointer">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("excel")} className="cursor-pointer">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Export as Excel
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          {totalCount > customers.length ? (
+            <p className="text-[11px] text-slate-500 mb-2">Showing the first {customers.length}. Narrow the dates or search to see the rest.</p>
+          ) : null}
+
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full" style={{ minWidth: "900px" }}>
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>SI</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Transaction Id</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Customer</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Credit</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Debit</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Balance</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Transaction Type</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Reference</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                    <div className="flex items-center gap-1">
-                      <span>Created At</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
+                  {["SI", "Customer", "Phone", "Credited", "Spent on Orders", "Other Debits", "Current Balance", "Last Used"].map((h) => (
+                    <th key={h} className="px-1.5 py-1 text-left text-[8px] font-bold text-slate-700 uppercase tracking-wider">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {filteredTransactions.length === 0 ? (
+                {customers.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-20 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <p className="text-lg font-semibold text-slate-700 mb-1">No Data Found</p>
-                        <p className="text-sm text-slate-500">No transactions match your search</p>
-                      </div>
+                    <td colSpan={8} className="px-6 py-20 text-center">
+                      <p className="text-lg font-semibold text-slate-700 mb-1">No Data Found</p>
+                      <p className="text-sm text-slate-500">No wallet activity in this range</p>
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction) => (
-                    <tr key={transaction.sl} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-sm font-medium text-slate-700">{transaction.sl}</span>
+                  pageRows.map((c, index) => (
+                    <tr key={c.customerId} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-1.5 py-1 text-[10px] font-medium text-slate-700">{offset + index + 1}</td>
+                      <td className="px-1.5 py-1 text-[10px] text-slate-700">{c.name || (c.deleted ? "Deleted customer" : "—")}</td>
+                      <td className="px-1.5 py-1 text-[10px] text-slate-700">{c.phone || "—"}</td>
+                      <td
+                        className="px-1.5 py-1 text-[10px] text-green-700 font-medium"
+                        title={sources.filter((s) => c.credits?.[s.key]).map((s) => `${s.label}: ${money(c.credits[s.key])}`).join("\n")}
+                      >
+                        {money(c.credited)}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-slate-700 font-mono break-all">{transaction.transactionId}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <a
-                          href={`#customer-${transaction.customer}`}
-                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          {transaction.customer}
-                        </a>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs font-medium text-slate-900">{transaction.credit}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs font-medium text-slate-900">{transaction.debit}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs font-medium text-slate-900">{transaction.balance}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="px-2 py-1 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
-                          {transaction.transactionType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs text-slate-700">{transaction.reference}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs text-slate-700">{transaction.createdAt}</span>
+                      <td className="px-1.5 py-1 text-[10px] text-orange-700 font-medium">{money(c.spentOnOrders)}</td>
+                      <td className="px-1.5 py-1 text-[10px] text-slate-700">{money(c.otherDebits)}</td>
+                      <td className="px-1.5 py-1 text-[10px] text-slate-900 font-semibold">{money(c.currentBalance)}</td>
+                      <td className="px-1.5 py-1 text-[10px] text-slate-500 whitespace-nowrap">
+                        {c.lastUsedAt ? new Date(c.lastUsedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+            {pager}
           </div>
         </div>
       </div>
-
-      {/* Settings Dialog */}
-      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="max-w-md bg-white p-0 opacity-0 data-[state=open]:opacity-100 data-[state=closed]:opacity-0 transition-opacity duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:scale-100 data-[state=closed]:scale-100">
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="w-5 h-5" />
-              Report Settings
-            </DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6">
-            <p className="text-sm text-slate-700">
-              Customer wallet report settings and preferences will be available here.
-            </p>
-          </div>
-          <div className="px-6 pb-6 flex items-center justify-end">
-            <button
-              onClick={() => setIsSettingsOpen(false)}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-md"
-            >
-              Close
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
-

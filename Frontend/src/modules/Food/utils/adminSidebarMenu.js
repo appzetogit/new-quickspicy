@@ -234,10 +234,18 @@ export const adminSidebarMenu = [
     label: "REPORT MANAGEMENT",
     items: [
       { type: "link", label: "Transaction Report", path: "/admin/food/transaction-report", icon: "FileText" },
+      { type: "link", label: "EOD Cumulative Report", path: "/admin/food/order-report/eod", icon: "FileText" },
+      { type: "link", label: "Online Payments", path: "/admin/food/transaction-report/online-payments", icon: "FileText" },
+      { type: "link", label: "Customer Wallet Report", path: "/admin/food/customer-report/wallet", icon: "Wallet" },
       { type: "link", label: "Order Report", path: "/admin/food/order-report/regular", icon: "FileText" },
       { type: "link", label: "Tax Report", path: "/admin/food/tax-report", icon: "Receipt" },
+      { type: "link", label: "Popular Items & Analytics", path: "/admin/food/popular-items-report", icon: "TrendingUp" },
+      { type: "link", label: "Cancellation & Refunds", path: "/admin/food/cancellation-report", icon: "AlertTriangle" },
+      { type: "link", label: "Inventory & Stock", path: "/admin/food/inventory-report", icon: "Package" },
       { type: "link", label: "Expense Report", path: "/admin/food/expense-report", icon: "Receipt" },
       { type: "link", label: "Campaign Order Report", path: "/admin/food/order-report/campaign", icon: "FileText" },
+      { type: "link", label: "Promo & Discount Usage", path: "/admin/food/order-report/promo-usage", icon: "FileText" },
+      { type: "link", label: "Delivery Performance", path: "/admin/food/order-report/delivery-performance", icon: "FileText" },
       {
         type: "expandable",
         label: "Disbursement Report",

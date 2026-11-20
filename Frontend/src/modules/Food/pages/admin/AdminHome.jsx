@@ -344,6 +344,18 @@ export default function AdminHome() {
               path="/admin/food/transaction-report"
             />
             <MetricCard
+              title="Online payments received"
+              value={formatCurrency(dashboardData?.onlinePayments?.total || 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              helper={`${(dashboardData?.onlinePayments?.count || 0).toLocaleString("en-IN")} Razorpay payments: ${periodLabel}`}
+              icon={<CreditCard className="h-5 w-5 text-teal-600" />}
+              accent="bg-teal-200/40"
+              // The screen opens on the same window and zone as the dashboard.
+              path={`/admin/food/transaction-report/online-payments?${new URLSearchParams({
+                ...(dashboardData?.range?.from ? { from: dashboardData.range.from, to: dashboardData.range.to } : {}),
+                ...(selectedZone !== "all" ? { zoneId: selectedZone } : {}),
+              }).toString()}`}
+            />
+            <MetricCard
               title="Total restaurants"
               value={totalRestaurants.toLocaleString("en-IN")}
               helper="Approved restaurants"
@@ -366,6 +378,14 @@ export default function AdminHome() {
               icon={<Truck className="h-5 w-5 text-indigo-600" />}
               accent="bg-indigo-200/40"
               path="/admin/food/delivery-partners"
+            />
+            <MetricCard
+              title="Live delivery agents"
+              value={Number(dashboardData?.liveDeliveryAgents?.live || 0).toLocaleString("en-IN")}
+              helper={`Online now, location in the last ${dashboardData?.liveDeliveryAgents?.freshWithinMinutes || 15} min (${Number(dashboardData?.liveDeliveryAgents?.online || 0).toLocaleString("en-IN")} switched online)`}
+              icon={<Truck className="h-5 w-5 text-emerald-600" />}
+              accent="bg-emerald-200/40"
+              path={`/admin/food/delivery-partners/live-tracking${selectedZone !== "all" ? `?zoneId=${encodeURIComponent(selectedZone)}` : ""}`}
             />
             <MetricCard
               title="Delivery boy request pending"

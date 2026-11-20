@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { Bike, Clock, Loader2, MapPin, Navigation, RefreshCw, Search, Wifi, WifiOff } from "lucide-react"
 import { Loader } from "@googlemaps/js-api-loader"
 import { adminAPI } from "@food/api"
@@ -181,6 +182,10 @@ export default function DeliveryLiveTracking() {
   const [selectedDeliveryId, setSelectedDeliveryId] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  // ?zoneId= comes from the dashboard's "Live delivery agents" tile.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [zoneFilter, setZoneFilter] = useState(searchParams.get("zoneId") || "")
+  const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [mapLoading, setMapLoading] = useState(true)
   const [mapError, setMapError] = useState("")
@@ -196,6 +201,7 @@ export default function DeliveryLiveTracking() {
         limit: 1000,
         status: "approved",
         isActive: true,
+        ...(zoneFilter ? { zoneId: zoneFilter } : {}),
       })
       const rows = response?.data?.data?.deliveryPartners || []
       setDeliverymen(Array.isArray(rows) ? rows : [])
@@ -232,10 +238,26 @@ export default function DeliveryLiveTracking() {
   }
 
   useEffect(() => {
-    refreshAll()
+    fetchActiveOrders()
     const timer = setInterval(fetchActiveOrders, ACTIVE_ORDERS_REFRESH_MS)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    adminAPI.getZones({ limit: 1000 })
+      .then((response) => setZones(response?.data?.data?.zones || []))
+      .catch((error) => debugError("Failed to load zones:", error))
+  }, [])
+
+  // Riders are listed by home zone. Changing it reloads the list and keeps
+  // the choice in the address, so a refresh or shared link shows the same.
+  useEffect(() => {
+    fetchDeliverymen()
+    const next = new URLSearchParams(searchParams)
+    if (zoneFilter) next.set("zoneId", zoneFilter)
+    else next.delete("zoneId")
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
+  }, [zoneFilter])
 
   useEffect(() => {
     const unsubscribe = subscribeAllDeliveryLocations(
@@ -663,6 +685,18 @@ export default function DeliveryLiveTracking() {
                 </button>
               ))}
             </div>
+
+            <select
+              value={zoneFilter}
+              onChange={(event) => setZoneFilter(event.target.value)}
+              aria-label="Zone"
+              className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="">All zones</option>
+              {zones.map((zone) => (
+                <option key={zone._id || zone.id} value={zone._id || zone.id}>{zone.zoneName || zone.name || "Unnamed zone"}</option>
+              ))}
+            </select>
 
             <div className="relative mt-3">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

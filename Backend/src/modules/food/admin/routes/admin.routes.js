@@ -38,6 +38,9 @@ import * as offerBanner from '../controllers/offerBanner.controller.js';
 import * as tipSurge from '../controllers/tipSurge.controller.js';
 import * as highlightBadges from '../controllers/highlightBadge.controller.js';
 import * as foundations from '../controllers/adminFoundations.controller.js';
+import * as moneyReports from '../controllers/adminMoneyReports.controller.js';
+import * as reportPerformance from '../controllers/reportPerformance.controller.js';
+import * as reportInsights from '../controllers/reportInsights.controller.js';
 
 const router = express.Router();
 
@@ -282,11 +285,20 @@ router.get(
 router.get('/dashboard-stats', adminController.getDashboardStats);
 router.get('/reports/coupon-orders', foundations.couponOrderReport);
 router.get('/reports/customer-rewards', foundations.customerRewardsReport);
+router.get('/reports/delivery-performance', reportPerformance.getDeliveryPerformanceReport);
+router.get('/reports/promo-usage', reportPerformance.getPromoUsageReport);
 router.get('/reports/restaurants', adminController.getRestaurantReport);
 router.get('/reports/transactions', adminController.getTransactionReport);
+router.get('/reports/eod', moneyReports.eodReport);
+router.get('/reports/customer-wallet', moneyReports.customerWalletReport);
+router.get('/reports/online-payments', moneyReports.onlinePaymentsReport);
 router.get('/reports/tax', adminController.getTaxReport);
 router.get('/reports/tax/orders', adminController.getTaxReportOrders);
 router.get('/reports/tax/:id', adminController.getTaxReportDetail);
+// report_management via the /reports prefix (resolveSectionFromRequest).
+router.get('/reports/popular-items', reportInsights.popularItemsReport);
+router.get('/reports/cancellations', reportInsights.cancellationReport);
+router.get('/reports/inventory', reportInsights.inventoryReport);
 router.get('/restaurants/pending', adminController.getPendingRestaurants);
 router.get('/restaurants/unregistered', adminController.getUnregisteredRestaurants);
 router.delete('/restaurants/unregistered/:id', adminController.deleteUnregisteredRestaurant);

@@ -92,14 +92,22 @@ const RiderCohorts = lazy(() => import("@food/pages/admin/delivery-partners/Ride
 // Disbursement Management
 // Report Management
 const TransactionReport = lazy(() => import("@food/pages/admin/reports/TransactionReport"));
+const EodReport = lazy(() => import("@food/pages/admin/reports/EodReport"));
+const CustomerWalletReport = lazy(() => import("@food/pages/admin/reports/CustomerWalletReport"));
+const OnlinePaymentsReport = lazy(() => import("@food/pages/admin/reports/OnlinePaymentsReport"));
 const ExpenseReport = lazy(() => import("@food/pages/admin/reports/ExpenseReport"));
 const DisbursementReportRestaurants = lazy(() => import("@food/pages/admin/reports/DisbursementReportRestaurants"));
 const DisbursementReportDeliverymen = lazy(() => import("@food/pages/admin/reports/DisbursementReportDeliverymen"));
 const RegularOrderReport = lazy(() => import("@food/pages/admin/reports/RegularOrderReport"));
 const CampaignOrderReport = lazy(() => import("@food/pages/admin/reports/CampaignOrderReport"));
+const DeliveryPerformanceReport = lazy(() => import("@food/pages/admin/reports/DeliveryPerformanceReport"));
+const PromoUsageReport = lazy(() => import("@food/pages/admin/reports/PromoUsageReport"));
 const RestaurantReport = lazy(() => import("@food/pages/admin/reports/RestaurantReport"));
 const FeedbackExperienceReport = lazy(() => import("@food/pages/admin/reports/FeedbackExperienceReport"));
 const TaxReport = lazy(() => import("@food/pages/admin/reports/TaxReport"));
+const PopularItemsReport = lazy(() => import("@food/pages/admin/reports/FoodReport"));
+const CancellationReport = lazy(() => import("@food/pages/admin/reports/CancellationReport"));
+const InventoryReport = lazy(() => import("@food/pages/admin/reports/InventoryReport"));
 // Transaction Management
 const RestaurantWithdraws = lazy(() => import("@food/pages/admin/transactions/RestaurantWithdraws"));
 const BankChangeRequests = lazy(() => import("@food/pages/admin/transactions/BankChangeRequests"));
@@ -350,14 +358,22 @@ export default function AdminRouter() {
 
             {/* REPORTS & SETTINGS */}
             <Route path="transaction-report" element={<TransactionReport />} />
+            <Route path="transaction-report/online-payments" element={<OnlinePaymentsReport />} />
+            <Route path="order-report/eod" element={<EodReport />} />
+            <Route path="customer-report/wallet" element={<CustomerWalletReport />} />
             <Route path="expense-report" element={<ExpenseReport />} />
             <Route path="disbursement-report/restaurants" element={<DisbursementReportRestaurants />} />
             <Route path="disbursement-report/deliverymen" element={<DisbursementReportDeliverymen />} />
             <Route path="order-report/regular" element={<RegularOrderReport />} />
             <Route path="order-report/campaign" element={<CampaignOrderReport />} />
+            <Route path="order-report/delivery-performance" element={<DeliveryPerformanceReport />} />
+            <Route path="order-report/promo-usage" element={<PromoUsageReport />} />
             <Route path="restaurant-report" element={<RestaurantReport />} />
             <Route path="customer-report/feedback-experience" element={<FeedbackExperienceReport />} />
             <Route path="tax-report" element={<TaxReport />} />
+            <Route path="popular-items-report" element={<PopularItemsReport />} />
+            <Route path="cancellation-report" element={<CancellationReport />} />
+            <Route path="inventory-report" element={<InventoryReport />} />
             {/* The Tax Report already covers GST per restaurant. */}
             <Route path="restaurant-vat-report" element={<Navigate to="/admin/food/tax-report" replace />} />
             
