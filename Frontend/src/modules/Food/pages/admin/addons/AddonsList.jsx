@@ -34,6 +34,16 @@ const getAddonImage = (addon) =>
 
 export default function AddonsList() {
   const [searchQuery, setSearchQuery] = useState("")
+  // Restaurant filter for the list (separate from the create form's picker).
+  const [filterRestaurantId, setFilterRestaurantId] = useState("")
+  const [filterRestaurants, setFilterRestaurants] = useState([])
+
+  useEffect(() => {
+    adminAPI
+      .getRestaurants({ limit: 1000, status: "approved" })
+      .then((res) => setFilterRestaurants(res?.data?.data?.restaurants || []))
+      .catch(() => setFilterRestaurants([]))
+  }, [])
   const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
   const [submittingAction, setSubmittingAction] = useState(false)
@@ -56,6 +66,7 @@ export default function AddonsList() {
           // only approved items should be visible in this list
           approvalStatus: "approved",
           search: searchQuery?.trim() ? searchQuery.trim() : undefined,
+          restaurantId: filterRestaurantId || undefined,
           limit: 200,
           page: 1,
         })
@@ -75,7 +86,7 @@ export default function AddonsList() {
 
     const t = setTimeout(fetchAddons, 250)
     return () => clearTimeout(t)
-  }, [searchQuery, refreshKey])
+  }, [searchQuery, filterRestaurantId, refreshKey])
 
   const filteredAddons = useMemo(() => {
     const result = Array.isArray(addons) ? [...addons] : []
@@ -316,6 +327,17 @@ export default function AddonsList() {
               className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
             />
           </div>
+          <select
+            aria-label="Filter by restaurant"
+            value={filterRestaurantId}
+            onChange={(e) => setFilterRestaurantId(e.target.value)}
+            className="w-full sm:w-64 px-3 py-2.5 text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400"
+          >
+            <option value="">All restaurants</option>
+            {filterRestaurants.map((r) => (
+              <option key={r._id || r.id} value={r._id || r.id}>{r.restaurantName || r.name}</option>
+            ))}
+          </select>
           <div className="text-sm text-slate-600">
             Showing <span className="font-semibold">{countLabel}</span>
           </div>

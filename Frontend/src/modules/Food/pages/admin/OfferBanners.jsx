@@ -49,7 +49,16 @@ export default function OfferBanners() {
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [zones, setZones] = useState([])
+  const [restaurants, setRestaurants] = useState([])
   const fileRef = useRef(null)
+
+  useEffect(() => {
+    // For "Opens on tap → Restaurant". If it fails, a custom link still works.
+    adminAPI
+      .getRestaurants({ limit: 1000, status: "approved" })
+      .then((res) => setRestaurants(res?.data?.data?.restaurants || []))
+      .catch(() => setRestaurants([]))
+  }, [])
 
   const load = async () => {
     setError("")
@@ -253,7 +262,7 @@ export default function OfferBanners() {
                 />
               </label>
               <p className="mt-1 text-xs text-slate-500">
-                Wide artwork, up to {MAX_MB}MB. {isEditing ? "Leave it to keep the current image." : ""}
+                Recommended size: 1260 × 540 px (21:9, wide). JPG, PNG or WebP, up to {MAX_MB}MB. {isEditing ? "Leave it to keep the current image." : ""}
               </p>
             </div>
 
@@ -278,9 +287,13 @@ export default function OfferBanners() {
                   const link = form.ctaLink || ""
                   const under = link.match(/^\/store-99\?maxPrice=(\d+)/)
                   const pct = link.match(/^\/discount\/(\d+)/)
+                  // The server stores restaurant links as /food/user/restaurants/<id>.
+                  const shop = link.match(/\/restaurants\/([^/?#\s]+)/)
                   const mode = !link
                     ? "none"
-                    : under
+                    : shop
+                      ? "restaurant"
+                      : under
                       ? "under"
                       : pct
                         ? "discount"
@@ -301,11 +314,15 @@ export default function OfferBanners() {
                           else if (m === "under") setLink("/store-99?maxPrice=49")
                           else if (m === "discount") setLink("/discount/20")
                           else if (m === "offers") setLink("/all-offers")
-                          else setLink("/")
+                          else if (m === "restaurant") {
+                            const first = restaurants[0]
+                            setLink(first ? `/food/user/restaurants/${first._id || first.id}` : "/food/user/restaurants/")
+                          } else setLink("/")
                         }}
                         className={field}
                       >
                         <option value="none">Not tappable</option>
+                        <option value="restaurant">A restaurant</option>
                         <option value="under">Items under ₹…</option>
                         <option value="discount">Restaurants with …% off or more</option>
                         <option value="offers">All offers page</option>
@@ -324,11 +341,26 @@ export default function OfferBanners() {
                           className={`${field} w-24`}
                         />
                       )}
+                      {mode === "restaurant" && (
+                        <select
+                          aria-label="Restaurant the banner opens"
+                          value={shop?.[1] || ""}
+                          onChange={(e) => setLink(`/food/user/restaurants/${e.target.value}`)}
+                          className={`${field} flex-1 min-w-[220px]`}
+                        >
+                          {!restaurants.some((r) => (r._id || r.id) === shop?.[1]) && (
+                            <option value={shop?.[1] || ""}>{shop?.[1] ? "Current restaurant" : "Select a restaurant…"}</option>
+                          )}
+                          {restaurants.map((r) => (
+                            <option key={r._id || r.id} value={r._id || r.id}>{r.restaurantName || r.name}</option>
+                          ))}
+                        </select>
+                      )}
                       {mode === "custom" && (
                         <input
                           value={link}
                           onChange={(e) => setLink(e.target.value)}
-                          placeholder="/restaurant-detail/<id> or https://…"
+                          placeholder="/all-offers or https://…"
                           className={`${field} flex-1 min-w-[220px]`}
                         />
                       )}

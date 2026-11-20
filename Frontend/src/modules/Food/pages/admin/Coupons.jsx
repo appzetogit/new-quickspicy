@@ -242,6 +242,11 @@ export default function Coupons() {
     restaurantIds: [],
     endDate: "",
     startDate: "",
+    endTime: "",
+    startTime: "",
+    activeDays: [],
+    activeFromTime: "",
+    activeToTime: "",
     minOrderValue: "",
     maxDiscount: "",
     usageLimit: "",
@@ -369,13 +374,13 @@ export default function Coupons() {
     if (f.customerScope === "specific" && (!Array.isArray(f.customerIds) || f.customerIds.length === 0)) {
       e.customerIds = "Choose at least one customer"
     }
-    const start = f.startDate ? new Date(`${f.startDate}T00:00:00`) : null
-    const end = f.endDate ? new Date(`${f.endDate}T00:00:00`) : null
+    const start = f.startDate ? new Date(`${f.startDate}T${f.startTime || "00:00"}:00`) : null
+    const end = f.endDate ? new Date(`${f.endDate}T${f.endTime || "23:59"}:59`) : null
     const now = new Date()
-    if (end && end < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
-      e.endDate = "End date cannot be in the past"
+    if (end && end <= now) {
+      e.endDate = "Expiry cannot be in the past"
     }
-    if (start && end && start > end) {
+    if (start && end && start >= end) {
       e.startDate = "Start date must be before end date"
       e.endDate = "End date must be after start date"
     }
@@ -463,6 +468,11 @@ export default function Coupons() {
       restaurantIds: [],
       endDate: "",
       startDate: "",
+      endTime: "",
+      startTime: "",
+      activeDays: [],
+      activeFromTime: "",
+      activeToTime: "",
       minOrderValue: "",
       maxDiscount: "",
       usageLimit: "",
@@ -514,8 +524,13 @@ export default function Coupons() {
         restaurantScope: formData.restaurantScope,
         restaurantIds: formData.restaurantScope === "selected" ? formData.restaurantIds : undefined,
         customerIds: formData.customerScope === "specific" ? formData.customerIds : undefined,
-        endDate: formData.endDate || undefined,
-        startDate: formData.startDate || undefined,
+        endDate: withTime(formData.endDate, formData.endTime),
+        startDate: withTime(formData.startDate, formData.startTime),
+        // Kept as saved, so editing a restaurant's coupon here does not wipe
+        // the days and hours it runs on.
+        activeDays: Array.isArray(formData.activeDays) ? formData.activeDays : [],
+        activeFromTime: formData.activeFromTime || undefined,
+        activeToTime: formData.activeToTime || undefined,
         minOrderValue: formData.minOrderValue !== "" ? Number(formData.minOrderValue) : undefined,
         maxDiscount: formData.discountType === "percentage" && formData.maxDiscount !== "" ? Number(formData.maxDiscount) : undefined,
         usageLimit: formData.usageLimit !== "" ? Number(formData.usageLimit) : undefined,
@@ -551,6 +566,20 @@ export default function Coupons() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
   }
 
+  // HH:mm of a stored bound, or "" when it is the whole-day default (start of
+  // day for a start date, end of day for an expiry) so the field reads blank.
+  const toTimeInput = (value, wholeDay) => {
+    if (!value) return ""
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return ""
+    const t = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+    return t === wholeDay ? "" : t
+  }
+
+  // A date plus an optional time, as an IST instant the server reads exactly.
+  // A bare date is sent as before: the server makes it start or end of day.
+  const withTime = (date, time) => (date && time ? `${date}T${time}:00+05:30` : date || undefined)
+
   const startEditOffer = (offer) => {
     const flat = offer.discountType === "flat-price"
     setFormData({
@@ -563,6 +592,11 @@ export default function Coupons() {
       restaurantIds: Array.isArray(offer.restaurantIds) ? offer.restaurantIds : [],
       endDate: toDateInput(offer.endDate),
       startDate: toDateInput(offer.startDate),
+      endTime: toTimeInput(offer.endDate, "23:59"),
+      startTime: toTimeInput(offer.startDate, "00:00"),
+      activeDays: Array.isArray(offer.activeDays) ? offer.activeDays : [],
+      activeFromTime: offer.activeFromTime || "",
+      activeToTime: offer.activeToTime || "",
       minOrderValue: offer.minOrderValue ? String(offer.minOrderValue) : "",
       maxDiscount: offer.maxDiscount != null ? String(offer.maxDiscount) : "",
       usageLimit: offer.usageLimit != null ? String(offer.usageLimit) : "",
@@ -742,27 +776,48 @@ export default function Coupons() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Expiry Date (Optional)</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Start Date &amp; Time (Optional)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={formData.startDate}
+                      onChange={(e) => handleFormChange("startDate", e.target.value)}
+                      min={todayYMD()}
+                      className={`min-w-0 flex-1 px-3 py-2.5 text-sm rounded-lg border ${errors.startDate ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                    />
+                    <input
+                      type="time"
+                      aria-label="Start time"
+                      value={formData.startTime}
+                      disabled={!formData.startDate}
+                      onChange={(e) => handleFormChange("startTime", e.target.value)}
+                      className="w-28 px-2 py-2.5 text-sm rounded-lg border border-slate-300 bg-white disabled:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {errors.startDate && <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>}
+                </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Expiry Date &amp; Time (Optional)</label>
+                <div className="flex gap-2">
                   <input
                     type="date"
                     value={formData.endDate}
                     onChange={(e) => handleFormChange("endDate", e.target.value)}
-                  min={formData.startDate || todayYMD()}
-                  className={`w-full px-3 py-2.5 text-sm rounded-lg border ${errors.endDate ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                    min={formData.startDate || todayYMD()}
+                    className={`min-w-0 flex-1 px-3 py-2.5 text-sm rounded-lg border ${errors.endDate ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
                   />
-                {errors.endDate && <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>}
+                  <input
+                    type="time"
+                    aria-label="Expiry time"
+                    value={formData.endTime}
+                    disabled={!formData.endDate}
+                    onChange={(e) => handleFormChange("endTime", e.target.value)}
+                    className="w-28 px-2 py-2.5 text-sm rounded-lg border border-slate-300 bg-white disabled:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Start Date (Optional)</label>
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => handleFormChange("startDate", e.target.value)}
-                  min={todayYMD()}
-                  className={`w-full px-3 py-2.5 text-sm rounded-lg border ${errors.startDate ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                />
-                {errors.startDate && <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>}
+                <p className="mt-1 text-[11px] text-slate-500">No time: starts at 00:00 and expires at 23:59.</p>
+                {errors.endDate && <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>}
               </div>
 
               <div>
@@ -1110,7 +1165,8 @@ export default function Coupons() {
                                 const dd = String(d.getDate()).padStart(2, '0')
                                 const month = d.toLocaleString('en-US', { month: 'short' })
                                 const yyyy = d.getFullYear()
-                                return `${dd} ${month} ${yyyy}`
+                                const time = toTimeInput(offer.endDate, "23:59")
+                                return time ? `${dd} ${month} ${yyyy}, ${time}` : `${dd} ${month} ${yyyy}`
                               })()
                             : 'No expiry'}
                         </span>

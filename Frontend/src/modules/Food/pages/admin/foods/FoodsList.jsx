@@ -591,12 +591,12 @@ export default function FoodsList() {
     }
 
     if (!hasVariants && (!Number.isFinite(parsedPrice) || parsedPrice <= 0)) {
-      toast.error("Base price must be greater than 0")
+      toast.error("Selling price must be greater than 0")
       return
     }
 
     if (!hasVariants && parsedOtherPrice > 0 && parsedOtherPrice <= parsedPrice) {
-      toast.error("Other platform price should be greater than selling price")
+      toast.error("Unit price should be greater than selling price")
       return
     }
 
@@ -1390,7 +1390,7 @@ export default function FoodsList() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Base Price</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Selling Price</label>
                 <input
                   type="number"
                   min="0"
@@ -1405,7 +1405,7 @@ export default function FoodsList() {
                 ) : null}
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Other Platform Price</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price</label>
                 <input
                   type="number"
                   min="0"
@@ -1679,7 +1679,7 @@ export default function FoodsList() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No variants added. This food will use the single base price.</p>
+                <p className="text-sm text-slate-500">No variants added. This food will use the single selling price.</p>
               )}
             </div>
             <div className="flex justify-end">

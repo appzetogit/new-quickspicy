@@ -243,7 +243,7 @@ export async function getCustomerById(id) {
 
     // The detail screen has always had Addresses and Recent Orders sections;
     // the select never loaded either, so both stayed hidden.
-    const [statsMap, addressRows, orderRows, placedCount] = await Promise.all([
+    const [statsMap, addressRows, orderRows, placedCount, wallet] = await Promise.all([
         deliveredStatsFor([user.id]),
         prisma.userAddress.findMany({
             where: { userId: user.id },
@@ -260,6 +260,11 @@ export async function getCustomerById(id) {
             },
         }),
         prisma.foodOrder.count({ where: { userId: user.id, orderStatus: { not: 'pending_payment' } } }),
+        // Read only: a customer who never used the wallet has no row, which is ₹0.
+        prisma.wallet.findFirst({
+            where: { entityType: 'user', entityId: user.id },
+            select: { balance: true },
+        }),
     ]);
     const stats = statsMap.get(user.id);
 
@@ -269,6 +274,7 @@ export async function getCustomerById(id) {
         totalOrders: stats?.totalOrder || 0,
         // Every order placed, delivered or not.
         totalOrdersPlaced: placedCount,
+        walletBalance: Number(wallet?.balance ?? 0),
         updatedAt: user.updatedAt,
         addresses: addressRows.map(formatAddress),
         orders: orderRows.map((o) => ({

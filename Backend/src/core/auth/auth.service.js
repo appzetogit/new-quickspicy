@@ -27,6 +27,25 @@ import {
   upsertFirebaseDeviceToken,
 } from "../notifications/firebase.service.js";
 
+/**
+ * What a blocked customer or rider is told at login: who blocked them and the
+ * support number to call (Admin → Business settings), when one is set.
+ */
+async function blockedAccountMessage() {
+  let phone = "";
+  try {
+    const s = await prisma.foodBusinessSettings.findFirst({
+      select: { phoneCountryCode: true, phoneNumber: true },
+    });
+    if (s?.phoneNumber) phone = `${s.phoneCountryCode || ""} ${s.phoneNumber}`.trim();
+  } catch (err) {
+    logger.warn(`blockedAccountMessage: business settings unavailable: ${err?.message}`);
+  }
+  return phone
+    ? `Quick Spicy has blocked your account. Please contact the Quick Spicy team at ${phone}.`
+    : "Quick Spicy has blocked your account. Please contact the Quick Spicy team.";
+}
+
 const ROLES = {
   USER: "USER",
   RESTAURANT: "RESTAURANT",
@@ -229,9 +248,7 @@ export const verifyUserOtpAndLogin = async (
 
   // Block login for deactivated users
   if (userDoc.isActive === false) {
-    throw new AuthError(
-      "Your account has been deactivated. Please contact support.",
-    );
+    throw new AuthError(await blockedAccountMessage());
   }
 
   // Update FCM token if provided
@@ -512,11 +529,23 @@ export const verifyDeliveryOtpAndLogin = async (phone, otp, fcmToken, platform) 
     });
   }
 
+  if (deliveryPartner.status === "deactivated") {
+    // A blocked rider must be told so, not that they are awaiting approval.
+    return {
+      pendingApproval: true,
+      isRejected: false,
+      isBlocked: true,
+      rejectionReason: null,
+      message: await blockedAccountMessage(),
+    };
+  }
+
   if (deliveryPartner.status && deliveryPartner.status !== "approved") {
     const isRejected = deliveryPartner.status === "rejected";
     return {
       pendingApproval: true,
       isRejected,
+      isBlocked: false,
       rejectionReason: isRejected ? deliveryPartner.rejectionReason : null,
       message:
         isRejected

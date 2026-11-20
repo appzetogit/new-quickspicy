@@ -1673,7 +1673,12 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false
     const run = async () => {
-      const zoneKey = String(zoneId || "global")
+      // Coordinates (rounded to ~1 km) limit the rail to categories with a dish
+      // from a restaurant that can deliver here; zoneId alone is ignored by the API.
+      const lat = Number(effectiveLocation?.latitude)
+      const lng = Number(effectiveLocation?.longitude)
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
+      const zoneKey = `${zoneId || "global"}:${hasCoords ? `${lat.toFixed(2)},${lng.toFixed(2)}` : "-"}`
       try {
         // Dedupe repeated calls (StrictMode + zone settling). Cache per zoneKey and share in-flight request.
         const cached = publicCategoriesCacheRef.current.get(zoneKey)
@@ -1691,7 +1696,10 @@ export default function Home() {
 
         setLoadingRealCategories(true)
         const promise = (async () => {
-          const res = await adminAPI.getPublicCategories(zoneId ? { zoneId } : {})
+          const res = await adminAPI.getPublicCategories({
+            ...(zoneId ? { zoneId } : {}),
+            ...(hasCoords ? { lat, lng } : {}),
+          })
           const list =
             res?.data?.data?.categories ||
             res?.data?.categories ||
@@ -1729,7 +1737,7 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [zoneId, normalizeImageUrl])
+  }, [zoneId, normalizeImageUrl, effectiveLocation?.latitude, effectiveLocation?.longitude])
 
   // Memoize cartCount to prevent recalculation on every render - use cart directly
   const cartCount = useMemo(
