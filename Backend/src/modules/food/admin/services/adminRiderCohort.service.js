@@ -162,6 +162,22 @@ export async function addRidersToCohort(cohortId, body = {}) {
 }
 
 /**
+ * A cohortId sent for a rider: undefined when not sent (leave as is), null when
+ * cleared ('' or null), else the id of an existing cohort. Used by the service
+ * area endpoint and the Add / Edit Deliveryman forms.
+ */
+export async function resolveCohortId(value) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const cohortId = String(value).trim();
+    if (!cohortId || cohortId === 'null') return null;
+    if (!isId(cohortId) || !(await prisma.foodRiderCohort.count({ where: { id: cohortId } }))) {
+        throw new ValidationError('Unknown cohort');
+    }
+    return cohortId;
+}
+
+/**
  * Sets a rider's home zone and/or cohort. `null` clears either one; a field left
  * out is left as it is.
  */
@@ -184,16 +200,8 @@ export async function setRiderServiceArea(riderId, body = {}) {
             data.zoneId = zoneId;
         }
     }
-    if (body.cohortId !== undefined) {
-        if (body.cohortId === null || body.cohortId === '') data.cohortId = null;
-        else {
-            const cohortId = String(body.cohortId).trim();
-            if (!isId(cohortId) || !(await prisma.foodRiderCohort.count({ where: { id: cohortId } }))) {
-                throw new ValidationError('Unknown cohort');
-            }
-            data.cohortId = cohortId;
-        }
-    }
+    const cohortId = await resolveCohortId(body.cohortId);
+    if (cohortId !== undefined) data.cohortId = cohortId;
     if (!Object.keys(data).length) throw new ValidationError('Nothing to change: send zoneId and/or cohortId');
 
     const updated = await prisma.foodDeliveryPartner.update({

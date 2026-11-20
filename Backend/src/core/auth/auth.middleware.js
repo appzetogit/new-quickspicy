@@ -2,6 +2,7 @@ import { verifyAccessToken } from './token.util.js';
 import { sendError } from '../../utils/response.js';
 import { prisma } from '../../config/prisma.js';
 import { isId } from '../../utils/helpers.js';
+import { blockedAccountMessage } from './blockedAccount.js';
 
 export const requireAdmin = (req, res, next) => {
     if (req.user?.role !== 'ADMIN') {
@@ -63,15 +64,27 @@ export const authMiddleware = (req, res, next) => {
     delegate()
         .findUnique({
             where: { id: decoded.userId },
-            select: { tokenVersion: true, deletedAt: true, ...(decoded.role === 'USER' ? { isActive: true } : {}) },
+            select: {
+                tokenVersion: true,
+                deletedAt: true,
+                ...(decoded.role === 'USER' ? { isActive: true, banReason: true } : {}),
+            },
         })
-        .then((doc) => {
+        .then(async (doc) => {
             if (!doc) return sendError(res, 401, 'Account not found');
             // Checked before the version: a token issued before the delete may carry
             // no version at all, and must still stop working.
             if (doc.deletedAt) return sendError(res, 401, 'This account has been deleted');
             if (decoded.role === 'USER' && doc.isActive === false) {
-                return sendError(res, 401, 'User account is deactivated');
+                // The same message as the login screen, with the admin's reason,
+                // so the app can show it rather than a bare "deactivated".
+                const message = await blockedAccountMessage(doc.banReason);
+                return res.status(401).json({
+                    success: false,
+                    message,
+                    isBlocked: true,
+                    banReason: doc.banReason || null,
+                });
             }
 
             // A token minted before the latest login belongs to a device that has

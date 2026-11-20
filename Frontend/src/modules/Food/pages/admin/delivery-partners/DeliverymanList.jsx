@@ -28,8 +28,12 @@ export default function DeliverymanList() {
   const [editValues, setEditValues] = useState({ pocketBalance: "", cashInHand: "" })
   const [savingDeliveryId, setSavingDeliveryId] = useState(null)
   const [deletingDeliveryId, setDeletingDeliveryId] = useState(null)
+  // Rider being blocked, while the reason dialog is open.
+  const [blockTarget, setBlockTarget] = useState(null)
+  const [blockReason, setBlockReason] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [zones, setZones] = useState([])
+  const [cohorts, setCohorts] = useState([])
   const [detailsFor, setDetailsFor] = useState(null)
   const [detailsForm, setDetailsForm] = useState({})
   const [savingDetails, setSavingDetails] = useState(false)
@@ -171,6 +175,14 @@ availableCashLimit: wallet?.availableCashLimit || 0,
         setZones(Array.isArray(data.zones) ? data.zones : [])
       })
       .catch(() => setZones([]))
+    // Inactive ones too, so a rider already in one still shows it.
+    adminAPI
+      .getRiderCohorts({ includeInactive: true })
+      .then((res) => {
+        const data = res?.data?.data ?? res?.data ?? {}
+        setCohorts(Array.isArray(data.cohorts) ? data.cohorts : [])
+      })
+      .catch(() => setCohorts([]))
   }, [])
 
   const filteredDeliverymen = useMemo(() => {
@@ -449,29 +461,45 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
     setViewDetails((prev) => (prev && String(prev._id) === id ? { ...prev, ...fields } : prev))
   }
 
-  /** Block signs the rider out and stops offers; unblock lets them back in. */
+  /**
+   * Block signs the rider out and stops offers; unblock lets them back in.
+   * Blocking first asks for a reason (the rider sees it at login).
+   */
   const handleBlockToggle = async (deliveryman) => {
     const id = String(deliveryman?._id || "")
     if (!id) return
-    const block = !deliveryman.isBlocked
-    if (
-      block &&
-      !window.confirm(
-        `Block ${deliveryman?.name || "this delivery partner"}?\n\nThey are logged out and get no more orders. Profile, wallet and history are kept, and you can unblock them later.`,
-      )
-    ) {
+    if (!deliveryman.isBlocked) {
+      setBlockReason("")
+      setBlockTarget({ id, name: deliveryman?.name || "" })
       return
     }
+    await submitBlock(id, false)
+  }
+
+  const submitBlock = async (id, block, reason) => {
     try {
       setDeletingDeliveryId(id)
-      const response = await adminAPI.setDeliveryPartnerBlocked(id, block)
-      patchRow(id, { isBlocked: block, status: block ? "deactivated" : "approved" })
+      const response = await adminAPI.setDeliveryPartnerBlocked(id, block, reason)
+      patchRow(id, {
+        isBlocked: block,
+        status: block ? "deactivated" : "approved",
+        banReason: block ? reason : null,
+        bannedAt: block ? new Date().toISOString() : null,
+      })
       toast.success(response?.data?.message || (block ? "Delivery partner blocked" : "Delivery partner unblocked"))
+      return true
     } catch (err) {
       toast.error(err?.response?.data?.message || "Could not update the delivery partner")
+      return false
     } finally {
       setDeletingDeliveryId(null)
     }
+  }
+
+  const handleConfirmBlock = async () => {
+    const reason = blockReason.trim()
+    if (!blockTarget || !reason) return
+    if (await submitBlock(blockTarget.id, true, reason)) setBlockTarget(null)
   }
 
   /** Gone for good. The server refuses a rider who has orders on record. */
@@ -502,7 +530,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
   }
 
   const DETAIL_FIELDS = [
-    "zoneId", "city", "vehicleType", "vehicleName", "vehicleNumber",
+    "zoneId", "cohortId", "city", "vehicleType", "vehicleName", "vehicleNumber",
     "bankAccountHolderName", "bankAccountNumber", "bankIfscCode", "bankName", "upiId",
   ]
 
@@ -754,7 +782,12 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                                   </span>
                                 )}
                                 {dm.isBlocked ? (
-                                  <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Blocked</span>
+                                  <span
+                                    className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+                                    title={dm.banReason ? `Reason: ${dm.banReason}` : undefined}
+                                  >
+                                    Blocked
+                                  </span>
                                 ) : null}
                                 {dm.rating > 0 && editingDeliveryId !== String(dm._id) && (
                                   <div className="flex items-center gap-1">
@@ -999,6 +1032,14 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                         {viewDetails.status === 'blocked' ? 'Rejected' : (viewDetails.status?.charAt(0).toUpperCase() + viewDetails.status?.slice(1) || "N/A")}
                       </span>
                     </div>
+                    {viewDetails.isBlocked && viewDetails.banReason ? (
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold uppercase text-red-600">Block Reason</label>
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-1">
+                          <p className="text-sm text-red-700 whitespace-pre-wrap">{viewDetails.banReason}</p>
+                        </div>
+                      </div>
+                    ) : null}
                     {viewDetails.rejectionReason && (
                       <div className="col-span-2">
                         <label className="text-xs font-semibold text-slate-500 uppercase text-red-600">Rejection Reason</label>
@@ -1338,6 +1379,49 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
         </DialogContent>
       </Dialog>
 
+      {/* Block with a reason */}
+      <Dialog open={Boolean(blockTarget)} onOpenChange={(open) => { if (!open && !deletingDeliveryId) setBlockTarget(null) }}>
+        <DialogContent className="max-w-md bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>Block {blockTarget?.name || "this delivery partner"}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            They are logged out and get no more orders. Profile, wallet and history are kept, and you can unblock them later. The app shows them this reason at login.
+          </p>
+          <label className="mt-2 block text-sm font-semibold text-slate-700" htmlFor="rider-block-reason">
+            Reason <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            id="rider-block-reason"
+            rows={3}
+            maxLength={300}
+            value={blockReason}
+            onChange={(e) => setBlockReason(e.target.value)}
+            placeholder="e.g. Cash not deposited"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-right text-xs text-slate-400">{blockReason.length}/300</p>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setBlockTarget(null)}
+              disabled={Boolean(deletingDeliveryId)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmBlock}
+              disabled={Boolean(deletingDeliveryId) || !blockReason.trim()}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deletingDeliveryId ? "Blocking..." : "Block"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit details: zone, vehicle, bank / UPI (name and phone edit in the row) */}
       <Dialog open={Boolean(detailsFor)} onOpenChange={(open) => { if (!open) setDetailsFor(null) }}>
         <DialogContent className="max-w-2xl bg-white max-h-[85vh] overflow-y-auto p-6">
@@ -1358,6 +1442,32 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                     <option key={z.id || z._id} value={z.id || z._id}>{z.name}</option>
                   ))}
                 </select>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Cohort (optional)
+                <select
+                  value={detailsForm.cohortId ?? ""}
+                  onChange={(e) => setDetailsForm((f) => ({ ...f, cohortId: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white"
+                >
+                  <option value="">No cohort</option>
+                  {cohorts.map((c) => {
+                    const id = c.id || c._id
+                    const covers = detailsForm.zoneId && (c.zoneIds || []).map(String).includes(String(detailsForm.zoneId))
+                    const names = (c.zones || []).map((z) => z.name).filter(Boolean)
+                    return (
+                      <option key={id} value={id}>
+                        {c.name}
+                        {names.length ? ` (${names.join(", ")})` : ""}
+                        {c.isActive === false ? " [inactive]" : ""}
+                        {covers ? " *" : ""}
+                      </option>
+                    )
+                  })}
+                </select>
+                <span className="mt-1 block text-[11px] text-slate-400">
+                  The rider also serves the cohort's zones. * covers the chosen zone.
+                </span>
               </label>
                 <label className="text-xs font-medium text-slate-600">
                   City

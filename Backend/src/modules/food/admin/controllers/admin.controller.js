@@ -58,7 +58,12 @@ export async function updateCustomerStatus(req, res, next) {
             return res.status(400).json({ success: false, message: 'Invalid customer id' });
         }
         const isActive = req.body?.isActive;
-        const updated = await adminService.updateCustomerStatus(id, isActive);
+        // Banning needs a reason: the customer is shown it when they try to log in.
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+        if (!isActive && !reason) {
+            return res.status(400).json({ success: false, message: 'A reason is required to deactivate a customer' });
+        }
+        const updated = await adminService.updateCustomerStatus(id, isActive, reason);
         if (!updated) return res.status(404).json({ success: false, message: 'Customer not found' });
         res.status(200).json({ success: true, message: 'Customer status updated successfully', data: { user: updated, customer: updated } });
     } catch (error) {
@@ -857,9 +862,23 @@ export async function updateSupportTicketController(req, res, next) {
         if (!isId(id)) {
             return res.status(400).json({ success: false, message: 'Invalid ticket id' });
         }
-        const updated = await adminService.updateSupportTicket(id, req.body || {});
+        const updated = await adminService.updateSupportTicket(id, req.body || {}, req.user?.userId || null);
         if (!updated) return res.status(404).json({ success: false, message: 'Ticket not found' });
         res.status(200).json({ success: true, message: 'Support ticket updated successfully', data: { ticket: updated } });
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function getSupportTicketByIdController(req, res, next) {
+    try {
+        const { id } = req.params;
+        if (!isId(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid ticket id' });
+        }
+        const ticket = await adminService.getSupportTicketById(id, req.query?.source);
+        if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+        res.status(200).json({ success: true, message: 'Support ticket fetched successfully', data: { ticket } });
     } catch (error) {
         next(error);
     }
@@ -1947,7 +1966,12 @@ export async function updateDeliveryPartnerProfile(req, res, next) {
 export async function setDeliveryPartnerBlocked(req, res, next) {
     try {
         const blocked = req.body?.blocked !== false && req.body?.blocked !== 'false';
-        await adminService.setDeliveryPartnerBlocked(req.params.id, blocked);
+        // Blocking needs a reason: the rider is shown it when they try to log in.
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+        if (blocked && !reason) {
+            return res.status(400).json({ success: false, message: 'A reason is required to block a delivery partner' });
+        }
+        await adminService.setDeliveryPartnerBlocked(req.params.id, blocked, reason);
         res.status(200).json({
             success: true,
             message: blocked ? 'Delivery partner blocked' : 'Delivery partner unblocked',
@@ -1969,7 +1993,8 @@ export async function deleteDeliveryPartnerPermanently(req, res, next) {
 export async function deleteDeliveryPartner(req, res, next) {
     try {
         const { id } = req.params;
-        await adminService.deleteDeliveryPartner(id);
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+        await adminService.deleteDeliveryPartner(id, reason);
         res.status(200).json({ success: true, message: 'Delivery partner deactivated successfully' });
     } catch (error) {
         next(error);

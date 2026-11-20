@@ -97,16 +97,20 @@ test('block signs the rider out and keeps them listed; unblock lets them back', 
     const id = json.data.id;
     const before = await prisma.foodDeliveryPartner.findUnique({ where: { id } });
 
-    await setDeliveryPartnerBlocked(id, true);
+    await setDeliveryPartnerBlocked(id, true, 'Cash not deposited');
     let row = await prisma.foodDeliveryPartner.findUnique({ where: { id } });
     assert.equal(row.status, 'deactivated');
     assert.equal(row.tokenVersion, before.tokenVersion + 1, 'signed out');
+    assert.equal(row.banReason, 'Cash not deposited');
+    assert.ok(row.bannedAt);
     const blocked = await getDeliveryPartners({ status: 'blocked', search: `${tag} Block` });
-    assert.ok(blocked.deliveryPartners.some((p) => p.id === id && p.isBlocked));
+    assert.ok(blocked.deliveryPartners.some((p) => p.id === id && p.isBlocked && p.banReason === 'Cash not deposited'));
 
     await setDeliveryPartnerBlocked(id, false);
     row = await prisma.foodDeliveryPartner.findUnique({ where: { id } });
     assert.equal(row.status, 'approved');
+    assert.equal(row.banReason, null, 'unblocking clears the reason');
+    assert.equal(row.bannedAt, null);
     await assert.rejects(() => setDeliveryPartnerBlocked(id, false), /not blocked/);
 });
 

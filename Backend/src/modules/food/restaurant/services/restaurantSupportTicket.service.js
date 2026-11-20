@@ -22,7 +22,9 @@ const STATUS_BY_WIRE = { open: 'open', 'in-progress': 'in_progress', resolved: '
 const toWire = (t) => ({
     ...t,
     _id: t.id,
-    status: String(t.status) === 'in_progress' ? 'in-progress' : String(t.status),
+    // "flagged" is an admin-only follow-up marker; to the restaurant the
+    // ticket is still being worked on.
+    status: ['in_progress', 'flagged'].includes(String(t.status)) ? 'in-progress' : String(t.status),
     adminResponse: t.adminResponse || '',
     hasReply: Boolean(String(t.adminResponse || '').trim()),
 });

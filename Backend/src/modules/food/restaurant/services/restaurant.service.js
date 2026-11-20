@@ -756,6 +756,7 @@ export const registerRestaurant = async (payload, files) => {
         closingTime,
         openDays,
         estimatedDeliveryTime,
+        deliveryRadiusKm,
         panNumber,
         nameOnPan,
         gstRegistered,
@@ -981,6 +982,8 @@ export const registerRestaurant = async (payload, files) => {
                     openDays: openDays || [],
                     estimatedDeliveryTime: estimatedDeliveryTimeText || undefined,
                     estimatedDeliveryTimeMinutes: estimatedDeliveryTimeMinutes ?? undefined,
+                    // Validated by validateRestaurantRegisterDto; null = platform default.
+                    deliveryRadiusKm: deliveryRadiusKm ?? null,
                     panNumber,
                     nameOnPan,
                     gstRegistered,

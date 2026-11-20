@@ -13,7 +13,8 @@ import { logger } from '../../../../utils/logger.js';
 
 const USER_TYPES = ['order', 'restaurant', 'other'];
 const RESTAURANT_CATEGORIES = ['orders', 'payments', 'menu', 'restaurant', 'technical', 'other'];
-const API_STATUSES = ['open', 'in-progress', 'resolved'];
+/** 'flagged' is "Flag" in the panel: marked for follow-up. */
+const API_STATUSES = ['open', 'in-progress', 'resolved', 'flagged'];
 
 /**
  * The API speaks 'in-progress'; the enum's Prisma name is in_progress and its
@@ -246,7 +247,7 @@ export async function getFoodSupportTicketStats(query = {}) {
     /** One grouped query per table, rather than four counts each. */
     const countByStatus = async (delegate, where) => {
         const rows = await delegate.groupBy({ by: ['status'], where, _count: { _all: true } });
-        const counts = { open: 0, inProgress: 0, resolved: 0, total: 0 };
+        const counts = { open: 0, inProgress: 0, resolved: 0, flagged: 0, total: 0 };
 
         for (const row of rows) {
             const n = row._count._all;
@@ -254,11 +255,12 @@ export async function getFoodSupportTicketStats(query = {}) {
             if (row.status === 'open') counts.open = n;
             if (row.status === 'in_progress') counts.inProgress = n;
             if (row.status === 'resolved') counts.resolved = n;
+            if (row.status === 'flagged') counts.flagged = n;
         }
         return counts;
     };
 
-    const empty = { open: 0, inProgress: 0, resolved: 0, total: 0 };
+    const empty = { open: 0, inProgress: 0, resolved: 0, flagged: 0, total: 0 };
     const [userCounts, restaurantCounts] = await Promise.all([
         wantUser ? countByStatus(prisma.foodSupportTicket, userWhere) : empty,
         wantRestaurant ? countByStatus(prisma.foodRestaurantSupportTicket, restaurantWhere) : empty,
@@ -269,26 +271,111 @@ export async function getFoodSupportTicketStats(query = {}) {
         open: userCounts.open + restaurantCounts.open,
         inProgress: userCounts.inProgress + restaurantCounts.inProgress,
         resolved: userCounts.resolved + restaurantCounts.resolved,
+        flagged: userCounts.flagged + restaurantCounts.flagged,
     };
 }
 
-export async function updateSupportTicket(id, body = {}) {
+const ticketSourceOf = (value) => (String(value || 'user').toLowerCase() === 'restaurant' ? 'restaurant' : 'user');
+
+/** Status history rows, oldest first, with the admin's name on each. */
+const statusHistoryFor = async (ticketSource, ticketId) => {
+    const rows = await prisma.foodSupportTicketStatusHistory.findMany({
+        where: { ticketSource, ticketId },
+        orderBy: { createdAt: 'asc' },
+    });
+    const adminIds = [...new Set(rows.map((r) => r.changedBy).filter(Boolean))];
+    const admins = adminIds.length
+        ? await prisma.foodAdmin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true, email: true } })
+        : [];
+    const nameOf = new Map(admins.map((a) => [a.id, a.name || a.email || 'Admin']));
+
+    return rows.map((r) => ({
+        id: r.id,
+        fromStatus: r.fromStatus ? toStatusApi(r.fromStatus) : null,
+        toStatus: toStatusApi(r.toStatus),
+        changedBy: r.changedBy || null,
+        changedByName: r.changedBy ? nameOf.get(r.changedBy) || 'Admin' : 'System',
+        note: r.note || '',
+        createdAt: r.createdAt,
+    }));
+};
+
+/**
+ * One ticket with its status history, for the admin detail view.
+ *
+ * @param {string} id
+ * @param {string} source 'user' | 'restaurant'
+ */
+export async function getSupportTicketById(id, source = 'user') {
+    if (!isId(id)) return null;
+    const ticketSource = ticketSourceOf(source);
+    const isRestaurant = ticketSource === 'restaurant';
+
+    const ticket = isRestaurant
+        ? await prisma.foodRestaurantSupportTicket.findUnique({ where: { id: String(id) }, include: RESTAURANT_TICKET_INCLUDE })
+        : await prisma.foodSupportTicket.findUnique({ where: { id: String(id) }, include: USER_TICKET_INCLUDE });
+    if (!ticket) return null;
+
+    const statusHistory = await statusHistoryFor(ticketSource, ticket.id);
+    return { ...(isRestaurant ? mapRestaurantTicket(ticket) : mapUserTicket(ticket)), statusHistory };
+}
+
+/**
+ * Reply to and/or change the status of a ticket.
+ *
+ * A reply to an open ticket moves it to in-progress on its own, unless the
+ * admin chose a status in the same request. Every status change is written to
+ * the status history, with the admin who made it.
+ *
+ * @param {string} id
+ * @param {{ source?: string, status?: string, adminResponse?: string, note?: string }} body
+ * @param {string|null} adminId the admin making the change, for the history
+ */
+export async function updateSupportTicket(id, body = {}, adminId = null) {
     if (!isId(id)) return null;
 
-    const source = String(body.source || 'user').toLowerCase();
+    const source = ticketSourceOf(body.source);
     const isRestaurant = source === 'restaurant';
 
     const data = {};
-    if (API_STATUSES.includes(String(body.status))) data.status = toStatusColumn(body.status);
+    const explicitStatus = API_STATUSES.includes(String(body.status));
+    if (explicitStatus) data.status = toStatusColumn(body.status);
     if (typeof body.adminResponse === 'string') data.adminResponse = body.adminResponse;
     if (!Object.keys(data).length) return null;
 
     const delegate = isRestaurant ? prisma.foodRestaurantSupportTicket : prisma.foodSupportTicket;
 
-    const { count } = await delegate.updateMany({ where: { id: String(id) }, data });
-    if (!count) return null;
+    const current = await delegate.findUnique({ where: { id: String(id) }, select: { status: true } });
+    if (!current) return null;
 
-    const updated = await delegate.findUnique({ where: { id: String(id) } });
+    // Answering an untouched ticket means someone is on it.
+    if (!explicitStatus && data.adminResponse?.trim() && current.status === 'open') {
+        data.status = 'in_progress';
+    }
+
+    const statusChanged = data.status !== undefined && data.status !== current.status;
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '';
+
+    const updated = await prisma.$transaction(async (tx) => {
+        const txDelegate = isRestaurant ? tx.foodRestaurantSupportTicket : tx.foodSupportTicket;
+        const { count } = await txDelegate.updateMany({ where: { id: String(id) }, data });
+        if (!count) return null;
+
+        if (statusChanged) {
+            await tx.foodSupportTicketStatusHistory.create({
+                data: {
+                    ticketSource: source,
+                    ticketId: String(id),
+                    fromStatus: current.status,
+                    toStatus: data.status,
+                    changedBy: isId(adminId) ? String(adminId) : null,
+                    note: note || (explicitStatus ? null : 'Admin replied'),
+                },
+            });
+        }
+        return txDelegate.findUnique({ where: { id: String(id) } });
+    });
+    if (!updated) return null;
 
     if (data.adminResponse) {
         const ownerType = isRestaurant ? 'RESTAURANT' : 'USER';

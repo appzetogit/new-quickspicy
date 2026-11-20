@@ -14,8 +14,12 @@ import { isId } from '../../../../utils/helpers.js';
 const CUSTOMER_SELECT = {
     id: true, name: true, email: true, phone: true, countryCode: true,
     isVerified: true, isActive: true, profileImage: true,
+    banReason: true, bannedAt: true,
     createdAt: true, updatedAt: true,
 };
+
+/** The longest ban reason kept; the column is VARCHAR(300). */
+export const BAN_REASON_MAX = 300;
 
 /**
  * Some profile image urls were stored wrapped in backticks by an old client.
@@ -87,6 +91,9 @@ const serializeCustomer = (user, stats) => ({
     status: user.isActive !== false,
     isActive: user.isActive !== false,
     isVerified: user.isVerified === true,
+    // Why the account was deactivated; null while it is active.
+    banReason: user.isActive === false ? user.banReason || null : null,
+    bannedAt: user.isActive === false ? user.bannedAt || null : null,
     totalOrder: stats?.totalOrder || 0,
     totalOrderAmount: stats?.totalOrderAmount || 0,
     joiningDate: user.createdAt,
@@ -114,6 +121,43 @@ export const dayWindow = (value) => {
     return { gte: start, lte: end };
 };
 
+/**
+ * Ids of the customers who belong to a zone (or to any zone of a city).
+ *
+ * A customer belongs to a zone when a saved address of theirs lies inside its
+ * boundary, or when they have placed an order in it. Addresses alone would
+ * miss customers who ordered there to an address since deleted; orders alone
+ * would miss everyone who signed up and has not ordered yet.
+ *
+ * One query: the address side is a GIST-indexed ST_Contains against the
+ * trigger-maintained geography columns, the same test findZoneForPoint() uses.
+ *
+ * @returns {Promise<string[]|null>} null when no zone/city filter was asked for
+ */
+export const zoneCustomerIds = async ({ zoneId, cityId } = {}) => {
+    const zone = isId(zoneId) ? String(zoneId) : null;
+    const city = !zone && isId(cityId) ? String(cityId) : null;
+    if (!zone && !city) return null;
+
+    const zoneMatch = zone ? Prisma.sql`z."id" = ${zone}` : Prisma.sql`z."cityId" = ${city}`;
+
+    const rows = await prisma.$queryRaw`
+        SELECT a."userId" AS id
+        FROM "food_user_addresses" a
+        JOIN "food_zones" z
+          ON ${zoneMatch}
+         AND z."boundary" IS NOT NULL
+         AND a."location" IS NOT NULL
+         AND ST_Contains(z."boundary"::geometry, a."location"::geometry)
+        UNION
+        SELECT o."userId" AS id
+        FROM "food_orders" o
+        JOIN "food_zones" z ON z."id" = o."zoneId"
+        WHERE ${zoneMatch}
+    `;
+    return rows.map((r) => r.id).filter(Boolean);
+};
+
 export async function getCustomers(query = {}) {
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 1000);
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
@@ -137,6 +181,13 @@ export async function getCustomers(query = {}) {
     if (query.search && String(query.search).trim()) {
         const contains = { contains: String(query.search).trim().slice(0, 80), mode: 'insensitive' };
         where.OR = [{ name: contains }, { email: contains }, { phone: contains }];
+    }
+
+    // Zone (or city) filter: see zoneCustomerIds for what "in a zone" means.
+    const inZone = await zoneCustomerIds({ zoneId: query.zoneId, cityId: query.cityId });
+    if (inZone) {
+        if (!inZone.length) return { customers: [], total: 0, page, limit };
+        where.id = { in: inZone };
     }
 
     const sortBy = String(query.sortBy || '').trim();
@@ -290,14 +341,24 @@ export async function getCustomerById(id) {
     };
 }
 
-export async function updateCustomerStatus(id, isActive) {
+/**
+ * Activate or deactivate (ban) a customer.
+ *
+ * A ban keeps the admin's reason, which the customer is shown at login;
+ * reactivating clears it. The controller insists on a reason when banning;
+ * here it is optional so internal callers are not forced to invent one.
+ */
+export async function updateCustomerStatus(id, isActive, reason) {
     if (!isId(id)) return null;
     const active = Boolean(isActive);
+    const banReason = String(reason ?? '').trim().slice(0, BAN_REASON_MAX) || null;
 
     const updated = await prisma.$transaction(async (tx) => {
         const { count } = await tx.foodUser.updateMany({
             where: { id: String(id) },
-            data: { isActive: active },
+            data: active
+                ? { isActive: true, banReason: null, bannedAt: null }
+                : { isActive: false, banReason, bannedAt: new Date() },
         });
         if (!count) return null;
 

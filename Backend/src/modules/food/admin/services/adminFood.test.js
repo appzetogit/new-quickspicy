@@ -355,3 +355,30 @@ test('bulk approve leaves soft-deleted add-ons alone', async () => {
     const row = await prisma.foodAddon.findUnique({ where: { id: deleted.id } });
     assert.equal(row.approvalStatus, 'pending', 'a deleted add-on is not resurrected by an approval sweep');
 });
+
+test('the in-stock switch flips availability alone and drops a timed resume', async () => {
+    const restaurant = await makeRestaurant();
+    const category = await makeCategory();
+    const food = track(await createFood({
+        restaurantId: restaurant.id, name: 'Stock Dish', price: 150, categoryId: category.id,
+    }));
+    const foodId = food.id || food._id;
+
+    // The restaurant had it off until later today.
+    await prisma.foodItem.update({
+        where: { id: foodId },
+        data: { isAvailable: false, stockResumeAt: new Date(Date.now() + 3600_000), stockOffMode: 'specific_time' },
+    });
+
+    await updateFood(foodId, { isAvailable: true });
+    let row = await prisma.foodItem.findUnique({ where: { id: foodId } });
+    assert.equal(row.isAvailable, true);
+    assert.equal(row.stockResumeAt, null, 'a manual switch is not undone by the old timer');
+    assert.equal(row.stockOffMode, null);
+    assert.equal(Number(row.price), 150, 'nothing else changes');
+    assert.equal(row.categoryId, category.id);
+
+    await updateFood(foodId, { isAvailable: false });
+    row = await prisma.foodItem.findUnique({ where: { id: foodId } });
+    assert.equal(row.isAvailable, false);
+});

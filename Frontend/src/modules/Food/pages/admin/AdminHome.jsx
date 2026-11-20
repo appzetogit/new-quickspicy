@@ -25,10 +25,31 @@ import {
 } from "recharts"
 import { Activity, ArrowUpRight, ShoppingBag, CreditCard, Truck, Receipt, DollarSign, Store, UserCheck, Package, UserCircle, Clock, CheckCircle, Plus, XCircle } from "lucide-react"
 import { adminAPI } from "@food/api"
+import DateRangeFilter from "@food/components/admin/DateRangeFilter"
 const debugLog = () => {}
 const debugError = () => {}
 
 const INR_SYMBOL = "\u20B9"
+
+const PERIOD_LABELS = {
+  overall: "Overall",
+  today: "Today",
+  week: "This week",
+  month: "This month",
+  year: "This year",
+}
+
+/** "2026-03-05" -> "5 Mar 2026", read as a calendar day (no timezone shift). */
+function formatDay(day) {
+  if (!day) return ""
+  const [y, m, d] = String(day).split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+}
 
 function formatCurrency(amount, options = {}) {
   const numericAmount = Number(amount || 0)
@@ -40,7 +61,10 @@ function formatCurrency(amount, options = {}) {
 export default function AdminHome() {
   const navigate = useNavigate()
   const [selectedZone, setSelectedZone] = useState("all")
+  // A preset period, or "custom" for the From - To pickers.
   const [selectedPeriod, setSelectedPeriod] = useState("overall")
+  const [customRange, setCustomRange] = useState({ from: "", to: "" })
+  const [loadError, setLoadError] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [dashboardData, setDashboardData] = useState(null)
   const [zones, setZones] = useState([])
@@ -61,13 +85,32 @@ export default function AdminHome() {
     fetchZones()
   }, [])
 
+  const isCustom = selectedPeriod === "custom"
+  const customReady = isCustom && Boolean(customRange.from && customRange.to)
+
+  // Choosing a preset drops any custom dates; picking dates switches to custom.
+  const handlePeriodChange = (value) => {
+    setSelectedPeriod(value)
+    if (value !== "custom") setCustomRange({ from: "", to: "" })
+  }
+  const handleCustomRangeChange = (next) => {
+    setCustomRange(next)
+    setSelectedPeriod(next.from || next.to ? "custom" : "overall")
+  }
+
   // Fetch dashboard stats from backend when filters change
   useEffect(() => {
+    // A half-picked custom range keeps the figures already on screen.
+    if (isCustom && !customReady) return
+
     const fetchDashboardStats = async () => {
       try {
         setIsLoading(true)
+        setLoadError("")
         const params = {
-          period: selectedPeriod,
+          ...(customReady
+            ? { from: customRange.from, to: customRange.to }
+            : { period: selectedPeriod }),
           ...(selectedZone !== "all" ? { zoneId: selectedZone } : {}),
         }
         const response = await adminAPI.getDashboardStats(params)
@@ -80,6 +123,7 @@ export default function AdminHome() {
         }
       } catch (error) {
         setDashboardData(null)
+        setLoadError(error?.response?.data?.message || "Could not load dashboard stats")
         debugError("Error fetching dashboard stats:", error)
       } finally {
         setIsLoading(false)
@@ -87,7 +131,7 @@ export default function AdminHome() {
     }
 
     fetchDashboardStats()
-  }, [selectedZone, selectedPeriod])
+  }, [selectedZone, selectedPeriod, isCustom, customReady, customRange.from, customRange.to])
 
   // Get order stats from real data
   const getOrderStats = () => {
@@ -109,17 +153,13 @@ export default function AdminHome() {
     ]
   }
 
-  // Get monthly data from real data
+  // Trend buckets as the backend sends them: days for a short range, months
+  // otherwise. The charts draw however many come back.
   const getMonthlyData = () => {
-    if (!dashboardData?.monthlyData || dashboardData.monthlyData.length === 0) {
-      // Return empty data structure if no data
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      return monthNames.map(month => ({ month, commission: 0, revenue: 0, orders: 0 }))
-    }
+    if (!dashboardData?.monthlyData || dashboardData.monthlyData.length === 0) return []
 
-    // Use real monthly data from backend
     return dashboardData.monthlyData.map(item => ({
-      month: item.month,
+      month: item.label || item.month,
       commission: item.commission || 0,
       revenue: item.revenue || 0,
       orders: item.orders || 0
@@ -157,9 +197,19 @@ export default function AdminHome() {
   }))
 
   const deliveryProfit = dashboardData?.deliveryProfit || 0
-  const periodLabel = selectedPeriod === "overall" ? "Overall" : 
-                    selectedPeriod === "today" ? "Today's" : 
+  const periodLabel = isCustom ? "Selected range" :
+                    selectedPeriod === "overall" ? "Overall" :
+                    selectedPeriod === "today" ? "Today's" :
                     `This ${selectedPeriod}'s`
+  // The window the figures cover, as the server resolved it.
+  const activeRange = dashboardData?.range
+  const rangeLabel = activeRange?.from
+    ? activeRange.from === activeRange.to
+      ? formatDay(activeRange.from)
+      : `${formatDay(activeRange.from)} – ${formatDay(activeRange.to)}`
+    : "All time"
+  const activePeriodName = isCustom ? "Custom range" : PERIOD_LABELS[selectedPeriod] || selectedPeriod
+  const trendUnit = dashboardData?.trendGranularity === "day" ? "daily" : "monthly"
 
   const activityFeed = dashboardData?.liveSignals || []
   const totalRevenueHelper = [
@@ -203,7 +253,7 @@ export default function AdminHome() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+            <Select value={selectedPeriod} onValueChange={handlePeriodChange}>
               <SelectTrigger className="min-w-[140px] border-neutral-300 bg-white text-neutral-900">
                 <SelectValue placeholder="Overall" />
               </SelectTrigger>
@@ -213,9 +263,26 @@ export default function AdminHome() {
                 <SelectItem value="week">This week</SelectItem>
                 <SelectItem value="month">This month</SelectItem>
                 <SelectItem value="year">This year</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
               </SelectContent>
             </Select>
+            {isCustom && (
+              <DateRangeFilter
+                from={customRange.from}
+                to={customRange.to}
+                onChange={handleCustomRangeChange}
+              />
+            )}
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-6 py-2 text-xs text-neutral-600">
+          <span className="font-semibold uppercase tracking-[0.14em] text-neutral-500">{activePeriodName}</span>
+          <span>{rangeLabel}</span>
+          {isCustom && !customReady && (
+            <span className="text-amber-600">Pick both a From and a To date to apply the range</span>
+          )}
+          {loadError && <span className="text-red-600">{loadError}</span>}
         </div>
 
         <div className="space-y-6 px-6 py-6">
@@ -355,7 +422,7 @@ export default function AdminHome() {
               <CardHeader className="flex flex-col gap-2 border-b border-neutral-200 pb-4">
                 <CardTitle className="text-lg text-neutral-900">Revenue trajectory</CardTitle>
                 <p className="text-sm text-neutral-500">
-                  Commission and gross revenue with monthly order volume
+                  Commission and gross revenue with {trendUnit} order volume ({rangeLabel})
                 </p>
               </CardHeader>
               <CardContent className="min-w-0 pt-4">
@@ -483,7 +550,7 @@ export default function AdminHome() {
               <CardContent className="min-w-0 pt-4">
                 <div className="h-64 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <BarChart data={monthlyData.slice(-6)}>
+                    <BarChart data={monthlyData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis dataKey="month" stroke="#6b7280" />
                       <YAxis stroke="#6b7280" />
@@ -601,7 +668,7 @@ export default function AdminHome() {
                       </span>
                       <div>
                         <p className="text-sm text-neutral-900 group-hover:font-medium">{item.label}</p>
-                        <p className="text-xs text-neutral-500">Tracked in {selectedPeriod}</p>
+                        <p className="text-xs text-neutral-500">Tracked in {rangeLabel}</p>
                       </div>
                     </div>
                     <p className="text-sm font-semibold text-neutral-900">{item.value}</p>

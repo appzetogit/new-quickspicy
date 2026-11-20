@@ -173,6 +173,57 @@ test('a period narrows the window', async () => {
     assert.equal(nonsense.orders.total, 4);
 });
 
+test('a custom from/to range overrides the period, as whole India days', async () => {
+    // Both on 5 March in India: 23:30 IST, and 00:10 IST on the 6th.
+    await makeOrder({ createdAt: new Date('2022-03-05T18:00:00Z') });
+    await makeOrder({ createdAt: new Date('2022-03-05T18:40:00Z') });
+
+    const march = await getDashboardStats({ zoneId, period: 'today', from: '2022-03-01', to: '2022-03-31' });
+    assert.equal(march.orders.total, 3, 'the 4th, the 5th and the 6th; today is ignored');
+    assert.equal(march.revenue.total, 3 * 1180);
+    assert.deepEqual(march.range, { period: 'custom', from: '2022-03-01', to: '2022-03-31' });
+
+    // The end day runs to 23:59:59.999 IST and no further.
+    const fifth = await getDashboardStats({ zoneId, from: '2022-03-05', to: '2022-03-05' });
+    assert.equal(fifth.orders.total, 1);
+    assert.equal(fifth.orderStats.completed, 1);
+});
+
+test('a short range is bucketed by day, a long one by month', async () => {
+    const march = await getDashboardStats({ zoneId, from: '2022-03-01', to: '2022-03-31' });
+    assert.equal(march.trendGranularity, 'day');
+    assert.equal(march.monthlyData.length, 31);
+    assert.equal(march.monthlyData[0].key, '2022-03-01');
+    const byKey = Object.fromEntries(march.monthlyData.map((b) => [b.key, b]));
+    assert.equal(byKey['2022-03-04'].orders, 1);
+    assert.equal(byKey['2022-03-05'].orders, 1, 'bucketed on the India day, not the UTC one');
+    assert.equal(byKey['2022-03-06'].orders, 1);
+    assert.equal(byKey['2022-03-07'].orders, 0, 'an empty day still appears');
+
+    const year = await getDashboardStats({ zoneId, from: '2022-01-01', to: '2022-12-31' });
+    assert.equal(year.trendGranularity, 'month');
+    assert.equal(year.monthlyData.length, 12);
+    assert.equal(year.monthlyData[2].key, '2022-03');
+    assert.equal(year.monthlyData[2].orders, 3);
+    assert.equal(year.monthlyData[2].revenue, 3 * 1180);
+});
+
+test('a bad custom range is a 400, not an empty dashboard', async () => {
+    for (const query of [
+        { from: '2022-03-05' },
+        { from: '2022-03-05', to: '2022-03-01' },
+        { from: '2022-02-30', to: '2022-03-01' },
+        { from: '05-03-2022', to: '2022-03-31' },
+        { from: '2010-01-01', to: '2022-01-01' },
+    ]) {
+        await assert.rejects(getDashboardStats({ zoneId, ...query }), (err) => {
+            assert.equal(err.name, 'ValidationError', JSON.stringify(query));
+            assert.equal(err.statusCode, 400);
+            return true;
+        });
+    }
+});
+
 test('the live feed is newest first and capped', async () => {
     const { liveSignals } = await getDashboardStats({ zoneId });
 

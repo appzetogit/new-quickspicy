@@ -3,6 +3,7 @@ import { BRAND_IMAGE_URL } from '../../../../config/brand.js';
 import { isId } from '../../../../utils/helpers.js';
 import { NotFoundError, ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
+import { resolveCohortId } from './adminRiderCohort.service.js';
 
 /**
  * The admin delivery-partner list and its money summary, extracted from
@@ -187,6 +188,7 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         zone: doc.zone?.name || doc.city || doc.state || doc.address || '',
         zoneId: doc.zoneId || null,
         zoneName: doc.zone?.name || '',
+        cohortId: doc.cohortId || null,
         city: doc.city || '',
         vehicleType: doc.vehicleType || '',
         vehicleName: doc.vehicleName || '',
@@ -198,6 +200,9 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         upiId: doc.upiId || '',
         status: doc.status,
         isBlocked: doc.status === 'deactivated',
+        // Why the rider was blocked; null unless they are.
+        banReason: doc.status === 'deactivated' ? doc.banReason || null : null,
+        bannedAt: doc.status === 'deactivated' ? doc.bannedAt || null : null,
         availabilityStatus: doc.availabilityStatus || 'offline',
         isOnline: doc.availabilityStatus === 'online',
         lastLocation:
@@ -702,6 +707,8 @@ async function editableRiderFields(partner, body = {}) {
         }
         data.zoneId = zoneId || null;
     }
+    // Optional cohort: adds its zones to the ones the rider may serve ('' clears it).
+    if (has('cohortId')) data.cohortId = await resolveCohortId(body.cohortId ?? null);
     if (has('city')) {
         if (!text('city')) throw new ValidationError('City cannot be empty');
         data.city = text('city');
@@ -747,16 +754,16 @@ async function editableRiderFields(partner, body = {}) {
  * Block or unblock a rider. Blocking signs them out and takes them offline
  * (no more offers); unblocking lets them log in again with OTP.
  */
-export async function setDeliveryPartnerBlocked(id, blocked) {
+export async function setDeliveryPartnerBlocked(id, blocked, reason) {
     if (!isId(id)) throw new NotFoundError('Delivery partner not found');
-    if (blocked) return deleteDeliveryPartner(id);
+    if (blocked) return deleteDeliveryPartner(id, reason);
 
     const partner = await prisma.foodDeliveryPartner.findUnique({ where: { id: String(id) }, select: { status: true } });
     if (!partner) throw new NotFoundError('Delivery partner not found');
     if (partner.status !== 'deactivated') throw new ValidationError('This delivery partner is not blocked');
     return prisma.foodDeliveryPartner.update({
         where: { id: String(id) },
-        data: { status: 'approved', approvedAt: new Date() },
+        data: { status: 'approved', approvedAt: new Date(), banReason: null, bannedAt: null },
     });
 }
 
@@ -805,13 +812,17 @@ export async function deleteDeliveryPartnerPermanently(id) {
  * reference them, and 'deactivated' still holds the phone number so it cannot
  * be reissued to someone else.
  */
-export async function deleteDeliveryPartner(id) {
+export async function deleteDeliveryPartner(id, reason) {
     if (!isId(id)) throw new NotFoundError('Delivery partner not found');
+    // Shown to the rider at login. VARCHAR(300).
+    const banReason = String(reason ?? '').trim().slice(0, 300) || null;
 
     const { count } = await prisma.foodDeliveryPartner.updateMany({
         where: { id: String(id) },
         data: {
             status: 'deactivated',
+            banReason,
+            bannedAt: new Date(),
             // Sessions end with the account, and a deactivated rider must stop
             // receiving dispatch offers.
             tokenVersion: { increment: 1 },

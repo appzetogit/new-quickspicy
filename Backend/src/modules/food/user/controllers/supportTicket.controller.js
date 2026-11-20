@@ -62,7 +62,10 @@ export async function listMySupportTicketsController(req, res, next) {
             prisma.foodSupportTicket.count({ where }),
         ]);
 
-        return sendResponse(res, 200, 'Tickets fetched', { tickets, total, page, limit });
+        // "flagged" is an admin-only follow-up marker; to the customer the
+        // ticket is still being worked on.
+        const shown = tickets.map((t) => (t.status === 'flagged' ? { ...t, status: 'in_progress' } : t));
+        return sendResponse(res, 200, 'Tickets fetched', { tickets: shown, total, page, limit });
     } catch (e) {
         next(e);
     }

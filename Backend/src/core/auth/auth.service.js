@@ -27,24 +27,9 @@ import {
   upsertFirebaseDeviceToken,
 } from "../notifications/firebase.service.js";
 
-/**
- * What a blocked customer or rider is told at login: who blocked them and the
- * support number to call (Admin → Business settings), when one is set.
- */
-async function blockedAccountMessage() {
-  let phone = "";
-  try {
-    const s = await prisma.foodBusinessSettings.findFirst({
-      select: { phoneCountryCode: true, phoneNumber: true },
-    });
-    if (s?.phoneNumber) phone = `${s.phoneCountryCode || ""} ${s.phoneNumber}`.trim();
-  } catch (err) {
-    logger.warn(`blockedAccountMessage: business settings unavailable: ${err?.message}`);
-  }
-  return phone
-    ? `Quick Spicy has blocked your account. Please contact the Quick Spicy team at ${phone}.`
-    : "Quick Spicy has blocked your account. Please contact the Quick Spicy team.";
-}
+// What a blocked customer or rider is told: the admin's reason and the
+// support number. Shared with auth.middleware.js.
+import { blockedAccountMessage, blockedAccountError } from "./blockedAccount.js";
 
 const ROLES = {
   USER: "USER",
@@ -248,7 +233,7 @@ export const verifyUserOtpAndLogin = async (
 
   // Block login for deactivated users
   if (userDoc.isActive === false) {
-    throw new AuthError(await blockedAccountMessage());
+    throw blockedAccountError(AuthError, await blockedAccountMessage(userDoc.banReason), userDoc.banReason);
   }
 
   // Update FCM token if provided
@@ -536,7 +521,8 @@ export const verifyDeliveryOtpAndLogin = async (phone, otp, fcmToken, platform) 
       isRejected: false,
       isBlocked: true,
       rejectionReason: null,
-      message: await blockedAccountMessage(),
+      banReason: deliveryPartner.banReason || null,
+      message: await blockedAccountMessage(deliveryPartner.banReason),
     };
   }
 
@@ -1061,10 +1047,14 @@ export const refreshAccessToken = async (token) => {
   if (payload?.role === "USER") {
     const u = await prisma.foodUser.findUnique({
       where: { id: String(payload.userId) },
-      select: { isActive: true },
+      select: { isActive: true, banReason: true },
     });
-    if (!u || u.isActive === false) {
+    if (!u) {
       throw new AuthError("User account is deactivated");
+    }
+    if (u.isActive === false) {
+      // Same words as the login screen, so the app can show why.
+      throw blockedAccountError(AuthError, await blockedAccountMessage(u.banReason), u.banReason);
     }
   }
 

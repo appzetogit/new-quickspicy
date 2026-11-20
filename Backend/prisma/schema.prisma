@@ -332,6 +332,8 @@ enum TicketStatus {
   open
   in_progress @map("in-progress")
   resolved
+  /// Marked by an admin for follow-up ("Flag" in the panel).
+  flagged
 }
 
 enum DeliveryTicketStatus {
@@ -604,6 +606,11 @@ model FoodUser {
 
   isVerified Boolean @default(false)
   isActive   Boolean @default(true)
+
+  /// Why an admin deactivated the account; shown to the customer at login.
+  /// Both are cleared when the account is reactivated.
+  banReason String?   @db.VarChar(300)
+  bannedAt  DateTime?
 
   /// Set when the owner deleted their account from the app. The row is kept
   /// (orders, payouts and invoices point at it) but can no longer sign in.
@@ -998,6 +1005,11 @@ model FoodDeliveryPartner {
 
   status          PartnerStatus @default(pending)
   rejectionReason String?
+
+  /// Why an admin blocked the rider (status 'deactivated'); shown at login.
+  /// Both are cleared when the rider is unblocked.
+  banReason String?   @db.VarChar(300)
+  bannedAt  DateTime?
 
   /// Set when the owner deleted their account from the app. The row is kept
   /// (orders, payouts and invoices point at it) but can no longer sign in.
@@ -3338,6 +3350,26 @@ model FoodSupportTicket {
   @@index([userId, createdAt(sort: Desc)])
   @@index([status])
   @@map("food_support_tickets")
+}
+
+/// Every status change on a customer or restaurant support ticket.
+///
+/// One table for both ticket tables, told apart by ticketSource, so there is no
+/// foreign key on ticketId.
+model FoodSupportTicketStatusHistory {
+  id           String        @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+  /// 'user' (food_support_tickets) or 'restaurant' (food_restaurant_support_tickets).
+  ticketSource String        @default("user") @db.VarChar(16)
+  ticketId     String        @db.VarChar(24)
+  fromStatus   TicketStatus?
+  toStatus     TicketStatus
+  /// The admin who made the change; null when the system did.
+  changedBy    String?       @db.VarChar(24)
+  note         String?       @db.VarChar(500)
+  createdAt    DateTime      @default(now())
+
+  @@index([ticketSource, ticketId, createdAt], map: "food_ticket_status_history_ticket_idx")
+  @@map("food_support_ticket_status_history")
 }
 
 model FoodRestaurantSupportTicket {

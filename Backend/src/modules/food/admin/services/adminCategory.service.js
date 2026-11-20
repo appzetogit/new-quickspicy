@@ -49,6 +49,19 @@ export async function getCategories(query = {}) {
     const zone = zoneFilter(query.zoneId);
     if (zone) Object.assign(where, zone);
 
+    // "Categories this restaurant uses or created": private to it, proposed by
+    // it (still true after promotion to global), or holding any of its dishes
+    // (covers the global categories it files its menu under).
+    const restaurantId = String(query.restaurantId || '').trim();
+    if (restaurantId) {
+        if (!isId(restaurantId)) throw new ValidationError('Invalid restaurantId');
+        where.OR = [
+            { restaurantId },
+            { createdByRestaurantId: restaurantId },
+            { foodItems: { some: { restaurantId } } },
+        ];
+    }
+
     // approvalStatus is a NOT NULL enum, so the old "status missing, fall back
     // to isApproved" branches are unreachable and collapse to one comparison.
     if (query.approvalStatus) {

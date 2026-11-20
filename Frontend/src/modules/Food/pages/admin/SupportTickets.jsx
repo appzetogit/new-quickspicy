@@ -11,6 +11,7 @@ import {
   ChevronRight,
   User,
   Store,
+  Flag,
 } from "lucide-react"
 import { supportAPI } from "@food/api"
 import { toast } from "sonner"
@@ -30,6 +31,7 @@ const STATUS_OPTIONS = [
   { value: "open", label: "Open" },
   { value: "in-progress", label: "In Progress" },
   { value: "resolved", label: "Resolved" },
+  { value: "flagged", label: "Flag" },
 ]
 
 const SOURCE_OPTIONS = [
@@ -76,6 +78,8 @@ function getStatusStyles(status) {
       return "bg-blue-50 text-blue-700 border-blue-200"
     case "resolved":
       return "bg-emerald-50 text-emerald-700 border-emerald-200"
+    case "flagged":
+      return "bg-rose-50 text-rose-700 border-rose-200"
     default:
       return "bg-slate-50 text-slate-700 border-slate-200"
   }
@@ -83,6 +87,7 @@ function getStatusStyles(status) {
 
 function formatStatusLabel(status) {
   if (status === "in-progress") return "In Progress"
+  if (status === "flagged") return "Flag"
   if (!status) return "Unknown"
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
@@ -118,6 +123,9 @@ export default function SupportTickets() {
   const [isResponseOpen, setIsResponseOpen] = useState(false)
   const [responseText, setResponseText] = useState("")
   const [updating, setUpdating] = useState(false)
+  // The open ticket's status history, loaded when its details are viewed.
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const queryParams = useMemo(
     () => buildQueryParams(filters, page, searchQuery),
@@ -246,9 +254,24 @@ export default function SupportTickets() {
     setSelectedTicket(null)
   }
 
-  const openView = (ticket) => {
+  const openView = async (ticket) => {
     setSelectedTicket(ticket)
     setIsViewOpen(true)
+    setHistory([])
+    setHistoryLoading(true)
+    try {
+      const res = await supportAPI.getSupportTicketAdmin(ticket._id, ticket.source || "user")
+      const fresh = res?.data?.data?.ticket
+      if (fresh) {
+        setSelectedTicket((prev) => (prev && String(prev._id) === String(fresh._id) ? { ...prev, ...fresh } : prev))
+        setHistory(Array.isArray(fresh.statusHistory) ? fresh.statusHistory : [])
+      }
+    } catch {
+      // The list row is enough to show the ticket; only the history is missing.
+      setHistory([])
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const openResponse = (ticket) => {
@@ -279,7 +302,7 @@ export default function SupportTickets() {
               <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
             </div>
           ) : stats ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
               <button
                 type="button"
                 onClick={() => handleFilterChange("status", "")}
@@ -327,6 +350,18 @@ export default function SupportTickets() {
               >
                 <p className="text-2xl font-bold text-emerald-700">{stats.resolved}</p>
                 <p className="text-xs text-emerald-600 mt-1">Resolved</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFilterChange("status", "flagged")}
+                className={`rounded-lg p-4 text-left border transition-colors ${
+                  filters.status === "flagged"
+                    ? "border-rose-400 bg-rose-100"
+                    : "border-rose-200 bg-rose-50 hover:bg-rose-100"
+                }`}
+              >
+                <p className="text-2xl font-bold text-rose-700">{stats.flagged || 0}</p>
+                <p className="text-xs text-rose-600 mt-1">Flagged</p>
               </button>
             </div>
           ) : null}
@@ -468,6 +503,8 @@ export default function SupportTickets() {
                             <Clock className="w-3.5 h-3.5" />
                           ) : ticket.status === "resolved" ? (
                             <CheckCircle className="w-3.5 h-3.5" />
+                          ) : ticket.status === "flagged" ? (
+                            <Flag className="w-3.5 h-3.5" />
                           ) : (
                             <Clock className="w-3.5 h-3.5" />
                           )}
@@ -537,6 +574,7 @@ export default function SupportTickets() {
                         <option value="open">Open</option>
                         <option value="in-progress">In Progress</option>
                         <option value="resolved">Resolved</option>
+                        <option value="flagged">Flag</option>
                       </select>
                       <button
                         type="button"
@@ -685,6 +723,46 @@ export default function SupportTickets() {
                   </div>
                 ) : null}
 
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 bg-slate-400 rounded" />
+                    <h3 className="text-base font-semibold text-slate-900">Status History</h3>
+                  </div>
+                  <div className="pl-4">
+                    {historyLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Loading history...
+                      </div>
+                    ) : history.length ? (
+                      <ol className="space-y-3 border-l border-slate-200 pl-4">
+                        {history.map((h) => (
+                          <li key={h.id} className="text-sm">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {h.fromStatus ? (
+                                <>
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${getStatusStyles(h.fromStatus)}`}>
+                                    {formatStatusLabel(h.fromStatus)}
+                                  </span>
+                                  <span className="text-slate-400">→</span>
+                                </>
+                              ) : null}
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${getStatusStyles(h.toStatus)}`}>
+                                {formatStatusLabel(h.toStatus)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {h.changedByName || "Admin"} · {formatDateTime(h.createdAt)}
+                            </p>
+                            {h.note ? <p className="mt-0.5 text-xs text-slate-700">{h.note}</p> : null}
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="text-sm text-slate-500">No status changes yet.</p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-slate-200">
                   <button
                     type="button"
@@ -706,6 +784,19 @@ export default function SupportTickets() {
                       className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors shadow-sm"
                     >
                       Mark Resolved
+                    </button>
+                  ) : null}
+                  {selectedTicket.status !== "flagged" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleStatusChange(selectedTicket._id, "flagged")
+                        setIsViewOpen(false)
+                      }}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-rose-300 text-rose-700 rounded-lg hover:bg-rose-50 font-medium transition-colors"
+                    >
+                      <Flag className="w-4 h-4" />
+                      Flag
                     </button>
                   ) : null}
                 </div>
@@ -742,6 +833,7 @@ export default function SupportTickets() {
             />
             <p className="mt-2 text-xs text-slate-500">
               This message will be visible in the support ticket for the user or restaurant.
+              {selectedTicket?.status === "open" ? " Saving it moves the ticket to In Progress." : ""}
             </p>
           </div>
 

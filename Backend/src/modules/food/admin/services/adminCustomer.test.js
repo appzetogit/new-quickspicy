@@ -6,9 +6,11 @@ import { getCustomers, getCustomerById, updateCustomerStatus } from './adminCust
 import {
     getSupportTickets,
     getFoodSupportTicketStats,
+    getSupportTicketById,
     updateSupportTicket,
 } from './adminSupportTicket.service.js';
 import { uniquePhone } from '../../../../utils/testIds.js';
+import { testPatch } from '../../../../utils/testGeo.js';
 
 /**
  * The admin customer list and support inbox.
@@ -17,7 +19,7 @@ import { uniquePhone } from '../../../../utils/testIds.js';
  * only, and used to come from a $lookup pipeline when sorting by them and a
  * separate $group when not.
  */
-const created = { users: [], restaurants: [], orders: [], tickets: [], rTickets: [] };
+const created = { users: [], restaurants: [], orders: [], tickets: [], rTickets: [], zones: [] };
 const stamp = () => `${Date.now()}${Math.floor(performance.now() * 1000) % 1000}`;
 const tag = `T${stamp()}`;
 
@@ -71,7 +73,11 @@ test.after(async () => {
     await prisma.foodSupportTicket.deleteMany({ where: { id: { in: created.tickets } } });
     await prisma.foodRestaurantSupportTicket.deleteMany({ where: { id: { in: created.rTickets } } });
     await prisma.foodNotification.deleteMany({ where: { ownerId: { in: created.users } } });
+    await prisma.foodSupportTicketStatusHistory.deleteMany({
+        where: { ticketId: { in: [...created.tickets, ...created.rTickets] } },
+    });
     await prisma.foodOrder.deleteMany({ where: { id: { in: created.orders } } });
+    await prisma.foodZone.deleteMany({ where: { id: { in: created.zones } } });
     await prisma.foodRefreshToken.deleteMany({ where: { userId: { in: created.users } } });
     await prisma.foodUser.deleteMany({ where: { id: { in: created.users } } });
     await prisma.foodRestaurant.deleteMany({ where: { id: { in: created.restaurants } } });
@@ -170,6 +176,45 @@ test('blocking a customer ends their sessions', async () => {
     assert.equal(tokens, 0);
 
     assert.equal(await updateCustomerStatus('a'.repeat(24), false), null);
+});
+
+test('a ban keeps its reason, and reactivating clears it', async () => {
+    const user = await makeUser(`${tag} Banned`);
+
+    const banned = await updateCustomerStatus(user.id, false, '  Repeated fake orders  ');
+    assert.equal(banned.banReason, 'Repeated fake orders');
+    assert.ok(banned.bannedAt);
+
+    const listed = await getCustomers({ search: `${tag} Banned` });
+    assert.equal(listed.customers[0].banReason, 'Repeated fake orders');
+
+    const restored = await updateCustomerStatus(user.id, true);
+    assert.equal(restored.banReason, null);
+    assert.equal(restored.bannedAt, null);
+});
+
+test('the zone filter finds customers by saved address or by order', async () => {
+    const patch = testPatch(41);
+    const zone = await prisma.foodZone.create({ data: { name: `${tag} Cust Zone`, coordinates: patch.ring } });
+    created.zones.push(zone.id);
+
+    const byAddress = await makeUser(`${tag} ZoneAddr`);
+    await prisma.userAddress.create({
+        data: {
+            userId: byAddress.id, street: '1 Zone St', city: 'Indore', state: 'MP',
+            latitude: patch.lat, longitude: patch.lng, isDefault: true,
+        },
+    });
+    const byOrder = await makeUser(`${tag} ZoneOrder`);
+    const restaurant = await makeRestaurant();
+    const order = await makeOrder(byOrder, restaurant, { total: 100, orderStatus: 'delivered' });
+    await prisma.foodOrder.update({ where: { id: order.id }, data: { zoneId: zone.id } });
+    const outside = await makeUser(`${tag} ZoneNone`);
+
+    const ids = (await getCustomers({ zoneId: zone.id, search: tag, limit: 100 })).customers.map((c) => c.id);
+    assert.ok(ids.includes(byAddress.id), 'address inside the zone');
+    assert.ok(ids.includes(byOrder.id), 'ordered in the zone');
+    assert.ok(!ids.includes(outside.id), 'neither');
 });
 
 test('re-enabling a customer does not touch tokens', async () => {
@@ -296,4 +341,47 @@ test('an empty update changes nothing', async () => {
     assert.equal(await updateSupportTicket(ticket.id, { source: 'user' }), null);
     assert.equal(await updateSupportTicket('bad-id', { status: 'open' }), null);
     assert.equal(await updateSupportTicket('a'.repeat(24), { status: 'open' }), null);
+});
+
+test('a reply moves an open ticket to in-progress, and the history records it', async () => {
+    const user = await makeUser(`${tag} History`);
+    const ticket = await prisma.foodSupportTicket.create({
+        data: { userId: user.id, type: 'other', issueType: `${tag} history`, description: 'y' },
+    });
+    created.tickets.push(ticket.id);
+
+    const replied = await updateSupportTicket(ticket.id, { adminResponse: 'Looking into it', source: 'user' });
+    assert.equal(replied.status, 'in-progress');
+
+    // A second reply changes nothing about the status, so no new history row.
+    await updateSupportTicket(ticket.id, { adminResponse: 'Still looking', source: 'user' });
+
+    // An explicit status wins over the automatic move.
+    const flagged = await updateSupportTicket(ticket.id, { status: 'flagged', note: 'Check with ops', source: 'user' });
+    assert.equal(flagged.status, 'flagged');
+
+    const detail = await getSupportTicketById(ticket.id, 'user');
+    assert.equal(detail.status, 'flagged');
+    assert.deepEqual(
+        detail.statusHistory.map((h) => [h.fromStatus, h.toStatus]),
+        [['open', 'in-progress'], ['in-progress', 'flagged']],
+    );
+    assert.equal(detail.statusHistory[1].note, 'Check with ops');
+
+    const stats = await getFoodSupportTicketStats({ source: 'user' });
+    assert.ok(stats.flagged >= 1);
+    const found = await getSupportTickets({ search: tag, status: 'flagged', source: 'user' });
+    assert.ok(found.tickets.some((t) => t.id === ticket.id));
+});
+
+test('a reply with an explicit status keeps that status', async () => {
+    const user = await makeUser(`${tag} Explicit`);
+    const ticket = await prisma.foodSupportTicket.create({
+        data: { userId: user.id, type: 'other', issueType: 'x', description: 'y' },
+    });
+    created.tickets.push(ticket.id);
+
+    const done = await updateSupportTicket(ticket.id, { adminResponse: 'Refunded', status: 'resolved', source: 'user' });
+    assert.equal(done.status, 'resolved');
+    assert.equal(await getSupportTicketById('a'.repeat(24), 'user'), null);
 });

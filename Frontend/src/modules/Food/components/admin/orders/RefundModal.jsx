@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react"
-import { Wallet } from "lucide-react"
+import { Wallet, ArrowLeft } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -56,7 +56,14 @@ const LEG_STATUS = {
   failed: "text-red-700 bg-red-50",
 }
 
+/**
+ * Steps: "type" (full or partial) -> "details" (amount, where it goes, who bears
+ * it, reason) -> "confirm" (summary; Confirm sends it). A full refund's amount
+ * is the whole refundable balance and can't be edited.
+ */
 export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, isProcessing }) {
+  const [step, setStep] = useState("type")
+  const [refundType, setRefundType] = useState(null) // "full" | "partial"
   const [refundAmount, setRefundAmount] = useState("")
   const [destination, setDestination] = useState("original")
   // Who bears it: the restaurant (comes off its payout) or the company.
@@ -68,13 +75,22 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
 
   useEffect(() => {
     if (order && isOpen) {
-      setRefundAmount((picture.left / 100).toFixed(2))
+      setStep("type")
+      setRefundType(null)
+      setRefundAmount("")
       setDestination("original")
       setChargedTo("platform")
       setReason("")
       setError("")
     }
-  }, [order, isOpen, picture.left])
+  }, [order, isOpen])
+
+  const chooseType = (type) => {
+    setRefundType(type)
+    setRefundAmount(type === "full" ? (picture.left / 100).toFixed(2) : "")
+    setError("")
+    setStep("details")
+  }
 
   const handleAmountChange = (e) => {
     const value = e.target.value
@@ -84,19 +100,36 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
     }
   }
 
-  const amountPaise = paise(refundAmount)
+  const amountPaise = refundType === "full" ? picture.left : paise(refundAmount)
   const preview = splitPreview(picture, amountPaise, destination)
 
-  const handleConfirm = () => {
-    if (!refundAmount || !(amountPaise > 0)) {
-      setError("Enter the amount to refund")
-      return
+  const validate = () => {
+    if (!(amountPaise > 0)) {
+      setError("Enter an amount greater than ₹0")
+      return false
     }
     if (amountPaise > picture.left) {
       setError(`Only ${rupees(picture.left / 100)} is left to refund on this order`)
+      return false
+    }
+    return true
+  }
+
+  const handleReview = () => {
+    if (validate()) setStep("confirm")
+  }
+
+  const handleConfirm = () => {
+    if (!validate()) {
+      setStep("details")
       return
     }
-    onConfirm(amountPaise / 100, destination, { chargedTo, reason: reason.trim() })
+    onConfirm(amountPaise / 100, destination, { chargedTo, reason: reason.trim(), refundType })
+  }
+
+  const handleBack = () => {
+    setError("")
+    setStep(step === "confirm" ? "details" : "type")
   }
 
   const handleClose = () => {
@@ -112,6 +145,7 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
   const paidOnline = picture.online > 0
   const paidWallet = picture.wallet > 0
   const paidCash = picture.cash > 0
+  const canRefund = picture.left > 0
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -119,7 +153,7 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
             <Wallet className="w-5 h-5 text-purple-600" />
-            Refund
+            {step === "type" || !refundType ? "Refund" : refundType === "full" ? "Full refund" : "Partial refund"}
           </DialogTitle>
           <DialogDescription className="text-slate-600">
             Order ID: <span className="font-semibold">{order.orderId}</span>
@@ -127,33 +161,35 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="rounded-lg border border-slate-200 p-3 text-sm">
-            <p className="mb-1 font-medium text-slate-700">Paid with</p>
-            {paidWallet && (
-              <div className="flex justify-between text-slate-600">
-                <span>Wallet</span>
-                <span>{rupees(picture.wallet / 100)}</span>
+          {step !== "confirm" && (
+            <div className="rounded-lg border border-slate-200 p-3 text-sm">
+              <p className="mb-1 font-medium text-slate-700">Paid with</p>
+              {paidWallet && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Wallet</span>
+                  <span>{rupees(picture.wallet / 100)}</span>
+                </div>
+              )}
+              {paidOnline && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Online (UPI / card)</span>
+                  <span>{rupees(picture.online / 100)}</span>
+                </div>
+              )}
+              {paidCash && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Cash on delivery (refunded as wallet credit)</span>
+                  <span>{rupees(picture.cash / 100)}</span>
+                </div>
+              )}
+              <div className="mt-1 flex justify-between border-t border-slate-100 pt-1 font-medium text-slate-800">
+                <span>Left to refund</span>
+                <span>{rupees(picture.left / 100)}</span>
               </div>
-            )}
-            {paidOnline && (
-              <div className="flex justify-between text-slate-600">
-                <span>Online (UPI / card)</span>
-                <span>{rupees(picture.online / 100)}</span>
-              </div>
-            )}
-            {paidCash && (
-              <div className="flex justify-between text-slate-600">
-                <span>Cash on delivery (refunded as wallet credit)</span>
-                <span>{rupees(picture.cash / 100)}</span>
-              </div>
-            )}
-            <div className="mt-1 flex justify-between border-t border-slate-100 pt-1 font-medium text-slate-800">
-              <span>Left to refund</span>
-              <span>{rupees(picture.left / 100)}</span>
             </div>
-          </div>
+          )}
 
-          {picture.legs.length > 0 && (
+          {step === "type" && picture.legs.length > 0 && (
             <div className="rounded-lg border border-slate-200 p-3 text-sm">
               <p className="mb-1 font-medium text-slate-700">Refunds so far</p>
               <ul className="space-y-1">
@@ -174,23 +210,58 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
             </div>
           )}
 
-          {picture.left > 0 ? (
+          {!canRefund ? (
+            <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+              {picture.paid || picture.legs.length
+                ? "Everything paid on this order has already been refunded."
+                : "Nothing has been paid on this order yet (a cash order is paid on delivery), so there is nothing to refund."}
+            </p>
+          ) : step === "type" ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => chooseType("full")}
+                className="rounded-lg border-2 border-slate-200 p-3 text-left transition-colors hover:border-purple-500 hover:bg-purple-50"
+              >
+                <span className="block font-semibold text-slate-900">Full refund</span>
+                <span className="block text-xs text-slate-500">Everything left: {rupees(picture.left / 100)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseType("partial")}
+                className="rounded-lg border-2 border-slate-200 p-3 text-left transition-colors hover:border-purple-500 hover:bg-purple-50"
+              >
+                <span className="block font-semibold text-slate-900">Partial refund</span>
+                <span className="block text-xs text-slate-500">Choose an amount up to {rupees(picture.left / 100)}</span>
+              </button>
+            </div>
+          ) : step === "details" ? (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Refund amount (₹)</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={refundAmount}
-                  onChange={handleAmountChange}
-                  placeholder="0.00"
-                  disabled={isProcessing}
-                  className={`w-full px-3 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                    error
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-200"
-                      : "border-slate-300 focus:border-purple-500 focus:ring-purple-200"
-                  } ${isProcessing ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`}
-                />
+                {refundType === "full" ? (
+                  <div className="w-full rounded-lg border-2 border-slate-200 bg-slate-100 px-3 py-2.5 font-semibold text-slate-800">
+                    {rupees(picture.left / 100)}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoFocus
+                    value={refundAmount}
+                    onChange={handleAmountChange}
+                    placeholder="0.00"
+                    disabled={isProcessing}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+                      error
+                        ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                        : "border-slate-300 focus:border-purple-500 focus:ring-purple-200"
+                    } ${isProcessing ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`}
+                  />
+                )}
+                {refundType === "partial" && (
+                  <p className="text-xs text-slate-500">More than ₹0 and at most {rupees(picture.left / 100)}</p>
+                )}
                 {error && <p className="text-sm text-red-600">{error}</p>}
               </div>
 
@@ -273,36 +344,65 @@ export default function RefundModal({ isOpen, onOpenChange, order, onConfirm, is
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200"
                 />
               </div>
-
-              {amountPaise > 0 && amountPaise <= picture.left && (
-                <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-800">
-                  {preview.toGateway > 0 && <p>{rupees(preview.toGateway / 100)} to the original payment method</p>}
-                  {preview.toWallet > 0 && <p>{rupees(preview.toWallet / 100)} to the customer's wallet (instant)</p>}
-                </div>
-              )}
             </>
           ) : (
-            <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-              {picture.paid || picture.legs.length
-                ? "Everything paid on this order has already been refunded."
-                : "Nothing has been paid on this order yet (a cash order is paid on delivery), so there is nothing to refund."}
-            </p>
+            <div className="space-y-3 text-sm">
+              <p className="text-slate-700">
+                Refund <span className="font-semibold text-slate-900">{rupees(amountPaise / 100)}</span>
+                {refundType === "full" ? " (everything left on this order)" : ""}?
+              </p>
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-purple-800">
+                {preview.toGateway > 0 && <p>{rupees(preview.toGateway / 100)} to the original payment method</p>}
+                {preview.toWallet > 0 && <p>{rupees(preview.toWallet / 100)} to the customer's wallet (instant)</p>}
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Borne by</span>
+                <span className="font-medium text-slate-800">{chargedTo === "restaurant" ? "Restaurant" : "Company (Quick Spicy)"}</span>
+              </div>
+              {reason.trim() && (
+                <div className="flex justify-between gap-3 text-slate-600">
+                  <span>Reason</span>
+                  <span className="text-right font-medium text-slate-800">{reason.trim()}</span>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">Money sent to a wallet or gateway can't be taken back from here.</p>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-          <Button variant="outline" onClick={handleClose} disabled={isProcessing} className="px-4 py-2">
-            Cancel
-          </Button>
-          {picture.left > 0 && (
-            <Button
-              onClick={handleConfirm}
-              disabled={isProcessing || !(amountPaise > 0)}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white"
-            >
-              {isProcessing ? "Processing..." : "Refund"}
+        <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
+          <div>
+            {canRefund && step !== "type" && (
+              <Button variant="ghost" onClick={handleBack} disabled={isProcessing} className="px-3 py-2">
+                <ArrowLeft className="mr-1 h-4 w-4" />
+                Back
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleClose} disabled={isProcessing} className="px-4 py-2">
+              Cancel
             </Button>
-          )}
+            {canRefund && step === "details" && (
+              <Button
+                onClick={handleReview}
+                disabled={isProcessing || !(amountPaise > 0)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                Continue
+              </Button>
+            )}
+            {canRefund && step === "confirm" && (
+              <Button
+                onClick={handleConfirm}
+                disabled={isProcessing}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                {isProcessing ? "Processing..." : "Confirm refund"}
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

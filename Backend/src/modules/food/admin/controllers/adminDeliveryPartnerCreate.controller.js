@@ -5,6 +5,7 @@ import { registerDeliveryPartner } from '../../delivery/services/delivery.servic
 import { findDeliveryPartnerByPhone } from '../../../../core/auth/onboardingGate.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
+import { resolveCohortId } from '../services/adminRiderCohort.service.js';
 
 /** Multipart sends booleans as strings. Missing means yes: approved at once. */
 const wantsApproved = (value) => !['false', '0', 'no', 'off'].includes(String(value ?? 'true').trim().toLowerCase());
@@ -78,6 +79,8 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
             if (!zone) throw new ValidationError('Choose a valid zone');
             zoneId = zone.id;
         }
+        // Optional cohort, checked before the rider is created ('' or missing: none).
+        const cohortId = (await resolveCohortId(body.cohortId)) || null;
         const approve = wantsApproved(body.approveNow);
 
         const filesByField = {};
@@ -91,6 +94,9 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
             body,
             { createdByAdmin: true, adminId: req.user?.userId || null, approve, zoneId },
         );
+        if (cohortId) {
+            await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { cohortId } });
+        }
         res.status(201).json({
             success: true,
             message: approve

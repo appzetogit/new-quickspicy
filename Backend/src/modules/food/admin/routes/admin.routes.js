@@ -262,6 +262,7 @@ router.delete('/safety-emergency-reports/:id', adminController.deleteSafetyEmerg
 router.get('/support-tickets/stats', adminController.getFoodSupportTicketStatsController);
 router.get('/support-tickets', adminController.getSupportTicketsController);
 router.patch('/support-tickets/:id', adminController.updateSupportTicketController);
+router.get('/support-tickets/:id', adminController.getSupportTicketByIdController);
 router.get('/global-search', adminController.globalSearch);
 router.get('/restaurants/complaints/stats', adminController.getRestaurantComplaintStatsController);
 router.get('/restaurants/complaints', adminController.getRestaurantComplaints);

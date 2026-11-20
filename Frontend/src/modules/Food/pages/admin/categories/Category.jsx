@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import {
@@ -57,6 +57,8 @@ export default function Category() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [showPendingOnly, setShowPendingOnly] = useState(false)
+  const [restaurantFilterId, setRestaurantFilterId] = useState("")
+  const [filterRestaurants, setFilterRestaurants] = useState([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
   const [zones, setZones] = useState([])
@@ -112,21 +114,18 @@ export default function Category() {
       fetchCategories()
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [searchQuery, showPendingOnly])
+  }, [searchQuery, showPendingOnly, restaurantFilterId])
 
-  const filteredCategories = useMemo(() => {
-    const query = String(searchQuery || "").trim().toLowerCase()
-    if (!query) return categories
-    return categories.filter((category) => {
-      const creator = category?.createdByRestaurant?.name || category?.restaurant?.name || ""
-      return (
-        String(category?.name || "").toLowerCase().includes(query) ||
-        String(category?.foodTypeScope || "").toLowerCase().includes(query) ||
-        String(creator || "").toLowerCase().includes(query) ||
-        String(category?.id || "").toLowerCase().includes(query)
-      )
-    })
-  }, [categories, searchQuery])
+  useEffect(() => {
+    adminAPI
+      .getRestaurants({ limit: 1000, status: "approved" })
+      .then((res) => setFilterRestaurants(res?.data?.data?.restaurants || []))
+      .catch(() => setFilterRestaurants([]))
+  }, [])
+
+  // Name search and the restaurant filter both run on the server; filtering
+  // again here by creator name only hid rows the server had already matched.
+  const filteredCategories = categories
 
   const fetchCategories = async () => {
     try {
@@ -134,6 +133,7 @@ export default function Category() {
       const params = {}
       if (searchQuery) params.search = searchQuery
       if (showPendingOnly) params.approvalStatus = "pending"
+      if (restaurantFilterId) params.restaurantId = restaurantFilterId
 
       const response = await adminAPI.getCategories(params)
       const list = response?.data?.data?.categories || response?.data?.categories || []
@@ -430,6 +430,21 @@ export default function Category() {
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none focus:border-slate-900"
               />
             </div>
+
+            <select
+              aria-label="Filter by restaurant"
+              title="Categories this restaurant created or has dishes in"
+              value={restaurantFilterId}
+              onChange={(event) => setRestaurantFilterId(event.target.value)}
+              className="w-full sm:w-56 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-900"
+            >
+              <option value="">All restaurants</option>
+              {filterRestaurants.map((r) => (
+                <option key={r._id || r.id} value={r._id || r.id}>
+                  {r.restaurantName || r.name}
+                </option>
+              ))}
+            </select>
 
             <button
               onClick={handleExportPDF}

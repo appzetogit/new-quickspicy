@@ -33,6 +33,19 @@ Verified against `Backend/src/modules/food/delivery/` and `Backend/src/modules/f
 }
 ```
 
+A rider who is not approved gets no tokens; the response carries `pendingApproval: true` instead. A **blocked** rider (status `deactivated`) gets:
+```json
+{
+  "pendingApproval": true,
+  "isBlocked": true,
+  "isRejected": false,
+  "rejectionReason": null,
+  "banReason": "Cash not deposited",   // the admin's reason; null if none was recorded
+  "message": "Quick Spicy banned your account due to the reason: Cash not deposited. Please contact the Quick Spicy team at +91 98765 43210."
+}
+```
+Show `message` as-is (it already includes the reason and the support number). With no reason it reads *"Quick Spicy has blocked your account. Please contact the Quick Spicy team at …"*.
+
 ### `POST /food/auth/refresh-token` · `POST /food/auth/logout` · `GET /food/auth/me`
 Same as the user app.
 

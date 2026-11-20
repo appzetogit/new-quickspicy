@@ -197,6 +197,12 @@ export const supportAPI = {
     apiClient.patch(`/food/admin/support-tickets/${String(id)}`, body ?? {}, {
       contextModule: "admin",
     }),
+  /** One ticket with its status history. source: 'user' | 'restaurant'. */
+  getSupportTicketAdmin: (id, source = "user") =>
+    apiClient.get(`/food/admin/support-tickets/${String(id)}`, {
+      params: { source },
+      contextModule: "admin",
+    }),
 };
 
 /**
@@ -576,9 +582,9 @@ export const adminAPI = {
     apiClient.delete(`/food/admin/delivery/${String(id)}`, {
       contextModule: "admin",
     }),
-  /** Block (signs out, no offers) or unblock a rider. */
-  setDeliveryPartnerBlocked: (id, blocked) =>
-    apiClient.patch(`/food/admin/delivery/${String(id)}/block`, { blocked: Boolean(blocked) }, {
+  /** Block (signs out, no offers) or unblock a rider. reason is required to block; the rider sees it at login. */
+  setDeliveryPartnerBlocked: (id, blocked, reason) =>
+    apiClient.patch(`/food/admin/delivery/${String(id)}/block`, { blocked: Boolean(blocked), ...(reason ? { reason } : {}) }, {
       contextModule: "admin",
     }),
   /** Delete a rider for good -- refused for one with orders on record. */
@@ -835,10 +841,11 @@ export const adminAPI = {
     apiClient.get(`/food/admin/customers/${String(id)}`, {
       contextModule: "admin",
     }),
-  updateCustomerStatus: (id, isActive) =>
+  /** reason is required when deactivating; the customer sees it at login. */
+  updateCustomerStatus: (id, isActive, reason) =>
     apiClient.patch(
       `/food/admin/customers/${String(id)}/status`,
-      { isActive: isActive !== false },
+      { isActive: isActive !== false, ...(reason ? { reason } : {}) },
       { contextModule: "admin" },
     ),
   /** Orders (admin) – list, get by id, assign delivery partner */
@@ -969,6 +976,15 @@ export const adminAPI = {
       params: { limit: 1000, ...params },
       contextModule: "admin",
     }),
+  /** Rider cohorts: { cohorts: [{ id, name, description, zoneIds, zones, isActive, riderCount }] }. Query: includeInactive */
+  getRiderCohorts: (params = {}) =>
+    apiClient.get("/food/admin/delivery/cohorts", { params, contextModule: "admin" }),
+  createRiderCohort: (body) =>
+    apiClient.post("/food/admin/delivery/cohorts", body ?? {}, { contextModule: "admin" }),
+  updateRiderCohort: (id, body) =>
+    apiClient.patch(`/food/admin/delivery/cohorts/${String(id)}`, body ?? {}, { contextModule: "admin" }),
+  deleteRiderCohort: (id) =>
+    apiClient.delete(`/food/admin/delivery/cohorts/${String(id)}`, { contextModule: "admin" }),
   /** Restaurant report (admin). */
   getRestaurantReport: (params = {}) =>
     apiClient.get("/food/admin/reports/restaurants", {

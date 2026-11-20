@@ -64,7 +64,16 @@ Phone: digits only, 8–15 characters.
 }
 ```
 
-`isNewUser: true` means the account has no usable name yet → show the name screen. A deactivated account (`isActive: false`) is rejected at login with *"Your account has been deactivated…"*.
+`isNewUser: true` means the account has no usable name yet → show the name screen. A deactivated (banned) account (`isActive: false`) is rejected with **401** at login, at `/food/auth/refresh-token`, and on any authenticated request:
+```json
+{
+  "success": false,
+  "message": "Quick Spicy banned your account due to the reason: Repeated fake orders. Please contact the Quick Spicy team at +91 98765 43210.",
+  "isBlocked": true,
+  "banReason": "Repeated fake orders"
+}
+```
+Show `message` as-is and sign the user out. `banReason` is null when the admin gave none, and the message then reads *"Quick Spicy has blocked your account. Please contact the Quick Spicy team at …"*.
 
 ### `POST /food/auth/refresh-token`
 `{ "refreshToken": "…" }` → a new token pair.

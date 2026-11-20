@@ -266,3 +266,28 @@ test('saving other details keeps the day-by-day hours', async () => {
     assert.equal(friday.openingTime, '16:00', 'Friday was not reset to the simple pair');
     assert.equal(friday.closingTime, '02:00');
 });
+
+test('delivery radius: blank follows the platform, otherwise 0 < km <= 50 (admin and self-onboarding)', async () => {
+    const { toDeliveryRadiusKm } = await import('./adminRestaurantWrite.helpers.js');
+    const { validateRestaurantRegisterDto } = await import(
+        '../../restaurant/validators/restaurant.validator.js'
+    );
+
+    assert.equal(toDeliveryRadiusKm(''), null);
+    assert.equal(toDeliveryRadiusKm('  '), null);
+    assert.equal(toDeliveryRadiusKm(undefined), null);
+    assert.equal(toDeliveryRadiusKm('7.5'), 7.5);
+    assert.equal(toDeliveryRadiusKm(50), 50);
+    assert.throws(() => toDeliveryRadiusKm(0), /above 0/);
+    assert.throws(() => toDeliveryRadiusKm('abc'), /above 0/);
+    assert.throws(() => toDeliveryRadiusKm(50.1), /more than 50 km/);
+
+    const signup = { restaurantName: 'R', ownerName: 'O', pureVegRestaurant: 'false' };
+    assert.equal(validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '' }).deliveryRadiusKm, null);
+    assert.equal(validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '6' }).deliveryRadiusKm, 6);
+    assert.throws(() => validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '500' }), /50 km/);
+
+    const r = await track(baseBody({ deliveryRadiusKm: '4' }));
+    const row = await prisma.foodRestaurant.findUnique({ where: { id: r.id }, select: { deliveryRadiusKm: true } });
+    assert.equal(Number(row.deliveryRadiusKm), 4);
+});

@@ -264,3 +264,25 @@ test('a rider profile edit trims the name and rejects a blank one', async () => 
     // comes with a number change — are covered in adminDeliveryWallet.test.js,
     // which owns that behaviour.
 });
+
+test('the Edit rider form sets, rejects and clears a cohort', async () => {
+    const partner = await makePartner();
+    const cohort = await prisma.foodRiderCohort.create({ data: { name: `Cohort ${stamp()}`, zoneIds: [] } });
+    try {
+        const set = await updateDeliveryPartnerProfile(partner.id, { cohortId: cohort.id });
+        assert.equal(set.cohortId, cohort.id);
+        assert.equal((await getDeliveryPartnerById(partner.id)).cohortId, cohort.id);
+
+        await assert.rejects(
+            () => updateDeliveryPartnerProfile(partner.id, { cohortId: 'b'.repeat(24) }),
+            /Unknown cohort/,
+        );
+
+        // Left out: untouched. Empty: cleared.
+        assert.equal((await updateDeliveryPartnerProfile(partner.id, { name: 'Still here' })).cohortId, cohort.id);
+        assert.equal((await updateDeliveryPartnerProfile(partner.id, { cohortId: '' })).cohortId, null);
+    } finally {
+        await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { cohortId: null } });
+        await prisma.foodRiderCohort.delete({ where: { id: cohort.id } });
+    }
+});

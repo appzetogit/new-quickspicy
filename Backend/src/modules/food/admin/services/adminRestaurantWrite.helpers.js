@@ -122,12 +122,20 @@ export const toFreeDeliveryAbove = (value) => {
  * Blank means "follow the platform default", which is not the same as zero:
  * zero is a radius nobody is inside, so it would hide the restaurant from every
  * customer while looking like a configured value.
+ *
+ * The cap catches a typo (500 for 5.00) that would put one restaurant in every
+ * customer's list; no kitchen delivers food hot further than this.
  */
+export const MAX_DELIVERY_RADIUS_KM = 50;
+
 export const toDeliveryRadiusKm = (value) => {
-    if (value === '' || value === null || value === undefined) return null;
+    if (value === null || value === undefined || String(value).trim() === '') return null;
     const km = toFiniteNumber(value);
     if (km === null || km <= 0) {
         throw new ValidationError('Delivery radius must be a number above 0, or blank to follow the platform default');
+    }
+    if (km > MAX_DELIVERY_RADIUS_KM) {
+        throw new ValidationError(`Delivery radius cannot be more than ${MAX_DELIVERY_RADIUS_KM} km`);
     }
     return km;
 };

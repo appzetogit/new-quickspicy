@@ -5,7 +5,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { exportCustomersToCSV, exportCustomersToExcel, exportCustomersToPDF } from "@food/components/admin/customers/customersExportUtils"
 import { adminAPI } from "@food/api"
 import { toast } from "sonner"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@food/components/ui/dialog"
+import { zoneLabel } from "@food/utils/entityLabels"
 import { usePaginationParams } from "@food/hooks/usePaginationParams"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
@@ -20,7 +21,10 @@ const EMPTY_FILTERS = {
   sortBy: "",
   chooseFirst: "",
   orderCount: "",
+  zoneId: "",
 }
+
+const BAN_REASON_MAX = 300
 
 // Delivered-order buckets for the "Orders placed" filter.
 const ORDER_COUNT_FILTERS = {
@@ -56,6 +60,21 @@ export default function Customers() {
   // the list had already changed on its own and the button changed nothing.
   const [draft, setDraft] = useState(EMPTY_FILTERS)
   const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [zones, setZones] = useState([])
+  // Deactivating asks for a reason first; the customer is shown it at login.
+  const [banTarget, setBanTarget] = useState(null)
+  const [banReason, setBanReason] = useState("")
+  const [banSaving, setBanSaving] = useState(false)
+
+  useEffect(() => {
+    adminAPI
+      .getZones()
+      .then((res) => {
+        const data = res?.data?.data ?? res?.data ?? {}
+        setZones(Array.isArray(data.zones) ? data.zones : [])
+      })
+      .catch(() => setZones([]))
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize))
   const showingFrom = totalCustomers === 0 ? 0 : (page - 1) * pageSize + 1
@@ -126,6 +145,7 @@ export default function Customers() {
           ...(filters.joiningDate && { joiningDate: filters.joiningDate }),
           ...(filters.orderDate && { orderDate: filters.orderDate }),
           ...(filters.sortBy && { sortBy: filters.sortBy }),
+          ...(filters.zoneId && { zoneId: filters.zoneId }),
           ...(ORDER_COUNT_FILTERS[filters.orderCount] || {}),
           ...(useChooseFirst && { chooseFirst }),
         }
@@ -169,29 +189,47 @@ export default function Customers() {
     }
   }, [userIdFromUrl])
 
+  const patchCustomer = (customerId, patch) => {
+    setCustomers((prev) => prev.map((c) => ((c._id || c.id) === customerId ? { ...c, ...patch } : c)))
+    setUserDetails((prev) => (prev && (prev._id || prev.id) === customerId ? { ...prev, ...patch } : prev))
+  }
+
+  // Deactivating opens the reason dialog; reactivating happens at once and
+  // clears the reason.
   const handleToggleStatus = async (customerId) => {
+    const customer = customers.find(c => (c._id || c.id) === customerId)
+    if (!customer) return
+
+    if (customer.status) {
+      setBanReason("")
+      setBanTarget({ id: customerId, name: customer.name })
+      return
+    }
+
     try {
-      // Find customer
-      const customer = customers.find(c => (c._id || c.id) === customerId)
-      if (!customer) return
-
-      const newStatus = !customer.status
-
-      // Optimistically update UI
-      setCustomers(customers.map(c =>
-        c.id === customerId ? { ...c, status: newStatus } : c
-      ))
-
-      // Call API to update user status
-      await adminAPI.updateCustomerStatus(customerId, newStatus)
-      toast.success(`User ${newStatus ? 'activated' : 'deactivated'} successfully`)
+      await adminAPI.updateCustomerStatus(customerId, true)
+      patchCustomer(customerId, { status: true, isActive: true, banReason: null, bannedAt: null })
+      toast.success('User activated successfully')
     } catch (error) {
       debugError('Error updating status:', error)
-      toast.error('Failed to update status')
-      // Revert optimistic update
-      setCustomers(customers.map(c =>
-        c.id === customerId ? { ...c, status: !c.status } : c
-      ))
+      toast.error(error?.response?.data?.message || 'Failed to update status')
+    }
+  }
+
+  const handleConfirmBan = async () => {
+    const reason = banReason.trim()
+    if (!banTarget || !reason) return
+    try {
+      setBanSaving(true)
+      await adminAPI.updateCustomerStatus(banTarget.id, false, reason)
+      patchCustomer(banTarget.id, { status: false, isActive: false, banReason: reason, bannedAt: new Date().toISOString() })
+      toast.success('User deactivated successfully')
+      setBanTarget(null)
+    } catch (error) {
+      debugError('Error updating status:', error)
+      toast.error(error?.response?.data?.message || 'Failed to update status')
+    } finally {
+      setBanSaving(false)
     }
   }
 
@@ -312,6 +350,25 @@ export default function Customers() {
                 <option value="">Select Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Zone
+              </label>
+              <select
+                value={draft.zoneId}
+                onChange={(e) => handleFilterChange("zoneId", e.target.value)}
+                title="Customers with a saved address in the zone, or an order placed there"
+                className="mt-auto w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="">All zones</option>
+                {zones.map((z) => (
+                  <option key={z._id || z.id} value={z._id || z.id}>
+                    {zoneLabel(z, "Zone")}{z.city ? ` (${z.city})` : ""}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -574,6 +631,14 @@ export default function Customers() {
                               }`}
                           />
                         </button>
+                        {!customer.status && customer.banReason ? (
+                          <span
+                            className="mt-1 block max-w-[180px] truncate text-[11px] text-red-600"
+                            title={customer.banReason}
+                          >
+                            Banned: {customer.banReason}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <button
@@ -658,6 +723,14 @@ export default function Customers() {
                         </span>
                       )}
                     </div>
+                    {!userDetails.isActive && userDetails.banReason ? (
+                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        <span className="font-semibold">Ban reason:</span> {userDetails.banReason}
+                        {userDetails.bannedAt ? (
+                          <span className="block text-xs text-red-500">Since {formatDateTime(userDetails.bannedAt)}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                       <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
                         <Mail className="w-4 h-4" />
@@ -814,6 +887,49 @@ export default function Customers() {
               <div className="text-sm text-slate-500">No user details available</div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate (ban) with a reason */}
+      <Dialog open={Boolean(banTarget)} onOpenChange={(open) => { if (!open && !banSaving) setBanTarget(null) }}>
+        <DialogContent className="max-w-md bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>Deactivate {banTarget?.name || "customer"}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            They are signed out and cannot log in. The app shows them this reason and the support number.
+          </p>
+          <label className="mt-2 block text-sm font-semibold text-slate-700" htmlFor="customer-ban-reason">
+            Reason <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            id="customer-ban-reason"
+            rows={3}
+            maxLength={BAN_REASON_MAX}
+            value={banReason}
+            onChange={(e) => setBanReason(e.target.value)}
+            placeholder="e.g. Repeated fake orders"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-right text-xs text-slate-400">{banReason.length}/{BAN_REASON_MAX}</p>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setBanTarget(null)}
+              disabled={banSaving}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmBan}
+              disabled={banSaving || !banReason.trim()}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {banSaving ? "Deactivating..." : "Deactivate"}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

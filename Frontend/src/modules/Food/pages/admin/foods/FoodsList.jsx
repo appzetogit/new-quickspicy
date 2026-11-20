@@ -197,6 +197,43 @@ export default function FoodsList() {
     return false
   }
 
+  // Row-level "In stock" switch: flips isAvailable straight away through the
+  // same admin PATCH the edit modal uses, optimistically, rolling back on error.
+  const [stockTogglingIds, setStockTogglingIds] = useState(() => new Set())
+  const handleToggleStock = async (food) => {
+    if (!ensureActionAccess("edit")) return
+    const foodId = food?._id || food?.id
+    if (!foodId || stockTogglingIds.has(food.id)) return
+    const next = food.isAvailable === false
+    const applyAvailability = (value) =>
+      setFoods((prev) =>
+        prev.map((f) =>
+          f.id === food.id
+            ? {
+                ...f,
+                isAvailable: value,
+                status: value && String(f.approvalStatus || "").toLowerCase() !== "rejected",
+              }
+            : f,
+        ),
+      )
+    setStockTogglingIds((prev) => new Set(prev).add(food.id))
+    applyAvailability(next)
+    try {
+      await adminAPI.updateFood(foodId, { isAvailable: next })
+      toast.success(next ? `${food.name} is back in stock` : `${food.name} marked out of stock`)
+    } catch (error) {
+      applyAvailability(!next)
+      toast.error(error?.response?.data?.message || "Failed to update stock")
+    } finally {
+      setStockTogglingIds((prev) => {
+        const copy = new Set(prev)
+        copy.delete(food.id)
+        return copy
+      })
+    }
+  }
+
   const withImageVersion = (url) => {
     if (!url || typeof url !== "string") return FOOD_FALLBACK_IMAGE
     // A signed S3 link covers every query parameter, so appending one breaks
@@ -1052,6 +1089,9 @@ export default function FoodsList() {
                   Category
                 </th>
                 <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  In stock
+                </th>
+                <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                   Action
                 </th>
               </tr>
@@ -1059,7 +1099,7 @@ export default function FoodsList() {
             <tbody className="bg-white divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={isRestaurantSelected ? 7 : 6} className="px-6 py-20 text-center">
+                  <td colSpan={isRestaurantSelected ? 8 : 7} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
                       <p className="text-sm text-slate-500">Loading foods...</p>
@@ -1068,7 +1108,7 @@ export default function FoodsList() {
                 </tr>
               ) : foods.length === 0 ? (
                 <tr>
-                  <td colSpan={isRestaurantSelected ? 7 : 6} className="px-6 py-20 text-center">
+                  <td colSpan={isRestaurantSelected ? 8 : 7} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <p className="text-lg font-semibold text-slate-700 mb-1">No Data Found</p>
                       <p className="text-sm text-slate-500">No food items match your search or restaurant filter</p>
@@ -1122,6 +1162,31 @@ export default function FoodsList() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-slate-800">{food.categoryName || "-"}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={food.isAvailable !== false}
+                          aria-label={`${food.name} in stock`}
+                          title={food.isAvailable !== false ? "In stock (click to mark out of stock)" : "Out of stock (click to mark in stock)"}
+                          onClick={() => handleToggleStock(food)}
+                          disabled={stockTogglingIds.has(food.id)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+                            food.isAvailable !== false ? "bg-emerald-500" : "bg-slate-300"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                              food.isAvailable !== false ? "translate-x-4" : "translate-x-0.5"
+                            }`}
+                          />
+                        </button>
+                        {food.isAvailable === false && (
+                          <span className="text-[10px] font-semibold text-rose-600">Out of stock</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -1593,15 +1658,16 @@ export default function FoodsList() {
                   One short clip of the dish, MP4 or WebM, up to {MAX_VIDEO_MB} MB. Shown with the images in the app.
                 </p>
               </div>
-              <div className="flex items-center gap-6 pt-7">
+              <div className="flex flex-col gap-1 pt-7">
                 <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
                     checked={foodForm.isAvailable}
                     onChange={(e) => setFoodForm((prev) => ({ ...prev, isAvailable: e.target.checked }))}
                   />
-                  Available
+                  In stock
                 </label>
+                <p className="text-xs text-slate-500">Off = shown as Out of stock</p>
               </div>
             </div>
             <div>

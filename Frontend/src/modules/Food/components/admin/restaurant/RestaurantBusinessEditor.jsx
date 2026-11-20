@@ -119,6 +119,9 @@ export default function RestaurantBusinessEditor({ restaurant, onSaved }) {
     if (form.deliveryRadiusKm !== "" && !(Number(form.deliveryRadiusKm) > 0)) {
       return "Delivery radius must be more than 0 km, or blank to follow the platform."
     }
+    if (form.deliveryRadiusKm !== "" && Number(form.deliveryRadiusKm) > 50) {
+      return "Delivery radius cannot be more than 50 km."
+    }
     return null
   }
 

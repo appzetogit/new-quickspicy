@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
 import { Eye, MapPin, Package, User, Phone, Mail, Calendar, Clock, Truck, CreditCard, X, Receipt, CheckCircle2, History, Banknote } from "lucide-react"
 import {
   Dialog,
@@ -14,6 +15,7 @@ import { getCartCompareItemTotal, getLineCompareUnitPrice } from "@food/utils/fo
 import { DualMoney } from "@food/components/user/FoodPriceDisplay"
 import { restaurantLabel } from "@food/utils/entityLabels"
 import { RiderPicker } from "@food/pages/admin/dispatch/AssignRider"
+import RefundModal, { refundPicture } from "./RefundModal"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -59,6 +61,10 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
   // Full order detail (statusHistory + transaction split) fetched on open;
   // the `order` prop only carries the mapped list-row fields.
   const [detail, setDetail] = useState(null)
+  // Bumped after a refund so the detail (and its refund legs) is fetched again.
+  const [detailVersion, setDetailVersion] = useState(0)
+  const [refundOpen, setRefundOpen] = useState(false)
+  const [refunding, setRefunding] = useState(false)
   const detailOrderId = order?._id || order?.orderMongoId || order?.id || null
 
   useEffect(() => {
@@ -80,7 +86,52 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
     return () => {
       active = false
     }
-  }, [isOpen, detailOrderId])
+  }, [isOpen, detailOrderId, detailVersion])
+
+  // Refund numbers come from the fresh detail once it has loaded (it carries the
+  // refund legs), else from the list row: the same rule as the row's button.
+  const refundOrder = useMemo(() => {
+    if (!order) return null
+    if (!detail?.payment) return order
+    return {
+      ...order,
+      payment: detail.payment,
+      totalAmount: order.totalAmount ?? detail.pricing?.total,
+    }
+  }, [order, detail])
+  const refundState = useMemo(() => refundPicture(refundOrder), [refundOrder])
+
+  const submitRefund = async (amount, destination, extra = {}) => {
+    const id = detailOrderId || order?.orderId
+    if (!id) {
+      toast.error("Order ID not found. Please refresh the page and try again.")
+      return
+    }
+    setRefunding(true)
+    try {
+      const response = await adminAPI.processRefund(id, {
+        refundAmount: Number(amount),
+        destination,
+        chargedTo: extra.chargedTo === "restaurant" ? "restaurant" : "platform",
+        ...(extra.reason ? { reason: extra.reason } : {}),
+      })
+      if (response?.data?.success === false) {
+        toast.error(response.data?.message || "Failed to process refund")
+        return
+      }
+      toast.success(
+        `Refund of ₹${Number(amount).toFixed(2)} recorded for order ${order?.orderId || ""}. It is listed on the Refunds screen.`,
+      )
+      setRefundOpen(false)
+      setDetailVersion((v) => v + 1)
+      onChanged?.()
+    } catch (err) {
+      debugError("Refund failed:", err)
+      toast.error(err?.response?.data?.message || err?.message || "Failed to process refund")
+    } finally {
+      setRefunding(false)
+    }
+  }
 
   if (!order) return null
 
@@ -725,6 +776,30 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
             </div>
           )}
 
+          {/* Initiate refund: any paid order with money left to return (same rule as the orders table). */}
+          {refundState.left > 0 && (
+            <div className="border-t border-slate-200 pt-4 flex items-center justify-between gap-3">
+              <div className="text-sm text-slate-600 flex items-center gap-2">
+                <Banknote className="w-4 h-4" />
+                {formatDialogMoney(refundState.left / 100)} can still be refunded on this order.
+              </div>
+              <button
+                type="button"
+                onClick={() => setRefundOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium"
+              >
+                {refundState.legs.length ? "Refund more" : "Initiate refund"}
+              </button>
+            </div>
+          )}
+          <RefundModal
+            isOpen={refundOpen}
+            onOpenChange={setRefundOpen}
+            order={refundOrder}
+            onConfirm={submitRefund}
+            isProcessing={refunding}
+          />
+
           {/* Refund Information */}
           {refundInfo?.status && (
             <div className="border-t border-slate-200 pt-4">
@@ -742,6 +817,21 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                     <span className="text-slate-600">Amount</span>
                     <span className="font-medium text-slate-900">{formatDialogMoney(refundInfo.amount)}</span>
                   </div>
+                )}
+                {Array.isArray(refundInfo.legs) && refundInfo.legs.length > 0 && (
+                  <ul className="pt-2 mt-1 border-t border-sky-100 space-y-1">
+                    {refundInfo.legs.map((leg) => (
+                      <li key={leg.id} className="flex justify-between gap-2 text-xs text-slate-600">
+                        <span>
+                          {formatDialogMoney(leg.amount)} to {leg.refundTo === "wallet" ? "wallet" : "original method"}
+                          {leg.createdAt
+                            ? ` (${new Date(leg.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })})`
+                            : ""}
+                        </span>
+                        <span className="capitalize font-medium">{leg.status}</span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {refundInfo.processedAt && (
                   <div className="flex justify-between text-sm">

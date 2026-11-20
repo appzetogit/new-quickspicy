@@ -59,7 +59,9 @@ const errorHandler = (err, req, res, next) => {
         error: message, // retained for clients already reading this key
         // A reference the person can quote, which finds the full error in the log.
         ...(internal ? { requestId } : {}),
-        ...(err.retryAfterSeconds ? { retryAfterSeconds: err.retryAfterSeconds } : {})
+        ...(err.retryAfterSeconds ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+        // A blocked customer: the app shows message, and may show banReason.
+        ...(err.isBlocked ? { isBlocked: true, banReason: err.banReason ?? null } : {})
     });
 };
 

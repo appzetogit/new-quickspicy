@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { toDeliveryRadiusKm } from '../../admin/services/adminRestaurantWrite.helpers.js';
 
 const phoneSchema = z
     .string()
@@ -177,7 +178,10 @@ export const validateRestaurantRegisterDto = (body) => {
     }
     return {
         ...data,
-        gstRegistered: data.gstRegistered ?? false
+        gstRegistered: data.gstRegistered ?? false,
+        // Same rule as the admin create/edit paths: blank = platform default,
+        // otherwise above 0 and at most MAX_DELIVERY_RADIUS_KM.
+        deliveryRadiusKm: toDeliveryRadiusKm(body?.deliveryRadiusKm),
     };
 };
 

@@ -379,7 +379,17 @@ export async function updateFood(id, body = {}) {
     if (nextVideo !== undefined) data.videoUrl = nextVideo;
 
     if (body.foodType !== undefined) data.foodType = toFoodTypeColumn(targetFoodType);
-    if (body.isAvailable !== undefined) data.isAvailable = body.isAvailable !== false;
+    if (body.isAvailable !== undefined) {
+        const nextAvailable = body.isAvailable !== false;
+        data.isAvailable = nextAvailable;
+        // An admin's in/out-of-stock switch is a manual one. Only clear a
+        // restaurant's timed "back at …" when the value actually flips, so
+        // re-saving the edit modal does not silently drop that schedule.
+        if (nextAvailable !== existing.isAvailable) {
+            data.stockResumeAt = null;
+            data.stockOffMode = null;
+        }
+    }
     if (body.preparationTime !== undefined) {
         data.preparationTime = String(body.preparationTime || '').trim();
     }

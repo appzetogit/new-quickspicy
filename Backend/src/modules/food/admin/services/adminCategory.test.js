@@ -256,3 +256,32 @@ test('toggling a category flips its visibility', async () => {
     assert.equal(await approveCategory('not-an-id'), null);
     assert.equal(await updateCategory('a'.repeat(24), {}), null);
 });
+
+test('the restaurant filter returns categories it created, owns or files dishes under', async () => {
+    const restaurant = await makeRestaurant();
+    const other = await makeRestaurant();
+    const unique = `RFilter ${stamp()}`;
+
+    const owned = await makeCategory({ name: `${unique} Owned`, restaurantId: restaurant.id });
+    // Proposed by the restaurant, then promoted to global: owner cleared.
+    const proposed = await makeCategory({ name: `${unique} Proposed`, createdByRestaurantId: restaurant.id });
+    // A global category the restaurant only uses.
+    const used = await makeCategory({ name: `${unique} Used` });
+    const unrelated = await makeCategory({ name: `${unique} Other`, restaurantId: other.id });
+
+    const dish = await prisma.foodItem.create({
+        data: {
+            restaurantId: restaurant.id, name: `${unique} Dish`, price: 100,
+            categoryId: used.id, categoryName: used.name,
+        },
+    });
+    created.foods.push(dish.id);
+
+    const result = await getCategories({ search: unique, restaurantId: restaurant.id, limit: 1000 });
+    const ids = result.categories.map((c) => c._id).sort();
+    assert.deepEqual(ids, [owned.id, proposed.id, used.id].sort());
+    assert.ok(!ids.includes(unrelated.id));
+    assert.equal(result.total, 3);
+
+    await assert.rejects(() => getCategories({ restaurantId: 'not-an-id' }), /Invalid restaurantId/);
+});

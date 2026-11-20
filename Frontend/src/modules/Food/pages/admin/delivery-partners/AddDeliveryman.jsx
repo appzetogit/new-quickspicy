@@ -34,6 +34,7 @@ const empty = {
   email: "",
   city: "",
   zoneId: "",
+  cohortId: "",
   state: "",
   address: "",
   vehicleType: "bike",
@@ -76,6 +77,30 @@ export default function AddDeliveryman() {
   const [signupOpen, setSignupOpen] = useState(true)
   const [zones, setZones] = useState([])
   const [approveNow, setApproveNow] = useState(true)
+  const [cohorts, setCohorts] = useState([])
+
+  useEffect(() => {
+    adminAPI
+      .getRiderCohorts()
+      .then((res) => {
+        const data = res?.data?.data ?? res?.data ?? {}
+        setCohorts(Array.isArray(data.cohorts) ? data.cohorts : [])
+      })
+      .catch(() => setCohorts([]))
+  }, [])
+
+  // A cohort adds its zones to the rider's home zone, so any cohort can be
+  // picked; the ones that already cover the chosen zone are listed first.
+  const cohortGroups = useMemo(() => {
+    const zoneId = String(form.zoneId || "")
+    if (!zoneId) return { covering: [], others: cohorts }
+    const covers = (c) => (c.zoneIds || []).map(String).includes(zoneId)
+    return { covering: cohorts.filter(covers), others: cohorts.filter((c) => !covers(c)) }
+  }, [cohorts, form.zoneId])
+  const cohortLabel = (c) => {
+    const names = (c.zones || []).map((z) => z.name).filter(Boolean)
+    return names.length ? `${c.name} (${names.join(", ")})` : c.name
+  }
 
   useEffect(() => {
     adminAPI
@@ -234,6 +259,27 @@ export default function AddDeliveryman() {
                   ))}
                 </select>
               </Field>
+              {cohorts.length > 0 ? (
+                <Field label="Cohort" hint="Optional. The rider also serves this cohort's zones">
+                  <select className={input} value={form.cohortId} onChange={(e) => set("cohortId", e.target.value)}>
+                    <option value="">No cohort</option>
+                    {cohortGroups.covering.length > 0 ? (
+                      <optgroup label="Cover this zone">
+                        {cohortGroups.covering.map((c) => (
+                          <option key={c.id || c._id} value={c.id || c._id}>{cohortLabel(c)}</option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {cohortGroups.others.length > 0 ? (
+                      <optgroup label={cohortGroups.covering.length ? "Other cohorts" : "Cohorts"}>
+                        {cohortGroups.others.map((c) => (
+                          <option key={c.id || c._id} value={c.id || c._id}>{cohortLabel(c)}</option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </Field>
+              ) : null}
               <Field label="State">
                 <input className={input} value={form.state} onChange={(e) => set("state", e.target.value)} />
               </Field>

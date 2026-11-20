@@ -735,6 +735,7 @@ function RestaurantOnboardingForm() {
     openingTime: "",
     closingTime: "",
     openDays: [],
+    deliveryRadiusKm: "",
   })
 
   const [step3, setStep3] = useState({
@@ -1136,6 +1137,8 @@ function RestaurantOnboardingForm() {
               openingTime: normalizeTimeValue(localData.step2.openingTime),
               closingTime: normalizeTimeValue(localData.step2.closingTime),
               openDays: localData.step2.openDays || [],
+              deliveryRadiusKm:
+                localData.step2.deliveryRadiusKm == null ? "" : String(localData.step2.deliveryRadiusKm),
             }))
           }
 
@@ -1350,6 +1353,8 @@ function RestaurantOnboardingForm() {
                   : (data.openDays && data.openDays.length > 0)
                   ? data.openDays
                   : prev.openDays,
+              deliveryRadiusKm:
+                data.deliveryRadiusKm != null ? String(data.deliveryRadiusKm) : (prev.deliveryRadiusKm ?? ""),
             }))
 
             // Map Step 3
@@ -1552,6 +1557,12 @@ function RestaurantOnboardingForm() {
     if (!step2.estimatedDeliveryTime?.trim()) {
       errors.push("Estimated delivery time is required")
     }
+    const radius = String(step2.deliveryRadiusKm ?? "").trim()
+    if (radius !== "" && !(Number(radius) > 0)) {
+      errors.push("Delivery radius must be more than 0 km, or leave it blank")
+    } else if (radius !== "" && Number(radius) > 50) {
+      errors.push("Delivery radius cannot be more than 50 km")
+    }
 
     return errors
   }
@@ -1697,6 +1708,8 @@ function RestaurantOnboardingForm() {
     formData.append('openingTime', normalizeTimeValue(step2.openingTime) || '')
     formData.append('closingTime', normalizeTimeValue(step2.closingTime) || '')
     formData.append('openDays', (step2.openDays || []).join(','))
+    // Blank = platform default; the server validates the same 0 < km <= 50 rule.
+    formData.append('deliveryRadiusKm', String(step2.deliveryRadiusKm ?? '').trim())
 
     const menuImages = step2.menuImages || []
     const menuFiles = menuImages.filter((f) => isUploadableFile(f))
@@ -2835,6 +2848,25 @@ function RestaurantOnboardingForm() {
               className="mt-1 bg-white text-sm"
               placeholder="e.g., 25-30 mins"
             />
+          </div>
+          <div>
+            <Label className={ONBOARDING_LABEL}>Delivery radius (km)</Label>
+            <Input
+              type="number"
+              min="0"
+              max="50"
+              step="0.1"
+              inputMode="decimal"
+              value={step2.deliveryRadiusKm ?? ""}
+              onChange={(e) =>
+                setStep2((prev) => ({ ...prev, deliveryRadiusKm: e.target.value }))
+              }
+              className="mt-1 bg-white text-sm"
+              placeholder="Optional, e.g. 5"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              How far you deliver. Leave blank to use the platform default. Up to 50 km.
+            </p>
           </div>
         </div>
 

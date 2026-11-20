@@ -191,6 +191,7 @@ export default function AddRestaurant() {
     closingTime: "",
     openDays: [],
     highlightBadge: "",
+    deliveryRadiusKm: "",
   })
 
   // Step 3: Documents
@@ -477,6 +478,12 @@ export default function AddRestaurant() {
       }
     }
     if (!step2.openDays || step2.openDays.length === 0) errors.push("Please select at least one open day")
+    const radius = String(step2.deliveryRadiusKm ?? "").trim()
+    if (radius !== "" && !(Number(radius) > 0)) {
+      errors.push("Delivery radius must be more than 0 km, or blank to follow the platform")
+    } else if (radius !== "" && Number(radius) > 50) {
+      errors.push("Delivery radius cannot be more than 50 km")
+    }
     return errors
   }
 
@@ -633,6 +640,8 @@ export default function AddRestaurant() {
         closingTime: step2.closingTime,
         openDays: step2.openDays,
         highlightBadge: step2.highlightBadge || undefined,
+        // Blank -> null = follow the platform radius.
+        deliveryRadiusKm: String(step2.deliveryRadiusKm ?? "").trim() === "" ? null : Number(step2.deliveryRadiusKm),
         // Step 3
         panNumber: step3.panNumber,
         nameOnPan: step3.nameOnPan,
@@ -1346,6 +1355,23 @@ export default function AddRestaurant() {
             className="mt-1 bg-white text-sm"
             placeholder="e.g., 25-30 mins"
           />
+        </div>
+
+        <div>
+          <Label className="text-xs text-gray-700">Delivery radius (km)</Label>
+          <Input
+            type="number"
+            min="0"
+            max="50"
+            step="0.1"
+            inputMode="decimal"
+            value={step2.deliveryRadiusKm ?? ""}
+            onChange={(e) => setStep2({ ...step2, deliveryRadiusKm: e.target.value })}
+            autoComplete="off"
+            className="mt-1 bg-white text-sm"
+            placeholder="Blank = platform default"
+          />
+          <p className="mt-1 text-xs text-slate-500">Optional. Customers farther than this cannot order. Up to 50 km.</p>
         </div>
 
         <div className="space-y-2">
