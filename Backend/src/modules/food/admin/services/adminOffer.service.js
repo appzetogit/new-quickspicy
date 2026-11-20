@@ -105,6 +105,9 @@ export async function getAllOffers(_query = {}) {
             discountValue: num(o.discountValue),
             perUserLimit: o.perUserLimit ?? null,
             startDate: o.startDate || null,
+            activeDays: Array.isArray(o.activeDays) ? o.activeDays : [],
+            activeFromTime: o.activeFromTime || null,
+            activeToTime: o.activeToTime || null,
             restaurantIds: selectedIds,
             isFirstOrderOnly: Boolean(o.isFirstOrderOnly),
             storedStatus: o.status || 'active',
@@ -141,6 +144,11 @@ export async function createAdminOffer(body = {}) {
                 endDate: body.endDate ? new Date(body.endDate) : null,
                 isFirstOrderOnly: body.isFirstOrderOnly ?? false,
                 category: body.category ?? null,
+                // The validator settles these; they used to be dropped here,
+                // so an admin coupon's days and hours were never enforced.
+                activeDays: body.activeDays ?? [],
+                activeFromTime: body.activeFromTime ?? null,
+                activeToTime: body.activeToTime ?? null,
                 // Created already expired: start inactive rather than appearing
                 // live until a sweep notices.
                 status:
@@ -216,6 +224,9 @@ export async function updateAdminOffer(id, body = {}) {
                 endDate,
                 isFirstOrderOnly: body.isFirstOrderOnly ?? false,
                 ...(body.category !== undefined ? { category: body.category ?? null } : {}),
+                activeDays: body.activeDays ?? [],
+                activeFromTime: body.activeFromTime ?? null,
+                activeToTime: body.activeToTime ?? null,
                 adminBearPercentage: body.adminBearPercentage ?? 100,
                 restaurantBearPercentage: body.restaurantBearPercentage ?? 0,
                 // Moving the end date into the past ends it now.

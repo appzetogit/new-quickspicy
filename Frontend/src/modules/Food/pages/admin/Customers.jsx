@@ -680,13 +680,22 @@ export default function Customers() {
               </div>
 
               {/* Statistics Section */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-blue-50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Package className="w-4 h-4 text-blue-600" />
                     <span className="text-xs font-semibold text-slate-700">Total Orders</span>
                   </div>
                   <p className="text-xl font-bold text-blue-600">{userDetails.totalOrders || 0}</p>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <IndianRupee className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-semibold text-slate-700">Wallet Balance</span>
+                  </div>
+                  <p className="text-xl font-bold text-amber-600">
+                    Rs. {(userDetails.walletBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
@@ -750,7 +759,14 @@ export default function Customers() {
                   </h4>
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {userDetails.orders.map((order, index) => (
-                      <div key={order.id || index} className="bg-slate-50 rounded-lg p-3 border border-slate-200 flex items-center justify-between">
+                      <a
+                        key={order.id || index}
+                        href={`/admin/food/orders/all?orderId=${encodeURIComponent(order.id)}&search=${encodeURIComponent(order.orderId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open order details in a new tab"
+                        className="bg-slate-50 rounded-lg p-3 border border-slate-200 flex items-center justify-between hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                      >
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{order.orderId}</p>
                           <p className="text-xs text-slate-600">{order.restaurantName}</p>
@@ -765,7 +781,7 @@ export default function Customers() {
                           <p className="text-sm font-semibold text-slate-900">Rs. {(order.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           <p className="text-xs text-slate-600 capitalize">{order.status}</p>
                         </div>
-                      </div>
+                      </a>
                     ))}
                   </div>
                 </div>

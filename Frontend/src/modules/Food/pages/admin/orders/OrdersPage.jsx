@@ -112,10 +112,12 @@ export default function OrdersPage({ statusKey = "all" }) {
   // the size changes.
   const pageSizeRef = useRef(pageSize)
   const statusKeyRef = useRef(statusKey)
-  const searchQueryRef = useRef("")
+  // A link from elsewhere (customer details) can open the page pre-searched.
+  const initialSearch = (() => { try { return new URLSearchParams(window.location.search).get("search") || "" } catch { return "" } })()
+  const searchQueryRef = useRef(initialSearch)
   const appliedFiltersRef = useRef(EMPTY_ORDER_FILTERS)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
+  const [searchQuery, setSearchQuery] = useState(initialSearch)
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(initialSearch)
   const [draftFilters, setDraftFilters] = useState(EMPTY_ORDER_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_ORDER_FILTERS)
   const [restaurantOptions, setRestaurantOptions] = useState([])

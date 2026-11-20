@@ -710,7 +710,7 @@ export default function ItemDetailsPage() {
       const hasVariants = normalizedVariants.length > 0
       const parsedBasePrice = Number(basePrice)
       if (!hasVariants && (!Number.isFinite(parsedBasePrice) || parsedBasePrice < 0)) {
-        toast.error("Please enter a valid base price")
+        toast.error("Please enter a valid selling price")
         setUploadingImages(false)
         return
       }
@@ -722,7 +722,7 @@ export default function ItemDetailsPage() {
         parsedOtherPrice > 0 &&
         parsedOtherPrice <= parsedBasePrice
       ) {
-        toast.error("Other platform price should be greater than your selling price")
+        toast.error("Unit price should be greater than your selling price")
         setUploadingImages(false)
         return
       }
@@ -1180,7 +1180,7 @@ export default function ItemDetailsPage() {
               {variants.length === 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="relative">
-                    <label className="block text-xs text-gray-600 mb-1">Base price</label>
+                    <label className="block text-xs text-gray-600 mb-1">Selling price</label>
                     <div className="relative">
                       <input
                         type="text"
@@ -1208,7 +1208,7 @@ export default function ItemDetailsPage() {
                     </div>
                   </div>
                   <div className="relative">
-                    <label className="block text-xs text-gray-600 mb-1">Other platform price (Optional)</label>
+                    <label className="block text-xs text-gray-600 mb-1">Unit price (Optional)</label>
                     <div className="relative">
                       <input
                         type="text"
@@ -1321,7 +1321,7 @@ export default function ItemDetailsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-500">No variants added. This item will use the base price only.</p>
+                  <p className="text-xs text-gray-500">No variants added. This item will use the selling price only.</p>
                 )}
               </div>
 

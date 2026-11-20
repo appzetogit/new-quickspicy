@@ -2166,19 +2166,35 @@ function RestaurantDetailsContent() {
                 </div>
               </div>
               <div className="flex flex-col items-end shrink-0">
-                <Badge
-                  className="text-white mb-1 flex items-center gap-1 px-2 py-1 border-0"
-                  style={{
-                    backgroundColor: "var(--module-theme-color, #EB590E)",
-                    boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 235, 89, 14), 0.28)",
-                  }}
-                >
-                  <Star className="h-3 w-3 fill-white" />
-                  {restaurant?.rating || 4.5}
-                </Badge>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  By {(restaurant?.reviews || 0).toLocaleString()}+
-                </span>
+                {/* Fewer than 5 ratings is too few to show a score: the store
+                    is tagged Newly Launched instead of a made-up 4.5. */}
+                {Number(restaurant?.reviews || 0) < 5 ? (
+                  <Badge
+                    className="text-white flex items-center gap-1 px-2 py-1 border-0"
+                    style={{
+                      backgroundColor: "var(--module-theme-color, #EB590E)",
+                      boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 235, 89, 14), 0.28)",
+                    }}
+                  >
+                    Newly Launched
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge
+                      className="text-white mb-1 flex items-center gap-1 px-2 py-1 border-0"
+                      style={{
+                        backgroundColor: "var(--module-theme-color, #EB590E)",
+                        boxShadow: "0 4px 10px rgba(var(--module-theme-rgb, 235, 89, 14), 0.28)",
+                      }}
+                    >
+                      <Star className="h-3 w-3 fill-white" />
+                      {restaurant?.rating}
+                    </Badge>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      By {(restaurant?.reviews || 0).toLocaleString()}+
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
