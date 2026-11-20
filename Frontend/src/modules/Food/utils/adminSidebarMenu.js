@@ -72,6 +72,7 @@ export const adminSidebarMenu = [
           { label: "Unregistered Restaurants", path: "/admin/food/restaurants/unregistered" },
           { label: "Restaurant Reviews", path: "/admin/food/restaurants/reviews" },
           { label: "Restaurant Complaints", path: "/admin/food/restaurants/complaints" },
+          { label: "FSSAI Compliance", path: "/admin/food/restaurants/fssai" },
           { label: "Restaurant Settings", path: "/admin/food/restaurants/settings" },
           { label: "Billing Mode", path: "/admin/food/restaurants/billing" },
           { label: "Restaurant Commission", path: "/admin/food/restaurants/commission" },
@@ -154,6 +155,7 @@ export const adminSidebarMenu = [
     label: "REFERRAL & REWARDS",
     items: [
       { type: "link", label: "Referral Settings", path: "/admin/food/referral-settings", icon: "Gift" },
+      { type: "link", label: "Referrals", path: "/admin/food/referrals", icon: "Users" },
       { type: "link", label: "Cashback", path: "/admin/food/cashback", icon: "PiggyBank" },
       { type: "link", label: "Wallet Add Fund", path: "/admin/food/wallet/add-fund", icon: "Wallet" },
       { type: "link", label: "Wallet Top-up Bonus", path: "/admin/food/wallet/bonus", icon: "Gift" },

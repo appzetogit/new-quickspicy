@@ -8,6 +8,7 @@ import { withOpenStatus } from '../../restaurant/helpers/restaurantAvailability.
 import { openFirst } from '../../shared/openFirst.js';
 import { verticalFilterFromQuery } from '../../shared/verticals.js';
 import { restoreExpiredFoodAvailability } from '../../restaurant/services/foodAvailability.service.js';
+import { foodTypeWhereFromQuery } from '../../shared/foodType.util.js';
 
 /** Columns the search cards need, plus the address columns toRestaurant() rebuilds `location` from. */
 const RESTAURANT_SEARCH_SELECT = {
@@ -62,6 +63,9 @@ export const searchUnified = async (query = {}, options = {}) => {
     const reachIds = [...reach.distanceById.keys()];
     if (!reachIds.length) return empty();
     const categoryFiltered = isId(categoryId);
+    // isVeg=true: Veg dishes only (Egg excluded). foodType=Veg|Egg|Non-Veg
+    // (comma list): those diets only.
+    const dishTypeWhere = foodTypeWhereFromQuery(query);
 
     // 1. Base filter
     const where = { status: 'approved', id: { in: reachIds } };
@@ -106,9 +110,25 @@ export const searchUnified = async (query = {}, options = {}) => {
         where.id = { in: catFoodItems.map((food) => food.restaurantId) };
     }
 
+    // ?foodType=: only restaurants serving at least one such dish.
+    if (query.foodType && dishTypeWhere) {
+        const typed = await prisma.foodItem.groupBy({
+            by: ['restaurantId'],
+            where: {
+                approvalStatus: 'approved',
+                isAvailable: true,
+                restaurantId: { in: where.id.in },
+                ...(categoryFiltered ? { categoryId: String(categoryId) } : {}),
+                ...dishTypeWhere,
+            },
+        });
+        if (!typed.length) return empty();
+        where.id = { in: typed.map((food) => food.restaurantId) };
+    }
+
     // Kept separately: the dish-match branch below needs to intersect with it
     // rather than replace it.
-    const categoryRestaurantIds = categoryFiltered ? new Set(where.id.in) : null;
+    const categoryRestaurantIds = categoryFiltered || query.foodType ? new Set(where.id.in) : null;
 
     const found = new Map();
 
@@ -139,7 +159,7 @@ export const searchUnified = async (query = {}, options = {}) => {
                 isAvailable: true,
                 restaurantId: { in: reachIds },
                 name: { contains: term, mode: 'insensitive' },
-                ...(isVeg === 'true' ? { foodType: 'Veg' } : {}),
+                ...(dishTypeWhere || {}),
             },
             select: FOOD_MATCH_SELECT,
             orderBy: { createdAt: 'desc' },

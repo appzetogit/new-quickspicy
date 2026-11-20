@@ -9,7 +9,7 @@ export const searchController = async (req, res, next) => {
         // A zoneId the app sends is ignored: search goes by distance.
         const {
             q, lat, lng, radiusKm, categoryId, minRating, maxDeliveryTime, isVeg, page, limit,
-            verticalId, vertical, openOnly,
+            verticalId, vertical, openOnly, foodType,
         } = req.query;
 
         const results = await searchUnified({
@@ -21,6 +21,8 @@ export const searchController = async (req, res, next) => {
             minRating,
             maxDeliveryTime,
             isVeg,
+            // Veg | Egg | Non-Veg, or a comma list.
+            foodType,
             // Business vertical (Food, Home Food, ...): by id, or by name.
             verticalId,
             vertical,

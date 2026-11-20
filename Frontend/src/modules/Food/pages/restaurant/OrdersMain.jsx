@@ -31,6 +31,7 @@ import BottomNavOrders from "@food/components/restaurant/BottomNavOrders";
 import RestaurantNavbar from "@food/components/restaurant/RestaurantNavbar";
 
 import FssaiExpiryBanner from "@food/components/restaurant/FssaiExpiryBanner";
+import ServicePauseBanner from "@food/components/restaurant/ServicePauseBanner";
 import NewOrderAcceptCard from "@food/components/restaurant/NewOrderAcceptCard";
 import { restaurantAPI, diningAPI } from "@food/api";
 import { useRestaurantNotifications } from "@food/hooks/useRestaurantNotifications";
@@ -1932,6 +1933,8 @@ export default function OrdersMain() {
       {/* Renders itself away unless the licence is within 30 days of lapsing —
           a banner that is always there stops being read by the time it counts. */}
       <FssaiExpiryBanner className="mx-4 mt-3 md:mx-6" />
+      {/* Admin "Pause orders" covering this restaurant's zone. */}
+      <ServicePauseBanner className="mx-4 mt-3 md:mx-6" />
 
       {/* Desktop Header */}
       <div className="hidden md:flex items-center justify-between px-6 pt-5 pb-3 bg-white">

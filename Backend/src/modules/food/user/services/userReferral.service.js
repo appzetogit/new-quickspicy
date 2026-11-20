@@ -3,6 +3,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { buildReferralLinkFromTemplate } from '../../delivery/services/deliveryReferral.service.js';
 import { applyUserReferral } from '../../../../core/auth/auth.service.js';
+import { loadReferralSettingsForZone, zoneIdOfCustomer } from '../../shared/referralZone.js';
 
 /**
  * The three rows every referral view needs: the referrer, their wallet (for
@@ -21,10 +22,11 @@ const loadReferralContext = async (userId) => {
             where: { entityType_entityId: { entityType: 'user', entityId: id } },
             select: { referralEarnings: true },
         }),
-        prisma.foodReferralSettings.findFirst({
-            where: { isActive: true },
-            orderBy: { createdAt: 'desc' },
-        }),
+        // The reward shown is the one for this customer's own address zone
+        // (zone override, else global) -- the best guess for friends they invite.
+        zoneIdOfCustomer(id)
+            .catch(() => null)
+            .then((zoneId) => loadReferralSettingsForZone(zoneId)),
     ]);
 
     return { id, user, wallet, settingsDoc };

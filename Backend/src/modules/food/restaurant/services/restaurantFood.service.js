@@ -223,6 +223,17 @@ const resolveCategoryForRestaurant = async (context, body = {}) => {
     return { categoryId: category.id, categoryName: category.name || '', category };
 };
 
+/**
+ * A pure-veg restaurant serves Veg only: Egg and Non-Veg dishes are refused.
+ * A Both category used to let a non-veg dish in, since only the category's
+ * scope was checked.
+ */
+const assertPureVegAllows = (context, foodType) => {
+    if (context.pureVegRestaurant && foodType !== 'Veg') {
+        throw new ValidationError('Pure veg restaurants can only add veg items (no egg or non-veg)');
+    }
+};
+
 const notifyAdmins = async (title, body, id) => {
     try {
         const { notifyAdminsSafely } = await import(
@@ -247,6 +258,7 @@ export async function createRestaurantFood(restaurantId, body = {}) {
 
     const { price, otherPrice, variants } = getCreateFoodPricing(body);
     const foodType = normalizeFoodType(body.foodType);
+    assertPureVegAllows(context, foodType);
     const { categoryId, categoryName } = await resolveCategoryForRestaurant(context, {
         ...body,
         foodType,
@@ -336,7 +348,10 @@ export async function updateRestaurantFood(restaurantId, foodId, body = {}) {
         body.foodType !== undefined
             ? normalizeFoodType(body.foodType)
             : normalizeFoodType(existing.foodType === 'NonVeg' ? 'Non-Veg' : existing.foodType);
-    if (body.foodType !== undefined) update.foodType = toFoodTypeColumn(targetFoodType);
+    if (body.foodType !== undefined) {
+        assertPureVegAllows(context, targetFoodType);
+        update.foodType = toFoodTypeColumn(targetFoodType);
+    }
 
     if (
         body.categoryId !== undefined ||

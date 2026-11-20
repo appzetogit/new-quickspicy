@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import BottomNavigation from "./BottomNavigation"
 import { getUnreadDeliveryNotificationCount } from "@food/utils/deliveryNotifications"
 import { deliveryAPI } from "@food/api"
+import ServicePausedBanner, { isServicePaused } from "../../../shared/components/ServicePausedBanner.jsx"
 
 export default function DeliveryLayout({
   children,
@@ -16,6 +17,7 @@ export default function DeliveryLayout({
     getUnreadDeliveryNotificationCount()
   )
   const [approvalStatus, setApprovalStatus] = useState("loading")
+  const [serviceStatus, setServiceStatus] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -26,6 +28,8 @@ export default function DeliveryLayout({
         const user = res?.data?.data?.user ?? res?.data?.user
         const status = user?.status ?? "approved"
         setApprovalStatus(status)
+        // Admin "Pause orders" covering the rider's zone.
+        setServiceStatus(res?.data?.data?.serviceStatus ?? null)
         if (user && typeof localStorage !== "undefined") {
           try {
             localStorage.setItem("delivery_user", JSON.stringify(user))
@@ -83,6 +87,15 @@ export default function DeliveryLayout({
   return (
     <>
       <main>
+        {isServicePaused(serviceStatus) ? (
+          <div className="sticky top-0 z-[60] px-3 pt-2 bg-transparent">
+            <ServicePausedBanner
+              status={serviceStatus}
+              title="Orders are paused in your zone. Few or no new orders until it resumes."
+              className="shadow-sm"
+            />
+          </div>
+        ) : null}
         {children}
       </main>
       {showBottomNav && (

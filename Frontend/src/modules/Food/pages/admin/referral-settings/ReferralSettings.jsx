@@ -3,6 +3,7 @@ import { Save, Loader2, Gift } from "lucide-react"
 import { Button } from "@food/components/ui/button"
 import { adminAPI } from "@food/api"
 import { toast } from "sonner"
+import ReferralZoneOverrides from "./ReferralZoneOverrides"
 
 const debugError = (...args) => {}
 
@@ -217,6 +218,8 @@ export default function ReferralSettings() {
           )}
         </div>
       </div>
+
+      <ReferralZoneOverrides globalSettings={settings} />
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { getFoodDisplayPrice, getFoodDisplayOtherPrice } from '../../admin/servi
 import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
 import { withOpenStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
 import { restoreExpiredFoodAvailability } from '../../restaurant/services/foodAvailability.service.js';
+import { foodTypeWhereFromQuery } from '../../shared/foodType.util.js';
 
 /**
  * Dish-level search and type-ahead suggestions.
@@ -98,7 +99,7 @@ const SORTS = {
  * GET /food/search/dishes
  *
  * q (>= 2 chars), lat, lng (required), categoryId, verticalId | vertical,
- * isVeg=true, minPrice, maxPrice, minRating, openOnly=true,
+ * isVeg=true (Egg excluded), foodType=Veg|Egg|Non-Veg, minPrice, maxPrice, minRating, openOnly=true,
  * sortBy = relevance (default) | price-low | price-high | rating | distance,
  * lang, page, limit (<= 50).
  */
@@ -132,7 +133,9 @@ export async function searchDishes(query = {}) {
         });
     }
     if (isId(query.categoryId)) AND.push({ categoryId: String(query.categoryId) });
-    if (query.isVeg === 'true') AND.push({ foodType: 'Veg' });
+    // isVeg=true: Veg only (Egg excluded); foodType=Veg|Egg|Non-Veg (comma list).
+    const typeWhere = foodTypeWhereFromQuery(query);
+    if (typeWhere) AND.push(typeWhere);
 
     const raw = await prisma.foodItem.findMany({
         where: { AND },

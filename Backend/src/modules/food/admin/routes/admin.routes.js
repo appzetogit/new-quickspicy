@@ -6,8 +6,10 @@ import { AuthError } from '../../../../core/auth/errors.js';
 import * as adminController from '../controllers/admin.controller.js';
 import * as manualDispatchController from '../../orders/controllers/manualDispatch.controller.js';
 import { createDeliveryPartnerByAdmin } from '../controllers/adminDeliveryPartnerCreate.controller.js';
+import { getSalariedIncentiveController, saveSalariedIncentiveController } from '../controllers/adminSalariedIncentive.controller.js';
 import * as priceRulesController from '../../pricing/priceRules.controller.js';
 import * as foodApprovalController from '../controllers/foodApproval.controller.js';
+import * as foodAddonMappingController from '../controllers/foodAddonMapping.controller.js';
 import * as addonsApprovalController from '../controllers/addonsApproval.controller.js';
 import * as businessSettingsController from '../controllers/businessSettings.controller.js';
 import * as businessSettingsService from '../services/businessSettings.service.js';
@@ -41,6 +43,8 @@ import * as foundations from '../controllers/adminFoundations.controller.js';
 import * as moneyReports from '../controllers/adminMoneyReports.controller.js';
 import * as reportPerformance from '../controllers/reportPerformance.controller.js';
 import * as reportInsights from '../controllers/reportInsights.controller.js';
+import * as adminReferrals from '../controllers/adminReferrals.controller.js';
+import * as adminCompliance from '../controllers/adminCompliance.controller.js';
 
 const router = express.Router();
 
@@ -170,6 +174,7 @@ const resolveSectionFromRequest = (path = '', method = '') => {
     // entry, which made them look enforced -- the API was open to any sub-admin
     // who called it directly.
     if (path.startsWith('/referral-settings')) return 'referral_rewards';
+    if (path.startsWith('/referrals')) return 'referral_rewards';
     if (path.startsWith('/contact-messages') || path.startsWith('/safety-emergency-reports')) return 'support_management';
     if (path.startsWith('/hero-banners') || path.startsWith('/top-banners') || path.startsWith('/promotion-banners') || path.startsWith('/offer-banners')) return 'banner_management';
     if (path.startsWith('/point-of-sale') || path.startsWith('/pos')) return 'point_of_sale';
@@ -302,6 +307,14 @@ router.get('/reports/inventory', reportInsights.inventoryReport);
 router.get('/restaurants/pending', adminController.getPendingRestaurants);
 router.get('/restaurants/unregistered', adminController.getUnregisteredRestaurants);
 router.delete('/restaurants/unregistered/:id', adminController.deleteUnregisteredRestaurant);
+// Zone maintenance: every restaurant in a zone offline, and back (only those it switched off).
+// Before /restaurants/:id. GET is open to restaurant viewers; the POSTs need restaurant_management create.
+router.get('/restaurants/zone-maintenance', requireAdminPermission('restaurant_management', 'view'), adminCompliance.getZoneMaintenance);
+router.post('/restaurants/zone-maintenance/offline', adminCompliance.takeZoneOffline);
+router.post('/restaurants/zone-maintenance/online', adminCompliance.bringZoneOnline);
+// FSSAI compliance: expired / expiring licences and the expired-licence ordering block.
+router.get('/restaurants/fssai-compliance', requireAdminPermission('restaurant_management', 'view'), adminCompliance.getFssaiCompliance);
+router.put('/restaurants/fssai-compliance/settings', adminCompliance.updateFssaiCompliance);
 router.get('/restaurant-subscription-settings', adminController.getRestaurantSubscriptionSettings);
 router.patch('/restaurant-subscription-settings', adminController.updateRestaurantSubscriptionSettings);
 router.get('/restaurant-subscriptions/history', adminController.getRestaurantSubscriptionHistory);
@@ -479,6 +492,9 @@ router.post('/foods/bulk-delete', adminController.bulkDeleteFoodItems);
 
 router.post('/foods', adminController.createFood);
 router.patch('/foods/:id', adminController.updateFood);
+// Add-ons on a dish, from the dish's side (FoodAddon.foodIds stays the truth).
+router.get('/foods/:id/addons', foodAddonMappingController.getAdminFoodAddonsController);
+router.put('/foods/:id/addons', foodAddonMappingController.setAdminFoodAddonsController);
 router.delete('/foods/:id', adminController.deleteFood);
 // Food approval queue (pending items created by restaurants)
 router.get('/foods/pending-approvals', foodApprovalController.getPendingFoodApprovals);
@@ -503,6 +519,9 @@ router.delete('/feedback-experiences/:id', feedbackExperienceController.deleteFe
 // ----- Fee Settings -----
 router.get('/fee-settings', adminController.getFeeSettings);
 router.put('/fee-settings', adminController.createOrUpdateFeeSettings);
+// Salaried rider incentive (daily order threshold); system_settings like the fees.
+router.get('/fee-settings/salaried-incentive', getSalariedIncentiveController);
+router.put('/fee-settings/salaried-incentive', saveSalariedIncentiveController);
 
 // ----- Driver Registration Fields (dynamic form builder) -----
 router.get('/driver-registration-fields', driverRegField.listFieldsController);
@@ -545,6 +564,14 @@ router.put('/cashback-settings', cashbackSettings.upsertCashbackSettingsControll
 // ----- Referral Settings -----
 router.get('/referral-settings', adminController.getReferralSettings);
 router.put('/referral-settings', adminController.createOrUpdateReferralSettings);
+// Per-zone overrides of the global referral rewards/limits.
+router.get('/referral-settings/zones', adminReferrals.listZoneSettings);
+router.put('/referral-settings/zones/:zoneId', adminReferrals.upsertZoneSetting);
+router.delete('/referral-settings/zones/:zoneId', adminReferrals.deleteZoneSetting);
+
+// ----- Referrals report (?type=user|delivery, ?format=csv) -----
+router.get('/referrals', adminReferrals.listReferrers);
+router.get('/referrals/:referrerId', adminReferrals.listReferees);
 
 // ----- Business Settings -----
 router.get('/business-settings/public', businessSettingsController.getBusinessSettings); // Public endpoint

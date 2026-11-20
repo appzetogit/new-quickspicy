@@ -18,6 +18,7 @@ import { prisma } from "../../config/prisma.js";
 import { isId } from "../../utils/helpers.js";
 import { hashAdminPassword, compareAdminPassword } from "./adminPassword.util.js";
 import { creditReferralReward } from "../../modules/food/user/services/userWallet.service.js";
+import { loadReferralSettingsForZone, zoneIdForUserReferral } from "../../modules/food/shared/referralZone.js";
 import { ADMIN_FULL_PERMISSIONS, sanitizeAdminPermissions } from '../../constants/permissions.js';
 import { isMobilePlatform } from "../../utils/platform.js";
 import { loadAdminScope, describeScope } from "../roles/adminScope.service.js";
@@ -128,19 +129,17 @@ export const applyUserReferral = async (userDoc, rawCode) => {
   if (code === userDoc.id) return { applied: false, reason: "own_code" };
   if (userDoc.referredById) return { applied: false, reason: "already_referred" };
 
-  const [referrer, settingsDoc] = await Promise.all([
-    prisma.foodUser.findFirst({
-      where: { OR: [{ id: code }, { referralCode: code }] },
-      select: { id: true, referralCount: true },
-    }),
-    prisma.foodReferralSettings.findFirst({
-      where: { isActive: true },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  const referrer = await prisma.foodUser.findFirst({
+    where: { OR: [{ id: code }, { referralCode: code }] },
+    select: { id: true, referralCount: true },
+  });
   if (!referrer || referrer.id === userDoc.id) {
     return { applied: false, reason: "invalid_code" };
   }
+  // Zone overrides: the referred customer's address zone, else the
+  // referrer's, else the global settings (see shared/referralZone.js).
+  const referralZoneId = await zoneIdForUserReferral(userDoc.id, referrer.id).catch(() => null);
+  const settingsDoc = await loadReferralSettingsForZone(referralZoneId);
   if (!settingsDoc) return { applied: false, reason: "referral_disabled" };
 
   const referrerId = referrer.id;

@@ -32,6 +32,7 @@ export default function DeliverymanList() {
   const [blockTarget, setBlockTarget] = useState(null)
   const [blockReason, setBlockReason] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
+  const [payTypeFilter, setPayTypeFilter] = useState("")
   const [zones, setZones] = useState([])
   const [cohorts, setCohorts] = useState([])
   const [detailsFor, setDetailsFor] = useState(null)
@@ -93,6 +94,7 @@ export default function DeliverymanList() {
         params.search = searchQuery.trim()
       }
       if (statusFilter) params.status = statusFilter
+      if (payTypeFilter) params.payType = payTypeFilter
 
       const [partnersResponse, walletRowsResult] = await Promise.allSettled([
         adminAPI.getDeliveryPartners(params),
@@ -165,7 +167,7 @@ availableCashLimit: wallet?.availableCashLimit || 0,
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, statusFilter])
+  }, [searchQuery, statusFilter, payTypeFilter])
 
   useEffect(() => {
     adminAPI
@@ -530,7 +532,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
   }
 
   const DETAIL_FIELDS = [
-    "zoneId", "cohortId", "city", "vehicleType", "vehicleName", "vehicleNumber",
+    "zoneId", "cohortId", "payType", "city", "vehicleType", "vehicleName", "vehicleNumber",
     "bankAccountHolderName", "bankAccountNumber", "bankIfscCode", "bankName", "upiId",
   ]
 
@@ -593,6 +595,17 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                 <option value="">All riders</option>
                 <option value="active">Active</option>
                 <option value="blocked">Blocked</option>
+              </select>
+
+              <select
+                value={payTypeFilter}
+                onChange={(e) => setPayTypeFilter(e.target.value)}
+                className="px-3 py-2.5 text-sm rounded-lg border border-slate-300 bg-white text-slate-700"
+                title="Payment type"
+              >
+                <option value="">All pay types</option>
+                <option value="gig">Gig</option>
+                <option value="salaried">Salaried</option>
               </select>
 
               <button
@@ -789,6 +802,12 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                                     Blocked
                                   </span>
                                 ) : null}
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${dm.payType === "salaried" ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600"}`}
+                                  title="Payment type"
+                                >
+                                  {dm.payType === "salaried" ? "Salaried" : "Gig"}
+                                </span>
                                 {dm.rating > 0 && editingDeliveryId !== String(dm._id) && (
                                   <div className="flex items-center gap-1">
                                     <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
@@ -1467,6 +1486,20 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                 </select>
                 <span className="mt-1 block text-[11px] text-slate-400">
                   The rider also serves the cohort's zones. * covers the chosen zone.
+                </span>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Payment type
+                <select
+                  value={detailsForm.payType || "gig"}
+                  onChange={(e) => setDetailsForm((f) => ({ ...f, payType: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white"
+                >
+                  <option value="gig">Gig worker (paid per order)</option>
+                  <option value="salaried">Salaried</option>
+                </select>
+                <span className="mt-1 block text-[11px] text-slate-400">
+                  Salaried: the first N orders a day are covered by salary (Delivery fee settings).
                 </span>
               </label>
                 <label className="text-xs font-medium text-slate-600">

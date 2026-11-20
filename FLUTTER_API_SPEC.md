@@ -133,6 +133,16 @@ Out of coverage — still HTTP 200:
 ```
 Check `data.status`, not the HTTP code. Cached ~3 min server-side, keyed to 3-decimal-rounded coordinates (~110 m buckets).
 
+**Ordering paused by the admin (both responses):** `data` also carries `servicePaused` (bool), `serviceMessage`, `resumeAt` (ISO or null) and `serviceStatus: { paused, servicePaused, message, resumeAt, scope: "zone" | "all" | null }`. When `servicePaused` is true, show a popup on the home screen with `serviceMessage` (and "resumes around `resumeAt`" if set), keep a banner, and disable checkout with the same message. Pricing / place order also refuse with that message (`400`), so the app must not rely on the flag alone.
+
+### `GET /food/public/service-status?zoneId=` or `?lat=&lng=`
+The same flag on its own (no auth), for re-checking on the cart screen or after the app resumes:
+```json
+{ "success": true, "message": "Service status",
+  "data": { "paused": true, "servicePaused": true, "message": "Heavy rain, back soon", "resumeAt": "2026-11-21T08:30:00.000Z", "scope": "zone", "zoneId": "…" } }
+```
+No zone given / outside every zone → only an all-zones pause counts.
+
 ### `GET /food/zones/public` · `GET /food/zones/nearby`
 ```json
 { "zones": [{
@@ -216,6 +226,8 @@ Write your model to accept `profileImage` as either a string or `{ url }`, and f
 ### `GET /food/restaurant/restaurants/:id`
 Accepts an ObjectId **or** a name slug. Approved restaurants only; `pendingLocation` is stripped from public output.
 → `data: { restaurant }` — full restaurant doc plus `outletTimings` and normalized geo. `null` → 404 path in the caller.
+
+**Expired FSSAI licence** (only while the admin's "stop ordering when expired" switch is on): the restaurant is left out of `GET /food/restaurant/restaurants` listings; opened directly, it comes back with `isAcceptingOrders: false`, `orderingBlocked: true` and `orderingBlockedReason` (show it instead of "closed"). The menu response carries the same `menu.orderingBlocked` / `menu.orderingBlockedReason`, and pricing / place order refuse with that reason (`400`).
 
 ### `GET /food/restaurant/restaurants/:id/menu`
 ```json
@@ -313,8 +325,12 @@ Query: `restaurantId`, `subtotal`. Send the Bearer token when logged in — the 
 ```
 `groupedByOffer` is always empty — dead field, ignore it.
 
+**Zone/city-limited coupons.** Each offer also carries `zoneIds` / `cityIds` (both empty = valid everywhere). A limited coupon is only listed when the server knows the zone: the zone of `restaurantId` if sent (always send it on the cart), else `zoneId`, else `lat` + `lng`; with none of these, limited coupons are left out. At checkout the zone is the **restaurant's** zone; a code outside it comes back as `couponError: { code: "wrong-zone", message: "This coupon is not valid in this area" }` — show `message`.
+
 ### `GET /food/search/unified`
-Query: `q`, `lat`, `lng`, `radiusKm` (default 20), `categoryId`, `minRating`, `maxDeliveryTime`, `isVeg`, `verticalId` (or `vertical=<name>`), `page` (1), `limit` (20). `zoneId` / `strictZone` are ignored: search goes by distance.
+Query: `q`, `lat`, `lng`, `radiusKm` (default 20), `categoryId`, `minRating`, `maxDeliveryTime`, `isVeg`, `foodType`, `verticalId` (or `vertical=<name>`), `page` (1), `limit` (20). `zoneId` / `strictZone` are ignored: search goes by distance. `foodType=Veg|Egg|Non-Veg` (comma list allowed) keeps restaurants serving at least one such dish.
+
+**Food type (diet).** Dishes are `Veg`, `Egg` or non-veg. Menu/search payloads send `foodType` as `"Veg"`, `"Egg"` or `"NonVeg"` (some screens `"Non-Veg"`; treat both as non-veg). Egg is **not** veg: `isVeg` is `false` for Egg dishes, `isVeg=true` filters leave Egg out, and pure-veg restaurants never have Egg dishes. Show Egg with its own amber/yellow dot and offer a Veg / Egg / Non-veg filter. The menu (`GET /food/restaurant/restaurants/:id/menu`), `GET /food/restaurant/public/foods` and `GET /food/search/dishes` accept `isVeg=true` and `foodType=Veg|Egg|Non-Veg` (comma list) too. Order line items still carry only `isVeg` (Egg = `false`).
 
 ```json
 {
@@ -333,7 +349,7 @@ Use those to render the "matched on dish" subtitle. Results are restaurant-shape
 
 ### `GET /food/search/dishes`
 Dish-level search: every matching dish (not one per restaurant) at the price the customer pays, from restaurants that deliver to them.
-Query: `q` (≥ 2 chars; or `categoryId` alone), `lat`, `lng` (required), `sortBy` = `relevance` (default) | `price-low` | `price-high` | `rating` | `distance`, `minPrice`, `maxPrice`, `isVeg=true`, `minRating`, `categoryId`, `verticalId`, `openOnly=true`, `lang`, `page`, `limit` (≤ 50).
+Query: `q` (≥ 2 chars; or `categoryId` alone), `lat`, `lng` (required), `sortBy` = `relevance` (default) | `price-low` | `price-high` | `rating` | `distance`, `minPrice`, `maxPrice`, `isVeg=true` (Egg excluded), `foodType=Veg|Egg|Non-Veg`, `minRating`, `categoryId`, `verticalId`, `openOnly=true`, `lang`, `page`, `limit` (≤ 50).
 ```json
 { "items": [{
     "id": "…", "name": "Chicken Dum Biryani", "nameEn": "…", "nameTe": "", "description": "…",
@@ -544,6 +560,8 @@ There is **no** endpoint to request a refund — the backend creates them on can
 `GET /food/user/referrals/stats` → `{ stats: { referralCode, referralLink, referralCount, totalReferralEarnings, rewardAmount, referralLimit } }`
 
 `referralLink` is built server-side from an admin-configured template and may be `""` — when empty, share `referralCode` alone. Never hardcode the invite URL. The code is passed as `ref` in the OTP-verify body on signup.
+
+Rewards can differ by zone. The reward actually paid uses the zone of the **referred** customer's saved address (else the referrer's, else the global setting); `rewardAmount` in stats is the value for the caller's own address zone. Always render the server's numbers.
 
 `GET /food/user/referrals/details`:
 ```json

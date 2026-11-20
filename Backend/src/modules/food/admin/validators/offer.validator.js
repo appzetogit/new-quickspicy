@@ -47,7 +47,18 @@ const createOfferSchema = z.object({
     activeFromTime: z.string().optional(),
     activeToTime: z.string().optional(),
     newToRestaurantOnly: z.boolean().optional(),
+    zoneIds: z.array(z.string()).optional(),
+    cityIds: z.array(z.string()).optional(),
 });
+
+/** An id list from the form: strings, de-duplicated; a non-id is refused. */
+const idList = (value, label) => {
+    if (value === undefined || value === null || value === '') return [];
+    if (!Array.isArray(value)) throw new ValidationError(`${label} must be a list`);
+    const ids = [...new Set(value.map((id) => String(id || '').trim()).filter(Boolean))];
+    if (ids.some((id) => !isId(id))) throw new ValidationError(`Choose valid ${label.toLowerCase()}`);
+    return ids;
+};
 
 const IST = '+05:30';
 
@@ -222,6 +233,9 @@ export const validateCreateOfferDto = (body) => {
         activeToTime: to || null,
         newToRestaurantOnly: data.newToRestaurantOnly === true,
         category: normalizeOfferCategory(body?.category),
+        // Empty = every zone and city.
+        zoneIds: idList(body?.zoneIds, 'Zones'),
+        cityIds: idList(body?.cityIds, 'Cities'),
     };
 };
 

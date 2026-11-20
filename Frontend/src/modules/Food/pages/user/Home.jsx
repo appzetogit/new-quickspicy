@@ -115,6 +115,7 @@ import QuickSection from "@food/components/user/home/QuickSection";
 import PromoRow from "@food/components/user/home/PromoRow";
 import PromotionBannerCarousel from "@food/components/user/home/PromotionBannerCarousel";
 import OutOfZoneScreen from "@food/components/user/OutOfZoneScreen";
+import ServicePauseNotice from "@food/components/user/ServicePauseNotice";
 
 
 // Explore More Icons
@@ -2428,6 +2429,7 @@ export default function Home() {
         menuResponses.forEach(({ id, menu }) => {
           let hasVeg = false;
           let hasNonVeg = false;
+          let hasEgg = false;
           const sections = Array.isArray(menu?.sections) ? menu.sections : [];
           sections.forEach((section) => {
             const sectionItems = Array.isArray(section?.items)
@@ -2438,6 +2440,7 @@ export default function Home() {
                 .trim()
                 .toLowerCase();
               if (foodType === "veg") hasVeg = true;
+              if (foodType === "egg") hasEgg = true; // Egg is not veg
               if (
                 foodType === "non-veg" ||
                 foodType === "non veg" ||
@@ -2458,6 +2461,7 @@ export default function Home() {
                   .trim()
                   .toLowerCase();
                 if (foodType === "veg") hasVeg = true;
+                if (foodType === "egg") hasEgg = true; // Egg is not veg
                 if (
                   foodType === "non-veg" ||
                   foodType === "non veg" ||
@@ -2506,7 +2510,8 @@ export default function Home() {
             nextDietMeta[id] = {
               hasVeg,
               hasNonVeg,
-              isPureVeg: hasVeg && !hasNonVeg,
+              hasEgg,
+              isPureVeg: hasVeg && !hasNonVeg && !hasEgg,
             };
           }
         });
@@ -3193,6 +3198,8 @@ export default function Home() {
           vegModeToggleRef={vegModeToggleRef}
           isCategoryStuck={isCategoryStuck}
         />
+        {/* Admin "Pause orders" in this zone: popup once, then a banner. */}
+        <ServicePauseNotice zoneId={zoneId} />
 
 
 

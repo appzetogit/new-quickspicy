@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { Loader2, PauseCircle, PlayCircle } from "lucide-react"
+import { Loader2, PauseCircle, PlayCircle, Store } from "lucide-react"
+import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { adminAPI } from "@food/api"
 
@@ -27,7 +28,8 @@ export default function OrderPause() {
   const [saving, setSaving] = useState(false)
   const [state, setState] = useState(null)
   const [zones, setZones] = useState([])
-  const [scope, setScope] = useState("all") // all | zones
+  const [scope, setScope] = useState("all") // all | zones | cities
+  const [cityIds, setCityIds] = useState([])
   const [zoneIds, setZoneIds] = useState([])
   const [message, setMessage] = useState("")
   const [until, setUntil] = useState("")
@@ -35,7 +37,8 @@ export default function OrderPause() {
   const apply = (data) => {
     setState(data)
     setZoneIds(Array.isArray(data.zoneIds) ? data.zoneIds : [])
-    setScope(data.zoneIds?.length ? "zones" : "all")
+    setCityIds(Array.isArray(data.cityIds) ? data.cityIds : [])
+    setScope(data.cityIds?.length ? "cities" : data.zoneIds?.length ? "zones" : "all")
     setMessage(data.message || "")
     setUntil(toLocalInput(data.until))
   }
@@ -61,13 +64,25 @@ export default function OrderPause() {
       toast.error("Pick at least one zone, or choose All zones")
       return
     }
-    const where = scope === "all" ? "every zone" : `${zoneIds.length} zone(s)`
+    if (paused && scope === "cities" && !cityIds.length) {
+      toast.error("Pick at least one city, or choose All zones")
+      return
+    }
+    const cityZoneCount = zones.filter((z) => cityIds.includes(z.cityId || z.cityRef?.id)).length
+    const where =
+      scope === "all"
+        ? "every zone"
+        : scope === "cities"
+          ? `${cityIds.length} city(ies) (${cityZoneCount} zone(s))`
+          : `${zoneIds.length} zone(s)`
     if (paused && !window.confirm(`Stop taking new orders in ${where}? Customers will see your message at checkout.`)) return
     try {
       setSaving(true)
       const res = await adminAPI.updateOrderPause({
         paused,
-        zoneIds: scope === "all" ? [] : zoneIds,
+        zoneIds: scope === "zones" ? zoneIds : [],
+        // Whole cities: the server expands each to its zones.
+        cityIds: scope === "cities" ? cityIds : [],
         message: message.trim(),
         until: paused && until ? new Date(until).toISOString() : null,
       })
@@ -79,6 +94,20 @@ export default function OrderPause() {
       setSaving(false)
     }
   }
+
+  const toggleCity = (id) =>
+    setCityIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
+
+  // Cities that have zones, from the zone list (each zone carries its city).
+  const cities = Object.values(
+    zones.reduce((acc, z) => {
+      const id = z.cityId || z.cityRef?.id
+      if (!id) return acc
+      acc[id] = acc[id] || { id, name: z.cityRef?.name || z.city || id, zones: 0 }
+      acc[id].zones += 1
+      return acc
+    }, {}),
+  ).sort((a, b) => String(a.name).localeCompare(String(b.name)))
 
   const toggleZone = (id) =>
     setZoneIds((prev) => (prev.includes(id) ? prev.filter((z) => z !== id) : [...prev, id]))
@@ -108,7 +137,7 @@ export default function OrderPause() {
         <div className={`rounded-xl border p-4 ${active ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
           <p className={`font-semibold ${active ? "text-red-800" : "text-emerald-800"}`}>
             {active
-              ? `New orders are paused in ${state.zoneIds?.length ? `${state.zoneIds.length} zone(s)` : "every zone"}`
+              ? `New orders are paused in ${state.cityIds?.length ? `${state.cityIds.length} city(ies), ` : ""}${state.zoneIds?.length ? `${state.zoneIds.length} zone(s)` : "every zone"}`
               : "Orders are being taken normally"}
           </p>
           {active && state.until ? (
@@ -126,6 +155,23 @@ export default function OrderPause() {
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" checked={scope === "zones"} onChange={() => setScope("zones")} /> Only these zones
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" checked={scope === "cities"} onChange={() => setScope("cities")} /> Whole cities (all their zones)
+            </label>
+            {scope === "cities" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 pl-6">
+                {cities.length === 0 ? <p className="text-xs text-slate-500">No zones are linked to a city yet.</p> : null}
+                {cities.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={cityIds.includes(c.id)} onChange={() => toggleCity(c.id)} />
+                    {c.name} <span className="text-xs text-slate-400">({c.zones} zone{c.zones === 1 ? "" : "s"})</span>
+                  </label>
+                ))}
+                <p className="text-xs text-slate-500 sm:col-span-2">
+                  A zone added to the city later is covered once you save the pause again.
+                </p>
+              </div>
+            ) : null}
             {scope === "zones" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 pl-6">
                 {zones.length === 0 ? <p className="text-xs text-slate-500">No zones found.</p> : null}
@@ -165,6 +211,10 @@ export default function OrderPause() {
             <p className="text-xs text-slate-500">Leave empty to keep it paused until you resume it here.</p>
           </div>
 
+          <p className="text-xs text-slate-500">
+            The customer, restaurant and rider apps show this message as a popup or banner in the paused zones.
+          </p>
+
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
@@ -185,6 +235,21 @@ export default function OrderPause() {
               </button>
             ) : null}
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-slate-800">Maintenance in one zone?</p>
+            <p className="text-xs text-slate-500">
+              Take every restaurant in a zone offline, and bring the same ones back, from the restaurants list.
+            </p>
+          </div>
+          <Link
+            to="/admin/food/restaurants"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <Store className="w-4 h-4" /> Restaurants by zone
+          </Link>
         </div>
       </div>
     </div>

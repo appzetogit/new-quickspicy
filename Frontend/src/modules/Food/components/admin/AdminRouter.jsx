@@ -20,6 +20,7 @@ const OrderDetectDelivery = lazy(() => import("@food/pages/admin/OrderDetectDeli
 const Category = lazy(() => import("@food/pages/admin/categories/Category"));
 const FeeSettings = lazy(() => import("@food/pages/admin/fee-settings/FeeSettings"));
 const ReferralSettings = lazy(() => import("@food/pages/admin/referral-settings/ReferralSettings"));
+const Referrals = lazy(() => import("@food/pages/admin/referral-settings/Referrals"));
 // Restaurant Management
 const ZoneSetup = lazy(() => import("@food/pages/admin/restaurant/ZoneSetup"));
 const AddZone = lazy(() => import("@food/pages/admin/restaurant/AddZone"));
@@ -119,6 +120,7 @@ const EmployeeList = lazy(() => import("@food/pages/admin/employees/EmployeeList
 const BusinessSetup = lazy(() => import("@food/pages/admin/settings/BusinessSetup"));
 const FeatureSettings = lazy(() => import("@food/pages/admin/settings/FeatureSettings"));
 const OrderPause = lazy(() => import("@food/pages/admin/settings/OrderPause"));
+const FssaiCompliance = lazy(() => import("@food/pages/admin/restaurant/FssaiCompliance"));
 const PowerScanning = lazy(() => import("@food/pages/admin/settings/PowerScanning"));
 const EmailTemplate = lazy(() => import("@food/pages/admin/settings/EmailTemplate"));
 const ThemeSettings = lazy(() => import("@food/pages/admin/settings/ThemeSettings"));
@@ -289,6 +291,7 @@ export default function AdminRouter() {
             <Route path="restaurants/commission" element={<RestaurantCommission />} />
             <Route path="restaurants/billing" element={<RestaurantBilling />} />
             <Route path="restaurants/complaints" element={<RestaurantComplaints />} />
+            <Route path="restaurants/fssai" element={<FssaiCompliance />} />
             <Route path="restaurants/reviews" element={<RestaurantReviews />} />
             <Route path="restaurants/bulk-import" element={<RestaurantsBulkImport />} />
             <Route path="restaurants/bulk-export" element={<RestaurantsBulkExport />} />
@@ -300,6 +303,7 @@ export default function AdminRouter() {
             <Route path="categories" element={<Category />} />
             <Route path="fee-settings" element={<FeeSettings />} />
             <Route path="referral-settings" element={<ReferralSettings />} />
+            <Route path="referrals" element={<Referrals />} />
             <Route path="foods" element={<FoodsList />} />
             <Route path="food/list" element={<FoodsList />} />
             <Route path="addons" element={<AddonsList />} />

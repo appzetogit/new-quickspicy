@@ -264,7 +264,8 @@ export async function updateRestaurantCategory(restaurantId, id, body = {}) {
                 : await prisma.foodItem.count({
                     where: {
                         categoryId: existing.id,
-                        foodType: nextFoodTypeScope === 'Veg' ? 'NonVeg' : 'Veg',
+                        // Egg is not veg: a Veg category cannot keep Egg dishes.
+                        foodType: nextFoodTypeScope === 'Veg' ? { not: 'Veg' } : 'Veg',
                     },
                 });
         if (incompatibleFoods > 0) {

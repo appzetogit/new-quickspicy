@@ -32,6 +32,7 @@ import {
   isStatusAdvance,
 } from './order.helpers.js';
 import { refreshOrderEta } from './eta.service.js';
+import { applySalariedPayRuleSafely } from '../../delivery/services/salariedIncentive.service.js';
 
 /**
  * The restaurant fields the rider app needs.
@@ -1032,6 +1033,18 @@ export async function completeDelivery(orderId, deliveryPartnerId, body = {}) {
     to: 'delivered',
     note: 'Delivery completed successfully',
   });
+
+  // Salaried riders: the day's first N deliveries are covered by salary (pay
+  // moved off the order and its ledger row), N+1 onward pay as an incentive.
+  // Awaited so the response and the rider's balance agree. Never throws.
+  const salaried = await applySalariedPayRuleSafely(row.id);
+  if (salaried?.basis) {
+    updated.riderPayBasis = salaried.basis;
+    updated.riderDaySeq = salaried.seq;
+    if (salaried.waived > 0) {
+      updated.riderEarning = Math.round((Number(updated.riderEarning || 0) - salaried.waived) * 100) / 100;
+    }
+  }
 
   // Lifetime completed-delivery counter (best-effort).
   prisma.foodDeliveryPartner

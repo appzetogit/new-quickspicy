@@ -81,7 +81,9 @@ Body also takes `folder`. → `data` = upload result (URL). Use this to pre-uplo
 ## 3. Restaurant profile (Bearer)
 
 ### `GET /food/restaurant/current`
-→ `data: { restaurant }`:
+→ `data: { restaurant, serviceStatus }`. `serviceStatus` is `{ paused, servicePaused, message, resumeAt, scope }`: when `servicePaused` is true the admin has paused new orders in this restaurant's zone (or everywhere); show a banner with `message` and `resumeAt` (ISO, may be null). `GET /food/auth/me` carries the same `serviceStatus` next to `user`. Notifications with `source` `FSSAI_EXPIRY` now come in two kinds: `metadata.kind: "expiring"` (30 days before, once per licence; push `data.type: "fssai_expiring"`) and the existing expiry alert (`fssai_expired`). If the admin has turned on the expired-licence block, an expired restaurant gets no new orders until the expiry date is updated.
+
+`restaurant`:
 ```json
 {
   "_id": "…",
@@ -236,7 +238,7 @@ Unauthenticated calls to the same handler fall through to the public, approved-o
         "variants":   [{ "name": "Full", "price": 260, "otherPrice": 320 }],
         "variations": [ /* same array, duplicated under a legacy key */ ],
         "image": "…",
-        "foodType": "Veg",                 // Veg | Non-Veg
+        "foodType": "Veg",                 // Veg | Egg | NonVeg
         "isAvailable": true,
         "approvalStatus": "approved",      // pending | approved | rejected
         "rejectionReason": "",
@@ -276,8 +278,18 @@ Bulk menu update. → `{ menu }`
 ```
 → 201, `{ food }` with **`approvalStatus: "pending"`**. New items are invisible to customers until an admin approves; admins get a push at creation. Surface the pending badge or partners will think the item is live.
 
+`foodType`: `Veg`, `Egg` or `Non-Veg`. Egg is not veg: a **pure-veg restaurant can only add Veg items** (Egg and Non-Veg are refused with 400), and an Egg item fits a `Non-Veg` or `Both` category, not a `Veg` one. A restaurant cannot switch itself to pure veg while it has Egg or Non-Veg items.
+
 ### `PATCH /food/restaurant/foods/:id`
 Partial update of the same fields. → `{ food }`, 404 if not yours.
+
+### Add-ons on an item (item side)
+| Method | Path | Body |
+|---|---|---|
+| GET | `/food/restaurant/foods/:id/addons` | — → `{ foodId, addonIds, addons: [{ id, name, price, foodType, appliesToWholeMenu, selected, onlyThisFood, … }] }` (your approved add-ons) |
+| PUT | `/food/restaurant/foods/:id/addons` | `{ "addonIds": ["…"] }` → same shape plus `added`, `removed` |
+
+PUT makes the item sit on exactly these item-specific add-ons (it edits each add-on's `foodIds`; no re-approval). Whole-menu add-ons (`appliesToWholeMenu`) already apply and are never changed here. Removing the item from an add-on whose only item it is (`onlyThisFood`) is refused (400) — it would turn into a whole-menu add-on; edit or delete it from Add-ons. 404 if the item is not yours; 400 for another restaurant's or never-approved add-on.
 
 ### Stock-off scheduling
 Items carry `stockResumeAt` and `stockOffMode` (`manual` | `specific-time` | `next-business-day` | `custom-date-time`) — an item auto-returns to available at `stockResumeAt`, server-side.
@@ -286,7 +298,7 @@ Items carry `stockResumeAt` and `stockOffMode` (`manual` | `specific-time` | `ne
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/food/restaurant/bulk-upload/template` | returns an **.xlsx file stream**, not JSON — `Content-Disposition: attachment` |
+| GET | `/food/restaurant/bulk-upload/template` | returns an **.xlsx file stream**, not JSON — `Content-Disposition: attachment`. Food type column accepts `Veg`, `Egg`, `Non-Veg` (older sheets headed `Food Type (Veg/Non-Veg)*` still upload) |
 | POST | `/food/restaurant/bulk-upload` | multipart, field `file`, must be .xlsx |
 
 Upload response:

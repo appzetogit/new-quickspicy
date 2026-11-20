@@ -2,8 +2,12 @@ import ExcelJS from 'exceljs';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
-import { categoryAllowsFoodType, normalizeFoodTypeForCategory } from '../../shared/categoryWorkflow.js';
-import { toFoodTypeColumn } from '../../shared/foodType.util.js';
+import { categoryAllowsFoodType } from '../../shared/categoryWorkflow.js';
+import { toFoodTypeColumn, fromFoodTypeColumn } from '../../shared/foodType.util.js';
+
+// Sheets made from the older template say Veg/Non-Veg; both are accepted.
+const FOOD_TYPE_HEADER = 'Food Type (Veg/Egg/Non-Veg)*';
+const FOOD_TYPE_HEADERS = [FOOD_TYPE_HEADER, 'Food Type (Veg/Non-Veg)*'];
 import { dropMenuCache } from '../../shared/menuCache.util.js';
 import { syncFoodVariants } from '../../admin/services/foodVariant.service.js';
 import { isHostedUploadUrl, saveImageFromUrl } from '../../../../services/storage.service.js';
@@ -73,7 +77,7 @@ export async function generateBulkMenuTemplate() {
         { header: 'Item Name*', key: 'name', width: 30 },
         { header: 'Description', key: 'description', width: 40 },
         { header: 'Base Price*', key: 'price', width: 15 },
-        { header: 'Food Type (Veg/Non-Veg)*', key: 'foodType', width: 25 },
+        { header: FOOD_TYPE_HEADER, key: 'foodType', width: 25 },
         { header: 'Recommended (Yes/No)', key: 'isRecommended', width: 25 },
         { header: 'Preparation Time*', key: 'prepTime', width: 25 },
         { header: 'Image URL', key: 'imageUrl', width: 40 },
@@ -99,7 +103,7 @@ export async function generateBulkMenuTemplate() {
         sheet.getCell(`E${i}`).dataValidation = {
             type: 'list',
             allowBlank: false,
-            formulae: ['"Veg,Non-Veg"']
+            formulae: ['"Veg,Egg,Non-Veg"']
         };
 
         // Recommended Dropdown
@@ -155,7 +159,7 @@ export async function processBulkMenuUpload(restaurantId, fileBuffer, options = 
         'Item Name*',
         'Description',
         'Base Price*',
-        'Food Type (Veg/Non-Veg)*',
+        FOOD_TYPE_HEADER,
         'Recommended (Yes/No)',
         'Preparation Time*',
         'Image URL',
@@ -173,8 +177,10 @@ export async function processBulkMenuUpload(restaurantId, fileBuffer, options = 
             .slice(1)
             .map((value) => normalizeHeader(value)),
     );
-    const missingHeaders = requiredHeaders.filter(
-        (header) => !uploadedHeaders.has(normalizeHeader(header)),
+    const missingHeaders = requiredHeaders.filter((header) =>
+        header === FOOD_TYPE_HEADER
+            ? !FOOD_TYPE_HEADERS.some((h) => uploadedHeaders.has(normalizeHeader(h)))
+            : !uploadedHeaders.has(normalizeHeader(header)),
     );
     if (missingHeaders.length > 0) {
         throw new ValidationError(
@@ -354,11 +360,13 @@ export async function processBulkMenuUpload(restaurantId, fileBuffer, options = 
                 return;
             }
 
-            const foodType = normalizeFoodTypeForCategory(data.foodType);
-            // A pure-veg restaurant's sheet cannot add non-veg dishes; the
-            // admin and app forms already refuse it, the sheet did not.
+            // Veg | Egg | Non-Veg (anything else is Non-Veg). Category scope
+            // treats Egg as non-veg.
+            const foodType = fromFoodTypeColumn(data.foodType);
+            // A pure-veg restaurant's sheet cannot add non-veg or egg dishes;
+            // the admin and app forms already refuse it, the sheet did not.
             if (restaurant.pureVegRestaurant === true && foodType !== 'Veg') {
-                fail(rowNumber, data.name, 'This is a pure veg restaurant, so every dish must be Veg');
+                fail(rowNumber, data.name, 'This is a pure veg restaurant, so every dish must be Veg (no egg)');
                 return;
             }
             const scope = String(category.foodTypeScope || 'Both').trim();

@@ -120,16 +120,39 @@ const pausePayload = (row) => {
     };
 };
 
-export const getOrderPause = async () => pausePayload(await loadRow());
+// The cities an admin picked, kept only so the page can show them ticked again.
+// The pause itself is always the expanded zone list (ordersPausedZoneIds).
+const PAUSE_CITIES_KEY = 'order_pause_cities';
+const ID_RE = /^[a-f0-9]{24}$/i;
+
+const readPauseCityIds = async () => {
+    const row = await prisma.foodPlatformSetting.findUnique({ where: { key: PAUSE_CITIES_KEY } }).catch(() => null);
+    return Array.isArray(row?.value?.cityIds) ? row.value.cityIds : [];
+};
+
+export const getOrderPause = async () => ({ ...pausePayload(await loadRow()), cityIds: await readPauseCityIds() });
 
 /**
  * Turn ordering off (all zones, or the zones given) or back on. While paused,
  * pricing and placing an order are refused with the message. Nothing else is
  * touched: restaurants keep their own on/off, and orders already placed go on.
+ *
+ * `cityIds` picks whole cities: each expands to the zones in it at save time
+ * (a zone added to the city later is not covered until the pause is saved again).
  */
-export const updateOrderPause = async ({ paused, zoneIds, message, until } = {}) => {
+export const updateOrderPause = async ({ paused, zoneIds, cityIds, message, until } = {}) => {
     const on = paused === true || paused === 'true';
-    const ids = Array.isArray(zoneIds) ? [...new Set(zoneIds.map(String).filter((id) => /^[a-f0-9]{24}$/i.test(id)))] : [];
+    const cities = on && Array.isArray(cityIds) ? [...new Set(cityIds.map(String).filter((id) => ID_RE.test(id)))] : [];
+    const cityZoneIds = cities.length
+        ? (await prisma.foodZone.findMany({ where: { cityId: { in: cities } }, select: { id: true } })).map((z) => z.id)
+        : [];
+    if (cities.length && !cityZoneIds.length && !(Array.isArray(zoneIds) && zoneIds.length)) {
+        throw new ValidationError('The chosen cities have no zones yet');
+    }
+    const ids = [...new Set([
+        ...(Array.isArray(zoneIds) ? zoneIds.map(String).filter((id) => ID_RE.test(id)) : []),
+        ...cityZoneIds,
+    ])];
     const text = String(message || '').trim().slice(0, 300);
     let resume = null;
     if (on && until) {
@@ -147,7 +170,45 @@ export const updateOrderPause = async ({ paused, zoneIds, message, until } = {})
             ordersPausedUntil: on ? resume : null,
         },
     });
-    return pausePayload(updated);
+    await prisma.foodPlatformSetting.upsert({
+        where: { key: PAUSE_CITIES_KEY },
+        create: { key: PAUSE_CITIES_KEY, value: { cityIds: cities } },
+        update: { value: { cityIds: cities } },
+    });
+    return { ...pausePayload(updated), cityIds: cities };
+};
+
+/**
+ * Whether ordering is paused for a place, in the shape the apps read:
+ * { paused, servicePaused, message, resumeAt, scope }. `zoneIds` is the
+ * zone(s) the place is in; none (outside every zone) is only paused by an
+ * all-zones pause.
+ */
+export const getServiceStatus = async (zoneIds = []) => {
+    const pause = pausePayload(await prisma.foodBusinessSettings.findFirst({
+        select: { ordersPaused: true, ordersPausedZoneIds: true, ordersPausedMessage: true, ordersPausedUntil: true },
+    }));
+    const zones = (Array.isArray(zoneIds) ? zoneIds : [zoneIds]).filter(Boolean).map(String);
+    const hit = pause.active && (!pause.zoneIds.length || zones.some((z) => pause.zoneIds.includes(z)));
+    return {
+        paused: hit,
+        servicePaused: hit,
+        message: hit ? (pause.message || DEFAULT_PAUSE_MESSAGE) : '',
+        resumeAt: hit && pause.until ? pause.until.toISOString() : null,
+        scope: hit ? (pause.zoneIds.length ? 'zone' : 'all') : null,
+    };
+};
+
+/** The service status for a signed-in restaurant or rider, by their zone. */
+export const getServiceStatusForAccount = async (role, id) => {
+    if (!id) return getServiceStatus([]);
+    let zoneId = null;
+    if (role === 'RESTAURANT') {
+        zoneId = (await prisma.foodRestaurant.findUnique({ where: { id: String(id) }, select: { zoneId: true } }))?.zoneId;
+    } else if (role === 'DELIVERY_PARTNER') {
+        zoneId = (await prisma.foodDeliveryPartner.findUnique({ where: { id: String(id) }, select: { zoneId: true } }))?.zoneId;
+    }
+    return getServiceStatus(zoneId ? [zoneId] : []);
 };
 
 /**

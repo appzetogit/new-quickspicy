@@ -35,6 +35,7 @@ const empty = {
   city: "",
   zoneId: "",
   cohortId: "",
+  payType: "gig",
   state: "",
   address: "",
   vehicleType: "bike",
@@ -280,6 +281,12 @@ export default function AddDeliveryman() {
                   </select>
                 </Field>
               ) : null}
+              <Field label="Payment type" hint="Salaried: first N orders a day are covered by salary">
+                <select className={input} value={form.payType} onChange={(e) => set("payType", e.target.value)}>
+                  <option value="gig">Gig worker (paid per order)</option>
+                  <option value="salaried">Salaried</option>
+                </select>
+              </Field>
               <Field label="State">
                 <input className={input} value={form.state} onChange={(e) => set("state", e.target.value)} />
               </Field>

@@ -227,7 +227,8 @@ export async function updateCategory(id, body = {}) {
         const incompatibleFoods = await prisma.foodItem.count({
             where: {
                 categoryId: category.id,
-                foodType: nextFoodTypeScope === 'Veg' ? 'NonVeg' : 'Veg',
+                // Egg is not veg: a Veg category cannot keep Egg dishes.
+                foodType: nextFoodTypeScope === 'Veg' ? { not: 'Veg' } : 'Veg',
             },
         });
         if (incompatibleFoods > 0) {

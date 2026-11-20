@@ -283,9 +283,10 @@ export async function createFood(body = {}) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) throw new ValidationError('Food name is required');
 
-    const foodType = body.foodType === 'Veg' ? 'Veg' : 'Non-Veg';
+    // Veg | Egg | Non-Veg. Pure-veg restaurants take Veg only (Egg is not veg).
+    const foodType = fromFoodTypeColumn(body.foodType);
     if (restaurant.pureVegRestaurant === true && foodType !== 'Veg') {
-        throw new ValidationError('Pure veg restaurants can only use veg foods');
+        throw new ValidationError('Pure veg restaurants can only use veg foods (no egg or non-veg)');
     }
 
     const { price, otherPrice, variants } = getAdminFoodCreatePricing(body);
@@ -358,11 +359,11 @@ export async function updateFood(id, body = {}) {
 
     const targetFoodType =
         body.foodType !== undefined
-            ? body.foodType === 'Veg' ? 'Veg' : 'Non-Veg'
+            ? fromFoodTypeColumn(body.foodType)
             : fromFoodTypeColumn(existing.foodType);
 
     if (restaurant.pureVegRestaurant === true && targetFoodType !== 'Veg') {
-        throw new ValidationError('Pure veg restaurants can only use veg foods');
+        throw new ValidationError('Pure veg restaurants can only use veg foods (no egg or non-veg)');
     }
 
     const pricing = getAdminFoodUpdatedPricing(existing, body);

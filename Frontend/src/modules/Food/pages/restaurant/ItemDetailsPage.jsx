@@ -24,6 +24,8 @@ import { toast } from "sonner"
 import { ImageSourcePicker } from "@food/components/ImageSourcePicker"
 import { isFlutterBridgeAvailable } from "@food/utils/imageUploadUtils"
 import { getFoodVariants } from "@food/utils/foodVariants"
+import { normalizeFoodType } from "@food/utils/foodType"
+import FoodAddonPicker, { saveFoodAddons } from "@food/components/shared/FoodAddonPicker"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -69,6 +71,13 @@ export default function ItemDetailsPage() {
   const [itemSizeUnit, setItemSizeUnit] = useState("piece")
   const [itemDescription, setItemDescription] = useState("")
   const [foodType, setFoodType] = useState("Non-Veg")
+  // Add-ons picked for this item; saved (PUT /foods/:id/addons) only if changed.
+  const [addonIds, setAddonIds] = useState([])
+  const [addonsTouched, setAddonsTouched] = useState(false)
+  const handleAddonsChange = (ids, meta = {}) => {
+    setAddonIds(Array.isArray(ids) ? ids : [])
+    if (!meta.initial) setAddonsTouched(true)
+  }
   const [basePrice, setBasePrice] = useState("")
   const [otherPrice, setOtherPrice] = useState("")
   const [variants, setVariants] = useState([])
@@ -127,7 +136,8 @@ export default function ItemDetailsPage() {
     setItemSizeQuantity(item.itemSizeQuantity || "")
     setItemSizeUnit(item.itemSizeUnit || "piece")
     setItemDescription(item.description || "")
-    setFoodType(item.foodType === "Veg" ? "Veg" : "Non-Veg")
+    // Veg | Egg | Non-Veg (the API may send NonVeg).
+    setFoodType(normalizeFoodType(item.foodType))
     const itemVariants = getFoodVariants(item)
     setVariants(itemVariants.map(createVariantDraft))
     setBasePrice(itemVariants.length === 0 ? item.price?.toString() || "" : "")
@@ -679,7 +689,8 @@ export default function ItemDetailsPage() {
       if (
         matchedCategory?.foodTypeScope &&
         matchedCategory.foodTypeScope !== "Both" &&
-        matchedCategory.foodTypeScope !== foodType
+        // Egg counts as non-veg for a category's diet scope.
+        matchedCategory.foodTypeScope !== (foodType === "Veg" ? "Veg" : "Non-Veg")
       ) {
         toast.error(`This ${matchedCategory.foodTypeScope} category cannot accept ${foodType} food`)
         setUploadingImages(false)
@@ -785,6 +796,16 @@ export default function ItemDetailsPage() {
         })
       }
 
+
+      // Add-ons live on the add-ons (FoodAddon.foodIds); saved once the item
+      // exists. A failure here leaves the item saved.
+      if (addonsTouched && itemId) {
+        try {
+          await saveFoodAddons("restaurant", itemId, addonIds)
+        } catch (addonError) {
+          toast.error(addonError?.response?.data?.message || "Item saved, but the add-ons could not be saved")
+        }
+      }
 
       const imageCount = allImageUrls.length
       toast.success(
@@ -1158,6 +1179,19 @@ export default function ItemDetailsPage() {
               </button>
               {!isPureVegRestaurant && (
                 <button
+                  onClick={() => setFoodType("Egg")}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${foodType === "Egg"
+                    ? "border-2"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  style={foodType === "Egg" ? { borderColor: "#D97706", color: "#B45309", backgroundColor: "#FFFBEB" } : undefined}
+                >
+                  {foodType === "Egg" && <Check className="w-4 h-4" style={{ color: "#D97706" }} />}
+                  <span>Egg</span>
+                </button>
+              )}
+              {!isPureVegRestaurant && (
+                <button
                   onClick={() => setFoodType("Non-Veg")}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${foodType === "Non-Veg"
                     ? "border-red-600 border-2 text-red-600"
@@ -1169,6 +1203,18 @@ export default function ItemDetailsPage() {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Add-ons shown on this item */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Add-ons</label>
+            <FoodAddonPicker
+              scope="restaurant"
+              foodId={!isNewItem ? String(itemData?.id || id || "") || undefined : undefined}
+              value={addonIds}
+              onChange={handleAddonsChange}
+            />
+            <p className="mt-1 text-xs text-gray-500">Only your approved add-ons are listed. Manage them from Add-ons.</p>
           </div>
 
           {/* Item Price */}

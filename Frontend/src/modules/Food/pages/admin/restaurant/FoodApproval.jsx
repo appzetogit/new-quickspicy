@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@food/components/ui/dialog"
 import { adminAPI } from "@food/api"
+import FoodApprovalEditForm from "@food/components/admin/FoodApprovalEditForm"
 import { toast } from "sonner"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
@@ -26,6 +27,8 @@ export default function FoodApproval() {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
   const [processing, setProcessing] = useState(false)
+  // Editing a pending dish inside the details dialog before deciding on it.
+  const [editingRequest, setEditingRequest] = useState(false)
   const isMountedRef = useRef(true)
 
   // Fetch pending food approval requests
@@ -168,6 +171,7 @@ export default function FoodApproval() {
   // View food item details
   const handleViewDetails = (request) => {
     setSelectedRequest(request)
+    setEditingRequest(false)
     setShowDetailModal(true)
   }
 
@@ -371,17 +375,52 @@ export default function FoodApproval() {
       </Card>
 
       {/* Item Details Modal */}
-      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+      <Dialog
+        open={showDetailModal}
+        onOpenChange={(open) => {
+          setShowDetailModal(open)
+          if (!open) setEditingRequest(false)
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-0 bg-white shadow-2xl rounded-2xl border-none">
           <DialogHeader className="p-6 pb-4 border-b border-gray-100 bg-slate-50/50">
             <DialogTitle className="text-xl font-bold text-gray-900">
-              {selectedRequest?.entityType === 'addon' ? 'Add-on Details' : 'Food Item Details'}
+              {editingRequest ? 'Edit Food Item' : selectedRequest?.entityType === 'addon' ? 'Add-on Details' : 'Food Item Details'}
             </DialogTitle>
             <DialogDescription className="text-sm text-gray-500 mt-1">
-              Review the submitted details before approval.
+              {editingRequest
+                ? 'Fix the item before approving. Save keeps it pending; Save & Approve publishes it.'
+                : 'Review the submitted details before approval.'}
             </DialogDescription>
           </DialogHeader>
-          {selectedRequest && (
+          {selectedRequest && editingRequest && (
+            <div className="p-6">
+              <FoodApprovalEditForm
+                key={selectedRequest._id || selectedRequest.id}
+                request={selectedRequest}
+                onCancel={() => setEditingRequest(false)}
+                onSaved={async ({ approved }) => {
+                  setEditingRequest(false)
+                  if (approved) {
+                    setShowDetailModal(false)
+                    setSelectedRequest(null)
+                    await fetchFoodRequests()
+                    return
+                  }
+                  // Still pending: reopen the details with what was saved.
+                  const response = await adminAPI.getPendingFoodApprovals().catch(() => null)
+                  const rows = response?.data?.data?.requests || response?.data?.requests || null
+                  if (Array.isArray(rows)) {
+                    setFoodRequests(rows)
+                    const id = selectedRequest._id || selectedRequest.id
+                    const fresh = rows.find((r) => (r._id || r.id) === id)
+                    if (fresh) setSelectedRequest(fresh)
+                  }
+                }}
+              />
+            </div>
+          )}
+          {selectedRequest && !editingRequest && (
             <div className="p-6 space-y-6">
               {/* Restaurant Info */}
               <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100/50 flex items-center justify-between">
@@ -468,6 +507,7 @@ export default function FoodApproval() {
               </div>
             </div>
           )}
+          {!editingRequest && (
           <DialogFooter className="p-6 pt-4 border-t border-gray-100 bg-slate-50/50 flex gap-2">
             <button
               type="button"
@@ -478,6 +518,15 @@ export default function FoodApproval() {
             </button>
             {selectedRequest?.isActionable && (
               <>
+                {selectedRequest?.entityType !== 'addon' && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingRequest(true)}
+                    className="px-6 py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
+                  >
+                    Edit
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleRejectClick(selectedRequest)}
@@ -496,6 +545,7 @@ export default function FoodApproval() {
               </>
             )}
           </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 

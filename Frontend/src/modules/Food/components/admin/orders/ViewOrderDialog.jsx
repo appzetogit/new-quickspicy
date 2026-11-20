@@ -16,6 +16,7 @@ import { DualMoney } from "@food/components/user/FoodPriceDisplay"
 import { restaurantLabel } from "@food/utils/entityLabels"
 import { RiderPicker } from "@food/pages/admin/dispatch/AssignRider"
 import RefundModal, { refundPicture } from "./RefundModal"
+import OrderLiveTrackingMap from "./OrderLiveTrackingMap"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -569,6 +570,9 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
               </div>
             </div>
           )}
+
+          {/* Map: restaurant, customer and the rider live while on the order. */}
+          {detail && <OrderLiveTrackingMap order={detail} orderId={detailOrderId} />}
 
           {/* Delivery Partner Information */}
           {(order.deliveryPartnerName || order.deliveryPartnerPhone) && (

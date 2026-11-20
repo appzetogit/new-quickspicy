@@ -109,6 +109,8 @@ export async function getAllOffers(_query = {}) {
             activeFromTime: o.activeFromTime || null,
             activeToTime: o.activeToTime || null,
             restaurantIds: selectedIds,
+            zoneIds: Array.isArray(o.zoneIds) ? o.zoneIds : [],
+            cityIds: Array.isArray(o.cityIds) ? o.cityIds : [],
             isFirstOrderOnly: Boolean(o.isFirstOrderOnly),
             storedStatus: o.status || 'active',
             customerScope: o.customerScope === 'first_time' ? 'first-time' : o.customerScope,
@@ -136,6 +138,9 @@ export async function createAdminOffer(body = {}) {
                 restaurantId: selected && isId(body.restaurantId) ? String(body.restaurantId) : null,
                 restaurantIds,
                 customerIds: body.customerIds ?? [],
+                // Empty = everywhere (see offerRules.offerCoversZone).
+                zoneIds: body.zoneIds ?? [],
+                cityIds: body.cityIds ?? [],
                 minOrderValue: body.minOrderValue ?? 0,
                 maxDiscount: body.maxDiscount ?? null,
                 usageLimit: body.usageLimit ?? null,
@@ -216,6 +221,9 @@ export async function updateAdminOffer(id, body = {}) {
                 restaurantId: selected && isId(body.restaurantId) ? String(body.restaurantId) : null,
                 restaurantIds: selected ? (body.restaurantIds || []).map(String).filter(isId) : [],
                 customerIds: body.customerIds ?? [],
+                // Empty = everywhere (see offerRules.offerCoversZone).
+                zoneIds: body.zoneIds ?? [],
+                cityIds: body.cityIds ?? [],
                 minOrderValue: body.minOrderValue ?? 0,
                 maxDiscount: body.maxDiscount ?? null,
                 usageLimit: body.usageLimit ?? null,

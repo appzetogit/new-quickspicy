@@ -94,7 +94,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
             orderBy: { createdAt: 'desc' },
             select: {
                 id: true, orderId: true, riderEarning: true, paymentMethod: true,
-                orderStatus: true, createdAt: true,
+                orderStatus: true, createdAt: true, riderPayBasis: true, riderDaySeq: true,
             },
             take: 20,
         }),
@@ -148,7 +148,12 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
             amount: num(o.riderEarning),
             status: 'Completed',
             date: o.createdAt,
-            description: o.paymentMethod === 'cash' ? 'COD delivery earning' : 'Online delivery earning',
+            category: o.riderPayBasis || 'delivery_earning',
+            description: o.riderPayBasis === 'salaried_covered'
+                ? `Covered by salary${o.riderDaySeq ? ` (delivery ${o.riderDaySeq} of the day)` : ''}`
+                : o.riderPayBasis === 'salaried_incentive'
+                    ? `Salaried incentive${o.riderDaySeq ? ` (delivery ${o.riderDaySeq} of the day)` : ''}`
+                    : (o.paymentMethod === 'cash' ? 'COD delivery earning' : 'Online delivery earning'),
             orderId: o.orderId,
         })),
         ...(withdrawalsList || []).map((w) => ({

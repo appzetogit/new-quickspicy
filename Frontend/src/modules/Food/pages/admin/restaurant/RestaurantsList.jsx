@@ -215,6 +215,12 @@ export default function RestaurantsList() {
   const [locationEditError, setLocationEditError] = useState("")
   const [zones, setZones] = useState([])
   const [zonesLoading, setZonesLoading] = useState(false)
+  // Zone filter and zone maintenance (all restaurants in the zone offline / back).
+  const [filterZones, setFilterZones] = useState([])
+  const [zoneFilter, setZoneFilter] = useState("")
+  const [zoneMaint, setZoneMaint] = useState(null)
+  const [zoneMaintBusy, setZoneMaintBusy] = useState(false)
+  const [listReloadKey, setListReloadKey] = useState(0)
   const [locationForm, setLocationForm] = useState({
     zoneId: "",
     latitude: "",
@@ -292,6 +298,7 @@ export default function RestaurantsList() {
           page,
           limit: PAGE_SIZE,
           ...(debouncedSearchQuery && { search: debouncedSearchQuery }),
+          ...(zoneFilter && { zoneId: zoneFilter }),
           sortBy: getSortByParam(sortConfig),
           includeStats: page === 1,
         })
@@ -355,7 +362,76 @@ export default function RestaurantsList() {
       cancelled = true
       clearTimeout(t)
     }
-  }, [page, debouncedSearchQuery, sortConfig, zones, navigate])
+  }, [page, debouncedSearchQuery, sortConfig, zones, navigate, zoneFilter, listReloadKey])
+
+  // Zones for the filter, once.
+  useEffect(() => {
+    let alive = true
+    adminAPI.getZones({ limit: 1000 })
+      .then((res) => {
+        const list = res?.data?.data?.zones || res?.data?.data || []
+        if (alive) setFilterZones(Array.isArray(list) ? list : [])
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Counts and maintenance state for the chosen zone.
+  useEffect(() => {
+    if (!zoneFilter) {
+      setZoneMaint(null)
+      return
+    }
+    let alive = true
+    adminAPI.getZoneMaintenance(zoneFilter)
+      .then((res) => alive && setZoneMaint(res?.data?.data || null))
+      .catch(() => alive && setZoneMaint(null))
+    return () => {
+      alive = false
+    }
+  }, [zoneFilter, listReloadKey])
+
+  const zoneFilterName = (() => {
+    const z = filterZones.find((item) => (item._id || item.id) === zoneFilter)
+    return z?.name || z?.zoneName || "this zone"
+  })()
+
+  const handleZoneOffline = async () => {
+    if (!zoneFilter || !zoneMaint) return
+    if (!zoneMaint.online) {
+      toast.info("No restaurant in this zone is online")
+      return
+    }
+    if (!window.confirm(`Take all ${zoneMaint.online} online restaurant(s) in ${zoneFilterName} offline? Customers won't be able to order from them until you bring the zone back online.`)) return
+    setZoneMaintBusy(true)
+    try {
+      const res = await adminAPI.takeZoneOffline(zoneFilter)
+      toast.success(`${res?.data?.data?.takenOffline ?? 0} restaurant(s) in ${zoneFilterName} taken offline`)
+      setListReloadKey((k) => k + 1)
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't take the zone offline")
+    } finally {
+      setZoneMaintBusy(false)
+    }
+  }
+
+  const handleZoneOnline = async () => {
+    if (!zoneFilter || !zoneMaint) return
+    const count = zoneMaint.takenOfflineCount || 0
+    if (!window.confirm(`Bring back online the ${count} restaurant(s) in ${zoneFilterName} that were taken offline together? Restaurants that were already offline before stay offline.`)) return
+    setZoneMaintBusy(true)
+    try {
+      const res = await adminAPI.bringZoneOnline(zoneFilter)
+      toast.success(`${res?.data?.data?.broughtOnline ?? 0} restaurant(s) in ${zoneFilterName} back online`)
+      setListReloadKey((k) => k + 1)
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't bring the zone back online")
+    } finally {
+      setZoneMaintBusy(false)
+    }
+  }
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -1304,6 +1380,54 @@ export default function RestaurantsList() {
 
         {/* Restaurants List Section */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          {/* Zone filter and zone maintenance */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <label className="text-sm font-medium text-slate-700" htmlFor="restaurants-zone-filter">Zone</label>
+            <select
+              id="restaurants-zone-filter"
+              value={zoneFilter}
+              onChange={(e) => {
+                setZoneFilter(e.target.value)
+                setPage(1)
+              }}
+              className="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white min-w-[200px]"
+            >
+              <option value="">All zones</option>
+              {filterZones.map((z) => {
+                const id = z._id || z.id
+                return (
+                  <option key={id} value={id}>
+                    {z.name || z.zoneName || id}{z.cityRef?.name ? ` (${z.cityRef.name})` : ""}
+                  </option>
+                )
+              })}
+            </select>
+            {zoneFilter && zoneMaint ? (
+              <>
+                <span className="text-xs text-slate-500">
+                  {zoneMaint.online} online / {zoneMaint.total} approved
+                  {zoneMaint.inMaintenance ? ` · ${zoneMaint.takenOfflineCount} taken offline for maintenance` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleZoneOffline}
+                  disabled={zoneMaintBusy || !zoneMaint.online}
+                  className="px-3 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                >
+                  Take all restaurants in this zone offline
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoneOnline}
+                  disabled={zoneMaintBusy || !zoneMaint.inMaintenance}
+                  title={zoneMaint.inMaintenance ? "" : "Only restaurants taken offline with the zone button are brought back"}
+                  className="px-3 py-2 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                >
+                  Bring back online
+                </button>
+              </>
+            ) : null}
+          </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-900">Restaurants List</h2>

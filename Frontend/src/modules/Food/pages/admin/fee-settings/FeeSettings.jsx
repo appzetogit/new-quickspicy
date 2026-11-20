@@ -4,6 +4,7 @@ import { Button } from "@food/components/ui/button"
 import { adminAPI } from "@food/api"
 import { toast } from "sonner"
 import { FEE_FIELDS, checkFee, validateFeeSettings } from "./feeValidation"
+import SalariedIncentiveCard from "./SalariedIncentiveCard"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -1035,6 +1036,11 @@ export default function FeeSettings() {
           )}
         </div>
       </div>
+
+      <SalariedIncentiveCard
+        selectedZoneId={selectedZoneId}
+        zoneLabel={selectedZoneId ? zoneLabelFor(selectedZoneId) : "global"}
+      />
     </div>
   )
 }

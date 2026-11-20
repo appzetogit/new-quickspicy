@@ -8,6 +8,7 @@ import {
     getPendingRestaurants,
     getUnregisteredRestaurants,
     deleteUnregisteredRestaurant,
+    consumeUnregisteredLead,
     updateRestaurantStatus,
     updateRestaurantLocation,
     approveRestaurant,
@@ -288,4 +289,23 @@ test('unregistered leads list and delete', async () => {
     await assert.rejects(() => deleteUnregisteredRestaurant('bad'), /Invalid unregistered restaurant id/);
 
     created.unregistered = created.unregistered.filter((id) => id !== lead.id);
+});
+
+test('a lead converted into a restaurant is removed, and a bad or missing lead id is a no-op', async () => {
+    const lead = await prisma.foodUnregisteredRestaurant.create({
+        data: {
+            ownerName: 'Lead Owner',
+            restaurantName: `Lead ${uniqueTag('L')}`,
+            mobileNumber: uniquePhone('8'),
+            emailId: 'lead@example.com',
+            location: 'Somewhere',
+        },
+    });
+    created.unregistered.push(lead.id);
+
+    assert.equal(await consumeUnregisteredLead(lead.id), true);
+    assert.equal(await prisma.foodUnregisteredRestaurant.findUnique({ where: { id: lead.id } }), null);
+    assert.equal(await consumeUnregisteredLead(lead.id), false);
+    assert.equal(await consumeUnregisteredLead('bad'), false);
+    assert.equal(await consumeUnregisteredLead(''), false);
 });

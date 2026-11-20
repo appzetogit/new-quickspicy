@@ -81,6 +81,9 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
         }
         // Optional cohort, checked before the rider is created ('' or missing: none).
         const cohortId = (await resolveCohortId(body.cohortId)) || null;
+        // Gig (paid per order, the default) or salaried.
+        const payType = String(body.payType || 'gig').trim().toLowerCase();
+        if (!['gig', 'salaried'].includes(payType)) throw new ValidationError('Payment type must be gig or salaried');
         const approve = wantsApproved(body.approveNow);
 
         const filesByField = {};
@@ -94,15 +97,18 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
             body,
             { createdByAdmin: true, adminId: req.user?.userId || null, approve, zoneId },
         );
-        if (cohortId) {
-            await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { cohortId } });
+        if (cohortId || payType !== 'gig') {
+            await prisma.foodDeliveryPartner.update({
+                where: { id: partner.id },
+                data: { ...(cohortId ? { cohortId } : {}), ...(payType !== 'gig' ? { payType } : {}) },
+            });
         }
         res.status(201).json({
             success: true,
             message: approve
                 ? 'Delivery partner added. They can log in with OTP on their phone.'
                 : 'Delivery partner added as pending. Approve them from Join requests.',
-            data: { id: partner.id, name: partner.name, phone: partner.phone, status: partner.status },
+            data: { id: partner.id, name: partner.name, phone: partner.phone, status: partner.status, payType },
         });
     } catch (err) {
         next(err);

@@ -65,7 +65,7 @@ import {
     getPublicLandingSettingsController,
     getPublicTopBannersController
 } from '../controllers/publicLanding.controller.js';
-import { detectZonePublicController, listZonesPublicController, listZonesNearbyPublicController } from '../controllers/zonePublic.controller.js';
+import { detectZonePublicController, listZonesPublicController, listZonesNearbyPublicController, serviceStatusPublicController } from '../controllers/zonePublic.controller.js';
 import {
     listGourmetAdmin,
     createGourmetAdmin,
@@ -223,6 +223,8 @@ router.get('/landing/settings/public', getPublicLandingSettingsController);
 router.get('/zones/detect', detectZonePublicController);
 router.get('/zones/nearby', listZonesNearbyPublicController);
 router.get('/zones/public', listZonesPublicController);
+// Is ordering paused here by the admin? { paused, message, resumeAt } for the app popup.
+router.get('/public/service-status', serviceStatusPublicController);
 // Admin landing settings
 router.get('/hero-banners/landing/settings', getAdminLandingSettingsController);
 router.patch('/hero-banners/landing/settings', updateAdminLandingSettingsController);

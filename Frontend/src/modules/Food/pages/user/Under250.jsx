@@ -23,6 +23,8 @@ import { restaurantAPI, adminAPI } from "@food/api"
 import { isModuleAuthenticated } from "@food/utils/auth"
 import { calculateDistance, formatDistance } from "@food/utils/common"
 import { getRestaurantAvailabilityStatus } from "@food/utils/restaurantAvailability"
+import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
+import { isEggItem } from "@food/utils/foodType"
 import {
   buildCartLineId,
   getDefaultFoodVariant,
@@ -1291,6 +1293,7 @@ export default function Under250() {
                             {/* Item Details */}
                             <div className="p-3 md:p-4 lg:p-5">
                               <div className="flex items-center gap-1 md:gap-2 mb-1 md:mb-2 lg:mb-3">
+                                {!item.isVeg && isEggItem(item) && <FoodTypeIcon type="Egg" size={14} />}
                                 {item.isVeg && (
                                   <div className="h-3 w-3 md:h-4 md:w-4 lg:h-5 lg:w-5 rounded border flex items-center justify-center" style={{ borderColor: "#16A34A", backgroundColor: "#F0FDF4" }}>
                                     <div className="h-1.5 w-1.5 md:h-2 md:w-2 lg:h-2.5 lg:w-2.5 rounded-full" style={{ backgroundColor: "#16A34A" }} />
@@ -1531,6 +1534,7 @@ export default function Under250() {
                 {/* Item Name and Indicator */}
                 <div className="flex items-start justify-between mb-3 md:mb-4 lg:mb-6">
                   <div className="flex items-center gap-2 md:gap-3 flex-1">
+                    {!selectedItem.isVeg && isEggItem(selectedItem) && <FoodTypeIcon type="Egg" size={20} />}
                     {selectedItem.isVeg && (
                       <div className="h-5 w-5 md:h-6 md:w-6 lg:h-7 lg:w-7 rounded border-2 flex items-center justify-center flex-shrink-0" style={{ borderColor: "#16A34A", backgroundColor: "#F0FDF4" }}>
                         <div className="h-2.5 w-2.5 md:h-3 md:w-3 lg:h-3.5 lg:w-3.5 rounded-full" style={{ backgroundColor: "#16A34A" }} />

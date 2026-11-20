@@ -1364,10 +1364,20 @@ export async function approveRestaurant(req, res, next) {
 export async function createRestaurant(req, res, next) {
     try {
         const restaurant = await adminService.createRestaurantByAdmin(req.body || {});
+        // Created from an unregistered lead: the lead is converted, so drop it.
+        let leadRemoved = false;
+        if (req.body?.leadId) {
+            try {
+                leadRemoved = await adminService.consumeUnregisteredLead(req.body.leadId);
+            } catch {
+                leadRemoved = false;
+            }
+        }
         res.status(201).json({
             success: true,
             message: 'Restaurant created successfully',
-            data: restaurant
+            data: restaurant,
+            ...(req.body?.leadId ? { leadRemoved } : {})
         });
     } catch (error) {
         next(error);

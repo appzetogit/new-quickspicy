@@ -11,7 +11,7 @@ import { connectRedis, closeRedis } from './src/config/redis.js';
 import { initSocket } from './src/config/socket.js';
 import { initializeQueues, closeBullMQConnection } from './src/queues/index.js';
 import { expireExpiredOffers } from './src/modules/food/admin/services/admin.service.js';
-import { syncExpiredFssaiNotifications } from './src/modules/food/restaurant/services/fssaiExpiry.service.js';
+import { syncExpiredFssaiNotifications, syncExpiringFssaiWarnings } from './src/modules/food/restaurant/services/fssaiExpiry.service.js';
 
 import { logger } from './src/utils/logger.js';
 import { initializeFirebaseRealtime } from './src/config/firebase.js';
@@ -91,6 +91,8 @@ const startBackgroundJobs = async () => {
     const runFssaiExpirySync = async () => {
         try {
             await syncExpiredFssaiNotifications();
+            // 30 days ahead: warn the owner and admins once per licence.
+            await syncExpiringFssaiWarnings();
         } catch (err) {
             logger.error(`FSSAI expiry sync error: ${err.message}`);
         }

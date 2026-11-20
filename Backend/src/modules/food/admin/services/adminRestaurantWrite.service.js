@@ -212,10 +212,11 @@ export async function updateRestaurantById(id, body = {}) {
         // A pure veg restaurant cannot keep non-veg dishes: switching it while
         // they exist left them on its menu with a non-veg mark.
         if (data.pureVegRestaurant === true && existing.pureVegRestaurant !== true) {
-            const nonVeg = await prisma.foodItem.count({ where: { restaurantId: existing.id, foodType: 'NonVeg' } });
+            // Egg dishes count too: pure veg means no egg.
+            const nonVeg = await prisma.foodItem.count({ where: { restaurantId: existing.id, foodType: { not: 'Veg' } } });
             if (nonVeg > 0) {
                 throw new ValidationError(
-                    `${nonVeg} dish${nonVeg === 1 ? ' is' : 'es are'} marked Non-veg. Mark ${nonVeg === 1 ? 'it' : 'them'} Veg or remove ${nonVeg === 1 ? 'it' : 'them'} before making this a pure veg restaurant.`,
+                    `${nonVeg} dish${nonVeg === 1 ? ' is' : 'es are'} marked Non-veg or Egg. Mark ${nonVeg === 1 ? 'it' : 'them'} Veg or remove ${nonVeg === 1 ? 'it' : 'them'} before making this a pure veg restaurant.`,
                 );
             }
         }

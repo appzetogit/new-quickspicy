@@ -199,7 +199,7 @@ export default function InventoryReport() {
                       <td className={TD}>{itemPage.offset + index + 1}</td>
                       <td className={`${TD} font-medium text-slate-900`}>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${i.foodType === "Veg" ? "bg-green-500" : "bg-red-500"}`} />
+                          <span className={`w-2 h-2 rounded-full ${i.foodType === "Veg" ? "bg-green-500" : i.foodType === "Egg" ? "bg-amber-500" : "bg-red-500"}`} />
                           {i.name}
                         </span>
                       </td>

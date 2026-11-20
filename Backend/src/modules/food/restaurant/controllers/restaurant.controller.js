@@ -67,6 +67,14 @@ export const getApprovedRestaurantController = async (req, res, next) => {
         if (!restaurant) {
             return res.status(404).json({ success: false, message: 'Restaurant not found' });
         }
+        // Expired FSSAI licence (when the admin block is on): shown as offline with the reason.
+        const { getFssaiOrderingBlock } = await import('../services/fssaiExpiry.service.js');
+        const fssai = await getFssaiOrderingBlock(restaurant.id || restaurant._id).catch(() => null);
+        if (fssai?.blocked) {
+            restaurant.isAcceptingOrders = false;
+            restaurant.orderingBlocked = true;
+            restaurant.orderingBlockedReason = fssai.reason;
+        }
         return sendResponse(res, 200, 'Restaurant fetched successfully', { restaurant });
     } catch (error) {
         next(error);
@@ -77,7 +85,10 @@ export const getCurrentRestaurantController = async (req, res, next) => {
     try {
         const restaurantId = req.user?.userId;
         const restaurant = await getCurrentRestaurantProfile(restaurantId);
-        return sendResponse(res, 200, 'Restaurant fetched successfully', { restaurant });
+        // Admin "Pause orders" covering this restaurant's zone, for a banner.
+        const { getServiceStatusForAccount } = await import('../../admin/services/businessSettings.service.js');
+        const serviceStatus = await getServiceStatusForAccount('RESTAURANT', restaurantId).catch(() => null);
+        return sendResponse(res, 200, 'Restaurant fetched successfully', { restaurant, serviceStatus });
     } catch (error) {
         next(error);
     }

@@ -11,6 +11,7 @@ import { applyAppPricing } from '../../pricing/priceRules.service.js';
 import { attachOutletTimingsToRestaurants } from './outletTimings.service.js';
 import { withOpenStatus } from '../helpers/restaurantAvailability.helper.js';
 import { openFirst } from '../../shared/openFirst.js';
+import { foodTypeWhereFromQuery } from '../../shared/foodType.util.js';
 
 const buildCategoryKeywords = (categorySlug) => {
     const raw = String(categorySlug || '').trim().toLowerCase();
@@ -69,6 +70,8 @@ export async function listPublicFoods(query = {}) {
         restaurantId: { in: restaurantIds },
         approvalStatus: 'approved',
         isAvailable: true,
+        // ?isVeg=true (Veg only, Egg excluded) / ?foodType=Veg|Egg|Non-Veg.
+        ...(foodTypeWhereFromQuery(query) || {}),
     };
 
     const keywords = buildCategoryKeywords(categorySlug);

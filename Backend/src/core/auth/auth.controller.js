@@ -146,6 +146,16 @@ export const getMeController = async (req, res, next) => {
   try {
     const { userId, role } = req.user;
     const result = await getProfile(userId, role);
+    // Restaurant and rider apps: whether the admin has paused ordering in
+    // their zone ({ servicePaused, message, resumeAt }), for a banner.
+    if (role === "RESTAURANT" || role === "DELIVERY_PARTNER") {
+      try {
+        const { getServiceStatusForAccount } = await import("../../modules/food/admin/services/businessSettings.service.js");
+        result.serviceStatus = await getServiceStatusForAccount(role, userId);
+      } catch {
+        // Never fail the profile over the banner.
+      }
+    }
     return sendResponse(res, 200, "Profile retrieved successfully", result);
   } catch (error) {
     next(error);

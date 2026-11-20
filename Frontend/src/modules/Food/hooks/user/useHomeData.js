@@ -101,7 +101,7 @@ export const useHomeData = (location, zoneId) => {
       );
 
       menuResponses.forEach(({ id, menu }) => {
-        let hasVeg = false, hasNonVeg = false;
+        let hasVeg = false, hasNonVeg = false, hasEgg = false;
         const sections = menu?.sections || [];
         sections.forEach(s => {
           const items = s.items || [];
@@ -109,6 +109,7 @@ export const useHomeData = (location, zoneId) => {
             const type = String(i.foodType || "").toLowerCase();
             if (type === "veg") hasVeg = true;
             if (type.includes("non")) hasNonVeg = true;
+            if (type === "egg") hasEgg = true; // Egg is not veg
           });
           const slug = slugify(s.name);
           if (slug && !categoryMap.has(slug)) {
@@ -118,7 +119,7 @@ export const useHomeData = (location, zoneId) => {
             });
           }
         });
-        dietMeta[id] = { hasVeg, hasNonVeg, isPureVeg: hasVeg && !hasNonVeg };
+        dietMeta[id] = { hasVeg, hasNonVeg, hasEgg, isPureVeg: hasVeg && !hasNonVeg && !hasEgg };
       });
 
       setMenuCategories(Array.from(categoryMap.values()));

@@ -109,6 +109,11 @@ export async function getRestaurants(query = {}) {
         where.AND = [{ OR: [{ zone: { cityId } }, { pendingZone: { cityId } }] }];
     }
 
+    // One zone, for the restaurants list's zone filter and zone maintenance.
+    if (isId(query.zoneId)) {
+        where.AND = [...(where.AND || []), { zoneId: String(query.zoneId) }];
+    }
+
     const orderBy = {
         'created-desc': { createdAt: 'desc' },
         'created-asc': { createdAt: 'asc' },

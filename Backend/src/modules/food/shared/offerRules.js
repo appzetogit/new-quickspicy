@@ -159,6 +159,7 @@ const MESSAGES = {
     'not-started': (o) => `This coupon starts on ${new Date(o.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}`,
     expired: () => 'This coupon has expired',
     'wrong-restaurant': () => 'This coupon is not valid at this restaurant',
+    'wrong-zone': () => 'This coupon is not valid in this area',
     'not-for-you': () => 'This coupon is not available on your account',
     'first-order': () => 'This coupon is valid on your first order only',
     'new-to-restaurant': () => 'This coupon is only for your first order from this restaurant',
@@ -170,6 +171,25 @@ const MESSAGES = {
         : `You have used this coupon the maximum ${Number(o.perUserLimit)} times`),
     'min-order': (o, ctx) => `Add ${rupees(Math.max(0, (Number(o.minOrderValue) || 0) - (Number(ctx.subtotal) || 0)))} more to use this coupon`,
 };
+
+/**
+ * Whether an offer limited to zones/cities covers this zone. Both lists empty
+ * = everywhere. A restricted coupon with no known zone is refused: nothing
+ * shows the order is inside its area.
+ */
+export const offerCoversZone = (offer, zoneId = null, cityId = null) => {
+    const zones = Array.isArray(offer?.zoneIds) ? offer.zoneIds.map(String).filter(Boolean) : [];
+    const cities = Array.isArray(offer?.cityIds) ? offer.cityIds.map(String).filter(Boolean) : [];
+    if (!zones.length && !cities.length) return true;
+    if (zoneId && zones.includes(String(zoneId))) return true;
+    if (cityId && cities.includes(String(cityId))) return true;
+    return false;
+};
+
+/** True when the offer is limited to some zones or cities. */
+export const isZoneRestricted = (offer) =>
+    (Array.isArray(offer?.zoneIds) && offer.zoneIds.length > 0)
+    || (Array.isArray(offer?.cityIds) && offer.cityIds.length > 0);
 
 const refuse = (code, offer, ctx = {}) => ({ ok: false, code, message: MESSAGES[code](offer || {}, ctx) });
 
@@ -196,6 +216,8 @@ export const checkOfferEligibility = ({
     usageCount = 0,
     priorOrders = 0,
     priorOrdersHere = 0,
+    zoneId = null,
+    cityId = null,
 } = {}) => {
     if (!offer) return refuse('not-found');
     const ctx = { subtotal };
@@ -211,6 +233,9 @@ export const checkOfferEligibility = ({
             : [offer.restaurantId].filter(Boolean);
         if (!ids.some((id) => String(id) === String(restaurantId || ''))) return refuse('wrong-restaurant', offer);
     }
+
+    // zoneId/cityId are the restaurant's zone and that zone's city.
+    if (!offerCoversZone(offer, zoneId, cityId)) return refuse('wrong-zone', offer);
 
     const signedIn = Boolean(userId);
     const scope = normalizeCustomerScope(offer.customerScope);

@@ -62,6 +62,7 @@ import {
 import { getMenuController, updateMenuController, getPublicRestaurantMenuController } from '../controllers/restaurantMenu.controller.js';
 import { listPublicFoodsController } from '../controllers/publicFoods.controller.js';
 import { getPublicRestaurantAddonsController } from '../controllers/publicAddons.controller.js';
+import { getRestaurantFoodAddonsController, setRestaurantFoodAddonsController } from '../controllers/foodAddonMapping.controller.js';
 import * as feedbackExperienceController from '../../admin/controllers/feedbackExperience.controller.js';
 import {
     getOutletTimingsByRestaurantIdController,
@@ -344,6 +345,12 @@ router.patch('/foods/:id', authMiddleware, requireRestaurant, async (req, res, n
     await invalidateCache('restaurant_menu:*');
     next();
 }, updateRestaurantFoodController);
+// Add-ons on one of the restaurant's own dishes (own add-ons only).
+router.get('/foods/:id/addons', authMiddleware, requireRestaurant, getRestaurantFoodAddonsController);
+router.put('/foods/:id/addons', authMiddleware, requireRestaurant, async (req, res, next) => {
+    await invalidateCache('restaurant_addons:*');
+    next();
+}, setRestaurantFoodAddonsController);
 
 // Bulk Menu Upload
 router.get('/bulk-upload/template', authMiddleware, requireRestaurant, downloadBulkMenuTemplateController);

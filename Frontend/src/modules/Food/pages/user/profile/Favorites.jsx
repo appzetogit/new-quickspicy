@@ -8,6 +8,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@food/components/ui/ca
 import { Button } from "@food/components/ui/button"
 import { useProfile } from "@food/context/ProfileContext"
 import { toast } from "sonner"
+import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
+import { normalizeFoodType } from "@food/utils/foodType"
 
 export default function Favorites() {
   const { getFavorites, removeFavorite, getDishFavorites, removeDishFavorite } = useProfile()
@@ -262,16 +264,8 @@ export default function Favorites() {
                           </div>
                           <div className="flex items-center justify-between text-xs pt-2 border-t">
                             <div className="flex items-center gap-1">
-                              {dish.foodType === "Veg" ? (
-                                <div className="w-3 h-3 border-2 border-green-600 flex items-center justify-center rounded-sm">
-                                  <div className="w-1.5 h-1.5 bg-green-600 rounded-full"></div>
-                                </div>
-                              ) : (
-                                <div className="w-3 h-3 border-2 border-orange-600 flex items-center justify-center rounded-sm">
-                                  <div className="w-1.5 h-1.5 bg-orange-600 rounded-full"></div>
-                                </div>
-                              )}
-                              <span className="text-muted-foreground font-medium text-xs">{dish.foodType || "N/A"}</span>
+                              <FoodTypeIcon type={dish.foodType} size={12} className="border-2 rounded-sm" />
+                              <span className="text-muted-foreground font-medium text-xs">{dish.foodType ? normalizeFoodType(dish.foodType) : "N/A"}</span>
                             </div>
                             <div className="text-sm font-bold text-primary-orange">
                               {"\u20B9"}{Math.round(dish.price || 0)}

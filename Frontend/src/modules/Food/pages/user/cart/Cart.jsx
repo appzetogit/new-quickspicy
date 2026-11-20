@@ -12,6 +12,8 @@ import { useProfile } from "@food/context/ProfileContext"
 import { useOrders } from "@food/context/OrdersContext"
 import { useLocation as useUserLocation } from "@food/hooks/useLocation"
 import { useZone } from "@food/hooks/useZone"
+import { useServiceStatus } from "@food/components/user/ServicePauseNotice"
+import ServicePausedBanner from "../../../../../shared/components/ServicePausedBanner.jsx"
 import { orderAPI, restaurantAPI, adminAPI, userAPI, API_ENDPOINTS } from "@food/api"
 import { API_BASE_URL } from "@food/api/config"
 import { initRazorpayPayment } from "@food/utils/razorpay"
@@ -43,6 +45,7 @@ import {
 } from "@food/utils/autoCoupon"
 import CartAutoCouponBanner from "@food/components/user/CartAutoCouponBanner"
 import zoopSound from "@food/assets/audio/zomato_sms.mp3"
+import { FOOD_TYPE_COLORS, foodTypeOf } from "@food/utils/foodType"
 const debugLog = (...args) => { }
 const debugWarn = (...args) => { }
 const debugError = (...args) => { }
@@ -676,6 +679,8 @@ export default function Cart() {
     }
     : currentLocation
   const { zoneId } = useZone(zoneLocation) // Prefer selected/saved address zone
+  // Admin "Pause orders" for this zone: checkout is blocked with the message.
+  const { status: servicePauseStatus, paused: servicePaused } = useServiceStatus(zoneId)
   const defaultPayment = getDefaultPaymentMethod()
 
   useEffect(() => {
@@ -1959,6 +1964,11 @@ export default function Cart() {
       return
     }
 
+    if (servicePaused) {
+      toast.error(servicePauseStatus?.message || "We are not taking orders right now. Please try again a little later.")
+      return
+    }
+
     setIsPlacingOrder(true)
 
     // Use API_BASE_URL from config (supports both dev and production)
@@ -2588,14 +2598,14 @@ export default function Cart() {
                 <div className="space-y-3 md:space-y-4">
                   {cart.map((item) => (
                     <div key={item.id} className="flex items-start gap-3 md:gap-4">
-                      {/* Veg/Non-veg indicator */}
+                      {/* Veg / Egg / Non-veg indicator */}
                       <div
                         className="w-4 h-4 md:w-5 md:h-5 border-2 flex items-center justify-center mt-1 flex-shrink-0"
-                        style={{ borderColor: item.foodType === 'Veg' || item.isVeg === true ? "#16a34a" : "#dc2626" }}
+                        style={{ borderColor: FOOD_TYPE_COLORS[foodTypeOf(item)] }}
                       >
                         <div
                           className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
-                          style={{ backgroundColor: item.foodType === 'Veg' || item.isVeg === true ? "#16a34a" : "#dc2626" }}
+                          style={{ backgroundColor: FOOD_TYPE_COLORS[foodTypeOf(item)] }}
                         />
                       </div>
 
@@ -3168,6 +3178,11 @@ export default function Cart() {
         className="bg-white dark:bg-[#1a1a1a] border-t dark:border-gray-800 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-30 flex-shrink-0 fixed bottom-0 left-0 right-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
+        {servicePaused ? (
+          <div className="max-w-lg mx-auto px-4 pt-3">
+            <ServicePausedBanner status={servicePauseStatus} title="Orders are paused in your area" />
+          </div>
+        ) : null}
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="max-w-lg mx-auto flex items-stretch gap-3">
             <button
@@ -3196,6 +3211,7 @@ export default function Cart() {
                 isPlacingOrder ||
                 loadingRestaurant ||
                 !canPlaceOrder ||
+                servicePaused ||
                 (selectedPaymentMethod === "wallet" && walletBalance < total)
               }
               className="shrink-0 min-w-[132px] px-5 rounded-full text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
@@ -3210,6 +3226,8 @@ export default function Cart() {
                   ? "Loading..."
                   : !canPlaceOrder
                     ? "Offline"
+                    : servicePaused
+                      ? "Orders paused"
                     : !hasSavedAddress
                       ? "Add Address"
                       : `Pay ${RUPEE_SYMBOL}${total.toFixed(0)}`}

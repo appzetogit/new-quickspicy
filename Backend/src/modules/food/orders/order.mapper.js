@@ -215,6 +215,10 @@ export function toOrder(row) {
             : { name: '', phone: '' },
 
         riderEarning: money(row.riderEarning),
+        // Salaried riders: 'salaried_covered' | 'salaried_incentive', null otherwise.
+        riderPayBasis: row.riderPayBasis ?? null,
+        riderDaySeq: row.riderDaySeq ?? null,
+        riderPayWaived: money(row.riderPayWaived),
         platformProfit: money(row.platformProfit),
         priceMarkupAmount: money(row.priceMarkupAmount),
         tripDistanceKm: num(row.tripDistanceKm)

@@ -61,6 +61,10 @@ function buildDateRange(query = {}) {
     return null;
 }
 
+const NOT_SALARY_COVERED = {
+    OR: [{ riderPayBasis: null }, { riderPayBasis: { not: 'salaried_covered' } }],
+};
+
 export async function getDeliveryEarnings(query = {}) {
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.max(1, Math.min(1000, parseInt(query.limit, 10) || 50));
@@ -95,7 +99,7 @@ export async function getDeliveryEarnings(query = {}) {
             take: limit,
             select: {
                 id: true, orderId: true, orderStatus: true, createdAt: true,
-                riderEarning: true, deliveryFee: true, total: true,
+                riderEarning: true, deliveryFee: true, total: true, riderPayBasis: true, riderPayWaived: true,
                 deliveryPartner: { select: { id: true, name: true, phone: true } },
                 restaurant: { select: { restaurantName: true } },
             },
@@ -111,7 +115,9 @@ export async function getDeliveryEarnings(query = {}) {
                 _sum: { riderEarning: true },
             }),
             prisma.foodOrder.aggregate({
-                where: { ...where, riderEarning: { lte: 0 } },
+                // A salaried rider's order covered by salary really paid 0;
+                // it must not fall back to the delivery fee.
+                where: { AND: [where, { riderEarning: { lte: 0 } }, NOT_SALARY_COVERED] },
                 _sum: { deliveryFee: true },
             }),
         ]),
@@ -126,7 +132,12 @@ export async function getDeliveryEarnings(query = {}) {
         deliveryPartnerName: order.deliveryPartner?.name || 'N/A',
         deliveryPartnerPhone: order.deliveryPartner?.phone || 'N/A',
         restaurantName: order.restaurant?.restaurantName || 'N/A',
-        amount: num(order.riderEarning) || num(order.deliveryFee),
+        amount: order.riderPayBasis === 'salaried_covered'
+            ? num(order.riderEarning)
+            : num(order.riderEarning) || num(order.deliveryFee),
+        /// Salaried riders: 'salaried_covered' | 'salaried_incentive'; null for gig.
+        riderPayBasis: order.riderPayBasis || null,
+        riderPayWaived: num(order.riderPayWaived),
         orderTotal: num(order.total),
         deliveryFee: num(order.deliveryFee),
         orderStatus: order.orderStatus || 'N/A',

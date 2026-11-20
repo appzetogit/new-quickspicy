@@ -10,6 +10,7 @@ import { restoreExpiredFoodAvailability } from './foodAvailability.service.js';
 import { findApprovedRestaurant } from './restaurantLookup.helper.js';
 import { applyAppPricing } from '../../pricing/priceRules.service.js';
 import { pickText } from '../../shared/language.js';
+import { foodTypeWhereFromQuery } from '../../shared/foodType.util.js';
 
 const buildMenuFromFoods = async (foods = [], { lang = 'en' } = {}) => {
     const categoryIds = [
@@ -141,7 +142,7 @@ export async function updateRestaurantMenu() {
     throw new ValidationError('Menu editing is disabled. Menu is generated from food items.');
 }
 
-export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug, { lang = 'en' } = {}) {
+export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug, { lang = 'en', foodType, isVeg } = {}) {
     if (!String(restaurantIdOrSlug || '').trim()) {
         throw new ValidationError('Restaurant id is required');
     }
@@ -153,7 +154,11 @@ export async function getPublicApprovedRestaurantMenu(restaurantIdOrSlug, { lang
     // is not sent to customers at all. The owner's menu above keeps listing it.
     await restoreExpiredFoodAvailability({ restaurantId: restaurant.id });
     const foods = await prisma.foodItem.findMany({
-        where: { restaurantId: restaurant.id, approvalStatus: 'approved', isAvailable: true },
+        where: {
+            restaurantId: restaurant.id, approvalStatus: 'approved', isAvailable: true,
+            // ?isVeg=true (Veg only, Egg excluded) / ?foodType=Veg|Egg|Non-Veg.
+            ...(foodTypeWhereFromQuery({ foodType, isVeg }) || {}),
+        },
         include: { variants: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] } },
         orderBy: { createdAt: 'desc' },
         take: 2000,

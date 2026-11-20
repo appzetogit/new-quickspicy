@@ -10,6 +10,7 @@ import { saveRiderActiveOrdersPosition } from './riderPosition.service.js';
 import { TERMINAL_ORDER_STATUSES } from '../../orders/services/order.helpers.js';
 import { offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, normalizeRecurrence } from '../../shared/incentiveRules.js';
 import { onlineMinutesInWindow, cohortZonesFor } from '../../admin/services/adminEarningAddon.service.js';
+import { getSalariedStatus } from './salariedIncentive.service.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -550,6 +551,7 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
             select: {
                 id: true, orderId: true, riderEarning: true, tipAmount: true, paymentMethod: true,
                 orderStatus: true, deliveredAt: true, createdAt: true,
+                riderPayBasis: true, riderDaySeq: true, riderPayWaived: true,
             },
             take: 2000,
         }),
@@ -583,9 +585,14 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
             orderId: o.orderId || o.id,
             paymentMethod: o.paymentMethod || '',
             metadata: { orderId: o.orderId || o.id },
-            description: tip > 0
+            /// Salaried riders: 'salaried_covered' (salary covers it) or
+            /// 'salaried_incentive' (past the daily threshold); null for gig.
+            category: o.riderPayBasis || 'delivery_earning',
+            riderPayBasis: o.riderPayBasis || null,
+            daySeq: o.riderDaySeq ?? null,
+            description: salariedPayLabel(o) || (tip > 0
                 ? `${o.paymentMethod === 'cash' ? 'COD' : 'Online'} delivery earning (includes \u20b9${tip} tip)`
-                : (o.paymentMethod === 'cash' ? 'COD delivery earning' : 'Online delivery earning'),
+                : (o.paymentMethod === 'cash' ? 'COD delivery earning' : 'Online delivery earning')),
         };
     });
 
@@ -674,6 +681,19 @@ const withinRange = (start, end) => [
 const TRIP_ORDER_BY = [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }];
 
 // ----- Earnings summary -----
+/** Wallet/earnings line for a salaried rider's order, or null for gig orders. */
+export const salariedPayLabel = (o) => {
+    const tip = num(o?.tipAmount);
+    const seq = o?.riderDaySeq ? ` (delivery ${o.riderDaySeq} of the day)` : '';
+    if (o?.riderPayBasis === 'salaried_covered') {
+        return `Covered by salary${seq}${tip > 0 ? `, ₹${tip} tip` : ''}`;
+    }
+    if (o?.riderPayBasis === 'salaried_incentive') {
+        return `Salaried incentive${seq}${tip > 0 ? ` (includes ₹${tip} tip)` : ''}`;
+    }
+    return null;
+};
+
 export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) => {
     if (!isId(deliveryPartnerId)) throw new ValidationError('Delivery partner not found');
     const partnerId = String(deliveryPartnerId);
@@ -707,7 +727,7 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
             : {}),
     };
 
-    const [totalOrders, agg, sessions, bonusAgg] = await Promise.all([
+    const [totalOrders, agg, sessions, bonusAgg, salariedAgg, salaried] = await Promise.all([
         prisma.foodOrder.count({ where }),
         prisma.foodOrder.aggregate({ where, _sum: { riderEarning: true, tipAmount: true } }),
         prisma.foodDeliveryPartnerSession.findMany({
@@ -723,6 +743,13 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
             },
             _sum: { amount: true },
         }),
+        // Salaried riders: what the orders past the daily threshold paid.
+        prisma.foodOrder.aggregate({
+            where: { ...where, riderPayBasis: 'salaried_incentive' },
+            _sum: { riderEarning: true, tipAmount: true },
+            _count: { _all: true },
+        }),
+        getSalariedStatus(partnerId),
     ]);
 
     const totalEarnings = num(agg?._sum?.riderEarning);
@@ -768,7 +795,17 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
             incentive,
             otherEarnings: 0,
             grandTotal: Math.round((totalEarnings + incentive) * 100) / 100,
+            /// Salaried riders: delivery pay from orders past the daily
+            /// threshold in this period. Already inside orderEarning.
+            salariedIncentive: Math.round(
+                (num(salariedAgg?._sum?.riderEarning) - num(salariedAgg?._sum?.tipAmount)) * 100,
+            ) / 100,
+            salariedIncentiveOrders: salariedAgg?._count?._all || 0,
         },
+        /// 'gig' | 'salaried'
+        payType: salaried?.payType || 'gig',
+        /// Salaried riders: today's progress toward the daily threshold. Null for gig.
+        salaried: salaried?.isSalaried ? salaried : null,
         period,
         date: date.toISOString(),
         pagination: { page, limit, total: totalOrders },
@@ -841,6 +878,8 @@ const toTripDto = (order) => {
         // history never sent the tip, so the label could not appear.
         tipAmount: num(order?.tipAmount),
         deliveryAmount: Math.round((earningAmount - num(order?.tipAmount)) * 100) / 100,
+        riderPayBasis: order?.riderPayBasis || null,
+        payLabel: salariedPayLabel(order),
         createdAt: order?.createdAt,
         deliveredAt,
         completedAt: deliveredAt,
@@ -931,9 +970,11 @@ export const getDeliveryPocketDetails = async (deliveryPartnerId, query = {}) =>
         createdAt: o.deliveredAt || o.createdAt,
         orderId: o.orderId || o.id,
         metadata: { orderId: o.orderId || o.id },
-        description: o.restaurant?.restaurantName
+        category: o.riderPayBasis || 'delivery_earning',
+        riderPayBasis: o.riderPayBasis || null,
+        description: salariedPayLabel(o) || (o.restaurant?.restaurantName
             ? `Order earning - ${o.restaurant.restaurantName}`
-            : 'Order earning',
+            : 'Order earning'),
     }));
 
     const bonusTransactions = (bonusTxList || []).map((t) => ({

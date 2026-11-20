@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { getGoogleMapsApiKey } from "@food/utils/googleMapsApiKey"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom"
 import { Building2, Info, Tag, Upload, Calendar, FileText, MapPin, CheckCircle2, X, Image as ImageIcon, Clock, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@food/components/ui/dialog"
 import { Input } from "@food/components/ui/input"
@@ -150,6 +150,12 @@ const clearAllFilesFromDB = async () => {
 
 export default function AddRestaurant() {
   const navigate = useNavigate()
+  const routerLocation = useLocation()
+  const [searchParams] = useSearchParams()
+  // Opened from Unregistered Restaurants -> "Create restaurant": the lead id
+  // goes with the create payload so the backend removes the converted lead.
+  const leadId = searchParams.get("leadId") || ""
+  const [leadInfo, setLeadInfo] = useState(null)
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
@@ -243,8 +249,12 @@ export default function AddRestaurant() {
     const restoreFormData = async () => {
       try {
         const storedRaw = localStorage.getItem(ADMIN_ADD_STORAGE_KEY)
-        if (storedRaw) {
-          const parsed = JSON.parse(storedRaw)
+        const storedParsed = storedRaw ? JSON.parse(storedRaw) : null
+        // From a lead, only resume a draft saved for that same lead; any other
+        // draft is not mixed into the lead's details.
+        const draftMatchesLead = !leadId || String(storedParsed?.leadId || "") === leadId
+        if (storedRaw && draftMatchesLead) {
+          const parsed = storedParsed
           const safeStep = Math.min(Math.max(Number(parsed?.step) || 1, 1), 3)
           if (!cancelled) setStep(safeStep)
           if (parsed?.step1 && !cancelled) {
@@ -256,6 +266,45 @@ export default function AddRestaurant() {
           if (parsed?.step3 && !cancelled) {
             setStep3((prev) => ({ ...prev, ...parsed.step3 }))
           }
+        }
+
+        if (leadId) {
+          let lead = routerLocation.state?.lead || null
+          if (!lead || String(lead.id || "") !== leadId) {
+            try {
+              const res = await adminAPI.getUnregisteredRestaurants()
+              const list = res?.data?.data || []
+              lead = list.find((row) => String(row?._id || row?.id || "") === leadId) || null
+            } catch (err) {
+              debugError("Failed to load restaurant lead:", err)
+              lead = null
+            }
+          }
+          if (!cancelled) {
+            if (!lead) {
+              toast.error("This lead was not found (it may already be converted or deleted).")
+            } else {
+              setLeadInfo(lead)
+              if (!draftMatchesLead || !storedRaw) {
+                const phone = sanitizeDigits(String(lead.mobileNumber || "")).slice(-10)
+                const place = String(lead.location || "").trim()
+                setStep1((prev) => ({
+                  ...prev,
+                  restaurantName: lead.restaurantName || prev.restaurantName,
+                  ownerName: lead.ownerName ? normalizeName(lead.ownerName).trim() : prev.ownerName,
+                  ownerEmail: lead.emailId || prev.ownerEmail,
+                  ownerPhone: phone || prev.ownerPhone,
+                  primaryContactNumber: phone || prev.primaryContactNumber,
+                  location: { ...prev.location, addressLine1: place || prev.location.addressLine1 },
+                }))
+                // Free-text location: put it in the search box so the admin can
+                // pick the exact place / pin (lat/lng are still required).
+                if (place) setLocationSearchValue(place)
+              }
+            }
+          }
+          // A different restaurant's draft files are not carried into a lead.
+          if (!draftMatchesLead) return
         }
 
         const [profileImage, panImage, gstImage, fssaiImage] = await Promise.all([
@@ -331,6 +380,7 @@ export default function AddRestaurant() {
         ADMIN_ADD_STORAGE_KEY,
         JSON.stringify({
           step,
+          leadId: leadId || undefined,
           step1,
           step2: serializableStep2,
           step3: serializableStep3,
@@ -340,7 +390,7 @@ export default function AddRestaurant() {
     } catch (err) {
       debugError("Failed to persist admin add form data:", err)
     }
-  }, [isHydrated, step, step1, step2, step3])
+  }, [isHydrated, step, step1, step2, step3, leadId])
 
   useEffect(() => {
     if (!isHydrated) return
@@ -660,6 +710,8 @@ export default function AddRestaurant() {
         ifscCode: step3.ifscCode,
         accountHolderName: step3.accountHolderName,
         accountType: step3.accountType,
+        // Converted lead: removed by the backend after the create succeeds.
+        ...(leadId ? { leadId } : {}),
       }
 
       // Call backend API
@@ -669,6 +721,7 @@ export default function AddRestaurant() {
       if (response?.data?.success !== false && data) {
         await clearPersistedFormData()
         toast.success("Restaurant created successfully!")
+        if (leadId && response?.data?.leadRemoved) toast.success("Lead marked converted and removed from leads.")
         setShowSuccessDialog(true)
         setTimeout(() => {
           navigate("/admin/food/restaurants")
@@ -1592,6 +1645,14 @@ export default function AddRestaurant() {
         </div>
         <div className="text-xs text-gray-600">Step {step} of 3</div>
       </header>
+
+      {leadId && leadInfo && (
+        <div className="mx-4 sm:mx-6 mt-3 px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+          Creating from lead: <strong>{leadInfo.restaurantName || "Unnamed"}</strong>
+          {leadInfo.ownerName ? ` (${leadInfo.ownerName})` : ""}. Details are prefilled; pick the exact location on the map.
+          The lead is removed from Unregistered Restaurants once the restaurant is created.
+        </div>
+      )}
 
       <main ref={mainContentRef} className="flex-1 px-4 sm:px-6 py-4 space-y-4">
         {renderStep()}

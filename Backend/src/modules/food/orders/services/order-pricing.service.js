@@ -1,4 +1,5 @@
 import { assertOrderingNotPaused } from '../../admin/services/businessSettings.service.js';
+import { assertFssaiValidForOrdering } from '../../restaurant/services/fssaiExpiry.service.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
@@ -11,7 +12,7 @@ import { fetchDrivingRoute } from '../utils/googleMaps.js';
 import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
 import { getRestaurantAvailabilityStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
 import { resolveOrderCartItems } from '../helpers/order-cart-items.helper.js';
-import { checkOfferEligibility, computeOfferDiscount } from '../../shared/offerRules.js';
+import { checkOfferEligibility, computeOfferDiscount, isZoneRestricted } from '../../shared/offerRules.js';
 import { getTipSettings } from '../../admin/services/tip.service.js';
 import { assertItemQuantities, loadOrderLimits } from '../../shared/orderLimits.js';
 
@@ -97,6 +98,8 @@ export async function loadRestaurantForOrdering(restaurantId) {
       freeDeliveryAbove: true,
       // This restaurant's own delivery radius, if it overrides the platform's.
       deliveryRadiusKm: true,
+      // For the expired-FSSAI ordering block.
+      fssaiExpiry: true,
     },
   });
 
@@ -651,6 +654,8 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
   // being confirmed must go through.
   if (!options.skipAvailabilityCheck) {
     await assertOrderingNotPaused([restaurant?.zoneId, deliveryAddress?.zoneId]);
+    // Expired FSSAI licence, when the admin has turned that block on.
+    await assertFssaiValidForOrdering(restaurant);
   }
 
   const resolvedItems = await resolveOrderCartItems(dto.restaurantId, dto.items);
@@ -756,6 +761,14 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
         : 0,
     ]);
 
+    // A zone/city-limited coupon goes by the restaurant's zone (the zone the
+    // order is filed under), and only falls back to the client's zoneId when
+    // the restaurant has none -- the client cannot move a restaurant's area.
+    const couponZoneId = restaurant?.zoneId || dto?.zoneId || null;
+    const couponCityId = offer && isZoneRestricted(offer) && isId(couponZoneId)
+      ? (await prisma.foodZone.findUnique({ where: { id: String(couponZoneId) }, select: { cityId: true } }))?.cityId || null
+      : null;
+
     const verdict = checkOfferEligibility({
       offer,
       subtotal,
@@ -765,6 +778,8 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
       usageCount: Number(usage?.count) || 0,
       priorOrders,
       priorOrdersHere,
+      zoneId: couponZoneId,
+      cityId: couponCityId,
     });
 
     if (verdict.ok) {

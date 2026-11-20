@@ -62,6 +62,8 @@ import {
 } from "@food/utils/foodVariants"
 import fssaiLogo from "@food/assets/fssai.png"
 import { RestaurantDetailSkeleton } from "@food/components/ui/loading-skeletons"
+import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
+import { FOOD_TYPE_COLORS } from "@food/utils/foodType"
 
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
@@ -190,7 +192,7 @@ function RestaurantDetailsContent() {
                 ? savedFilters.sortBy
                 : null,
             vegNonVeg:
-              savedFilters.vegNonVeg === "veg" || savedFilters.vegNonVeg === "non-veg"
+              savedFilters.vegNonVeg === "veg" || savedFilters.vegNonVeg === "egg" || savedFilters.vegNonVeg === "non-veg"
                 ? savedFilters.vegNonVeg
                 : null,
             highlyReordered: savedFilters.highlyReordered === true,
@@ -775,6 +777,7 @@ function RestaurantDetailsContent() {
                    if (typeof foodType === 'string') {
                      if (foodType.toLowerCase() === 'veg') foodType = 'Veg'
                      else if (foodType.toLowerCase() === 'non-veg' || foodType.toLowerCase() === 'nonveg') foodType = 'Non-Veg'
+                     else if (foodType.toLowerCase() === 'egg') foodType = 'Egg'
                    }
                    return {
                      ...item,
@@ -1374,7 +1377,8 @@ function RestaurantDetailsContent() {
   useEffect(() => {
     if (!vegMode) return
     setFilters((prev) => (
-      prev.vegNonVeg === "non-veg"
+      // Veg mode is Veg only: Egg and Non-veg filters make no sense under it.
+      prev.vegNonVeg === "non-veg" || prev.vegNonVeg === "egg"
         ? { ...prev, vegNonVeg: null }
         : prev
     ))
@@ -1689,6 +1693,10 @@ function RestaurantDetailsContent() {
       if (filters.vegNonVeg === "veg") {
         // Show only veg items
         if (item.foodType !== "Veg") return false
+      }
+      if (filters.vegNonVeg === "egg") {
+        // Show only egg items (Egg is neither Veg nor Non-veg)
+        if (item.foodType !== "Egg") return false
       }
       if (filters.vegNonVeg === "non-veg") {
         // Show only non-veg items
@@ -2311,6 +2319,25 @@ function RestaurantDetailsContent() {
                 onClick={() =>
                   setFilters((prev) => ({
                     ...prev,
+                    vegNonVeg: prev.vegNonVeg === "egg" ? null : "egg",
+                  }))
+                }
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-[12px] font-bold uppercase tracking-wide shrink-0 transition-all ${
+                  filters.vegNonVeg === "egg"
+                    ? "border-amber-500 bg-amber-50 text-amber-700"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#141414] text-gray-600 dark:text-gray-300"
+                }`}
+              >
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: FOOD_TYPE_COLORS.Egg }} />
+                Egg
+              </button>
+            )}
+            {!vegMode && (
+              <button
+                type="button"
+                onClick={() =>
+                  setFilters((prev) => ({
+                    ...prev,
                     vegNonVeg: prev.vegNonVeg === "non-veg" ? null : "non-veg",
                   }))
                 }
@@ -2548,15 +2575,8 @@ function RestaurantDetailsContent() {
                             <div className="flex-1 min-w-0">
                               {/* Veg Icon & Spicy Indicator */}
                               <div className="flex items-center gap-2 mb-1">
-                                {isVeg ? (
-                                  <div className="w-4 h-4 border-2 flex items-center justify-center rounded-sm flex-shrink-0" style={{ borderColor: "#16a34a" }}>
-                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#16a34a" }}></div>
-                                  </div>
-                                ) : (
-                                  <div className="w-4 h-4 border-2 border-red-600 flex items-center justify-center rounded-sm flex-shrink-0" style={{ borderColor: "#dc2626" }}>
-                                    <div className="w-2 h-2 bg-red-600 rounded-full" style={{ backgroundColor: "#dc2626" }}></div>
-                                  </div>
-                                )}
+                                {/* Veg green, Egg amber, Non-veg red */}
+                                <FoodTypeIcon type={item.foodType} isVeg={isVeg} size={16} className="border-2 rounded-sm" />
                                 {item.isSpicy && <span className="text-xs font-semibold text-red-500">Spicy</span>}
                               </div>
 
@@ -2775,15 +2795,8 @@ function RestaurantDetailsContent() {
                                       <div className="flex-1 min-w-0">
                                         {/* Veg Icon & Spicy Indicator */}
                                         <div className="flex items-center gap-2 mb-1">
-                                          {isVeg ? (
-                                            <div className="w-4 h-4 border-2 flex items-center justify-center rounded-sm flex-shrink-0" style={{ borderColor: "#16a34a" }}>
-                                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#16a34a" }}></div>
-                                            </div>
-                                          ) : (
-                                            <div className="w-4 h-4 border-2 border-red-600 flex items-center justify-center rounded-sm flex-shrink-0" style={{ borderColor: "#dc2626" }}>
-                                              <div className="w-2 h-2 bg-red-600 rounded-full" style={{ backgroundColor: "#dc2626" }}></div>
-                                            </div>
-                                          )}
+                                          {/* Veg green, Egg amber, Non-veg red */}
+                                          <FoodTypeIcon type={item.foodType} isVeg={isVeg} size={16} className="border-2 rounded-sm" />
                                           {item.isSpicy && <span className="text-xs font-semibold text-red-500">Spicy</span>}
                                         </div>
 
@@ -3148,9 +3161,9 @@ function RestaurantDetailsContent() {
                       </div>
                     </div>
 
-                    {/* Veg/Non-veg preference */}
+                    {/* Veg/Egg/Non-veg preference */}
                     <div className="space-y-2">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Veg/Non-veg preference:</h3>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Veg/Egg/Non-veg preference:</h3>
                       <div className="flex gap-2">
                         <button
                           onClick={() =>
@@ -3172,6 +3185,28 @@ function RestaurantDetailsContent() {
                           <div className="h-4 w-4 rounded-full" style={{ backgroundColor: "#16a34a" }} />
                           <span className="font-medium">Veg</span>
                         </button>
+                        {!vegMode && (
+                          <button
+                            onClick={() =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                vegNonVeg: prev.vegNonVeg === "egg" ? null : "egg",
+                              }))
+                            }
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 transition-all flex-1 ${filters.vegNonVeg === "egg"
+                              ? ""
+                              : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
+                              }`}
+                            style={filters.vegNonVeg === "egg" ? {
+                              borderColor: FOOD_TYPE_COLORS.Egg,
+                              backgroundColor: "#fffbeb",
+                              color: "#b45309",
+                            } : undefined}
+                          >
+                            <div className="h-4 w-4 rounded-full" style={{ backgroundColor: FOOD_TYPE_COLORS.Egg }} />
+                            <span className="font-medium">Egg</span>
+                          </button>
+                        )}
                         {!vegMode && (
                           <button
                             onClick={() =>
@@ -3564,6 +3599,8 @@ function RestaurantDetailsContent() {
                           <div className="h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0" style={{ borderColor: "#16A34A", backgroundColor: "#F0FDF4" }}>
                             <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#16A34A" }} />
                           </div>
+                        ) : String(selectedItem?.foodType || "").toLowerCase() === "egg" ? (
+                          <FoodTypeIcon type="Egg" size={20} className="border-2 rounded" />
                         ) : (
                           <div className="h-5 w-5 rounded border-2 border-red-600 bg-red-50 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
                             <div className="h-2.5 w-2.5 rounded-full bg-red-600" />

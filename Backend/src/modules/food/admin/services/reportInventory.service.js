@@ -1,5 +1,6 @@
 import { prisma } from '../../../../config/prisma.js';
 import { num, reportFilters } from './reportFilters.helpers.js';
+import { fromFoodTypeColumn } from '../../shared/foodType.util.js';
 
 /**
  * Inventory & stock: what each restaurant can sell right now.
@@ -127,7 +128,7 @@ export async function getInventoryReport(query = {}) {
                 name: i.name,
                 categoryName: i.categoryName || '',
                 price: num(i.price),
-                foodType: i.foodType === 'Veg' ? 'Veg' : 'Non-Veg',
+                foodType: fromFoodTypeColumn(i.foodType), // Veg | Egg | Non-Veg
                 restaurantId: i.restaurantId,
                 restaurantName: i.restaurant?.restaurantName || 'Unknown restaurant',
                 zoneName: i.restaurant?.zone ? (i.restaurant.zone.zoneName || i.restaurant.zone.name) : '',

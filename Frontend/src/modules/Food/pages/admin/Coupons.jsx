@@ -85,7 +85,7 @@ function StyledSelect({ value, options, onChange, ariaLabel }) {
  * over customers, and two copies of a dropdown with click-outside
  * handling and a search box is two places for it to drift.
  */
-function EntityMultiSelect({ options, value, onChange, error, noun = "restaurant" }) {
+function EntityMultiSelect({ options, value, onChange, error, noun = "restaurant", plural = `${noun}s` }) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState("")
   const rootRef = useRef(null)
@@ -132,8 +132,8 @@ function EntityMultiSelect({ options, value, onChange, error, noun = "restaurant
       >
         <span className={selectedIds.length ? "font-medium text-slate-700" : "text-slate-400"}>
           {selectedIds.length
-            ? `${selectedIds.length} ${noun}${selectedIds.length === 1 ? "" : "s"} selected`
-            : `Choose ${noun}s`}
+            ? `${selectedIds.length} ${selectedIds.length === 1 ? noun : plural} selected`
+            : `Choose ${plural}`}
         </span>
         <ChevronDown className={`h-4 w-4 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`} />
       </button>
@@ -147,7 +147,7 @@ function EntityMultiSelect({ options, value, onChange, error, noun = "restaurant
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder={`Search ${noun}s...`}
+                placeholder={`Search ${plural}...`}
                 className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 autoFocus
               />
@@ -175,7 +175,7 @@ function EntityMultiSelect({ options, value, onChange, error, noun = "restaurant
                 </button>
               )
             }) : (
-              <p className="px-3 py-6 text-center text-sm text-slate-500">{`No ${noun}s found`}</p>
+              <p className="px-3 py-6 text-center text-sm text-slate-500">{`No ${plural} found`}</p>
             )}
           </div>
         </div>
@@ -255,7 +255,12 @@ export default function Coupons() {
     adminBearPercentage: "100",
     restaurantBearPercentage: "0",
     category: "",
+    zoneIds: [],
+    cityIds: [],
   })
+  // Zones and cities for the "where it works" pickers. Empty = everywhere.
+  const [zoneOptions, setZoneOptions] = useState([])
+  const [cityOptions, setCityOptions] = useState([])
 
   const handleCategoryChange = async (offerId, category) => {
     try {
@@ -336,6 +341,27 @@ export default function Coupons() {
     }
 
     fetchCustomers()
+  }, [])
+
+  useEffect(() => {
+    adminAPI.getZones({ page: 1, limit: 1000 })
+      .then((res) => {
+        const list = res?.data?.data?.zones || []
+        setZoneOptions((Array.isArray(list) ? list : []).map((z) => ({
+          _id: String(z?._id || z?.id || ""),
+          name: [z?.zoneName || z?.name, z?.city].filter(Boolean).join(" · ") || "Zone",
+        })).filter((z) => z._id))
+      })
+      .catch((err) => debugError("Error fetching zones:", err))
+    adminAPI.getCities({ limit: 500 })
+      .then((res) => {
+        const list = res?.data?.data?.cities || []
+        setCityOptions((Array.isArray(list) ? list : []).map((c) => ({
+          _id: String(c?._id || c?.id || ""),
+          name: [c?.name, c?.state].filter(Boolean).join(", ") || "City",
+        })).filter((c) => c._id))
+      })
+      .catch((err) => debugError("Error fetching cities:", err))
   }, [])
 
   const todayYMD = () => {
@@ -481,6 +507,8 @@ export default function Coupons() {
       adminBearPercentage: "100",
       restaurantBearPercentage: "0",
       category: "",
+      zoneIds: [],
+      cityIds: [],
     })
   }
 
@@ -539,6 +567,8 @@ export default function Coupons() {
         adminBearPercentage: Number(formData.adminBearPercentage),
         restaurantBearPercentage: Number(formData.restaurantBearPercentage),
         category: formData.category || null,
+        zoneIds: Array.isArray(formData.zoneIds) ? formData.zoneIds : [],
+        cityIds: Array.isArray(formData.cityIds) ? formData.cityIds : [],
       }
       if (editingOfferId) {
         await adminAPI.updateAdminOffer(editingOfferId, payload)
@@ -605,6 +635,8 @@ export default function Coupons() {
       adminBearPercentage: String(offer.adminBearPercentage ?? 100),
       restaurantBearPercentage: String(offer.restaurantBearPercentage ?? 0),
       category: offer.category || "",
+      zoneIds: Array.isArray(offer.zoneIds) ? offer.zoneIds : [],
+      cityIds: Array.isArray(offer.cityIds) ? offer.cityIds : [],
     })
     setErrors({})
     setSubmitError("")
@@ -932,6 +964,32 @@ export default function Coupons() {
                 <p className="mt-1 text-xs text-slate-500">The app's "Top Coupon Categories" chips filter by this.</p>
               </div>
 
+                <div className="md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Zones (optional)</label>
+                    <EntityMultiSelect
+                      options={zoneOptions}
+                      noun="zone"
+                      value={formData.zoneIds}
+                      onChange={(zoneIds) => handleFormChange("zoneIds", zoneIds)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Cities (optional)</label>
+                    <EntityMultiSelect
+                      options={cityOptions}
+                      noun="city"
+                      plural="cities"
+                      value={formData.cityIds}
+                      onChange={(cityIds) => handleFormChange("cityIds", cityIds)}
+                    />
+                  </div>
+                  <p className="md:col-span-2 -mt-2 text-xs text-slate-500">
+                    Leave both empty for everywhere. Otherwise the code only works (and is only listed)
+                    for restaurants in a chosen zone or in any zone of a chosen city.
+                  </p>
+                </div>
+
                 {formData.restaurantScope === "selected" && (
                   <div className="md:col-span-2 lg:col-span-3">
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Select Restaurants</label>
@@ -1057,6 +1115,17 @@ export default function Coupons() {
                         <span className="text-sm font-medium text-slate-900">
                           {offer.restaurantScope === "all" || offer.restaurantName === "All Restaurants" ? "All Restaurants" : offer.restaurantName}
                         </span>
+                        {((offer.zoneIds || []).length > 0 || (offer.cityIds || []).length > 0) && (
+                          <span
+                            className="block text-xs text-amber-700"
+                            title={[
+                              ...(offer.zoneIds || []).map((id) => zoneOptions.find((z) => z._id === id)?.name || id),
+                              ...(offer.cityIds || []).map((id) => cityOptions.find((c) => c._id === id)?.name || id),
+                            ].join(", ")}
+                          >
+                            Only in {[(offer.zoneIds || []).length && `${offer.zoneIds.length} zone${offer.zoneIds.length === 1 ? "" : "s"}`, (offer.cityIds || []).length && `${offer.cityIds.length} cit${offer.cityIds.length === 1 ? "y" : "ies"}`].filter(Boolean).join(" + ")}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">

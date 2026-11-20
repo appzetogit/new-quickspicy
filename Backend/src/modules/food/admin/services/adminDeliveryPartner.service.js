@@ -189,6 +189,8 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         zoneId: doc.zoneId || null,
         zoneName: doc.zone?.name || '',
         cohortId: doc.cohortId || null,
+        /// 'gig' (paid per order) | 'salaried'.
+        payType: doc.payType || 'gig',
         city: doc.city || '',
         vehicleType: doc.vehicleType || '',
         vehicleName: doc.vehicleName || '',
@@ -261,6 +263,7 @@ export async function getDeliveryPartners(query = {}) {
     const where = {
         status: statusFilter || { in: ['approved', 'deactivated'] },
         ...(isId(query.zoneId) ? { zoneId: String(query.zoneId) } : {}),
+        ...(['gig', 'salaried'].includes(String(query.payType || '')) ? { payType: String(query.payType) } : {}),
         ...searchWhere(query.search),
     };
 
@@ -709,6 +712,12 @@ async function editableRiderFields(partner, body = {}) {
     }
     // Optional cohort: adds its zones to the ones the rider may serve ('' clears it).
     if (has('cohortId')) data.cohortId = await resolveCohortId(body.cohortId ?? null);
+    // Gig (per order) or salaried (first N orders a day covered by salary).
+    if (has('payType')) {
+        const payType = text('payType').toLowerCase();
+        if (!['gig', 'salaried'].includes(payType)) throw new ValidationError('Payment type must be gig or salaried');
+        data.payType = payType;
+    }
     if (has('city')) {
         if (!text('city')) throw new ValidationError('City cannot be empty');
         data.city = text('city');

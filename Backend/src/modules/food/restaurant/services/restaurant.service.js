@@ -6,6 +6,7 @@ import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
 import { normalizeMediaUrlForStorage } from '../../../../services/storage.service.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
 import { findZoneForPoint } from '../../shared/zone.service.js';
+import { fssaiListingFilter } from './fssaiExpiry.service.js';
 import { parseDayBound } from '../../../../utils/timezone.js';
 import { extractBankChange, requestBankChange, getPendingBankChange } from './bankChange.service.js';
 import { splitHeld, requestProfileChange, getOpenProfileChange, pendingChangesOf } from './profileChange.service.js';
@@ -39,7 +40,17 @@ import {
     describeConditions,
     describeDiscount,
     offerLifecycle,
+    offerCoversZone,
+    isZoneRestricted,
 } from '../../shared/offerRules.js';
+
+/** zoneId -> cityId for the given zones, one query. */
+const cityIdsOfZones = async (zoneIds = []) => {
+    const ids = [...new Set(zoneIds.map((id) => String(id || '')).filter(isId))];
+    if (!ids.length) return new Map();
+    const rows = await prisma.foodZone.findMany({ where: { id: { in: ids } }, select: { id: true, cityId: true } });
+    return new Map(rows.map((z) => [z.id, z.cityId || null]));
+};
 
 const normalizeName = (value) =>
     String(value || '')
@@ -272,9 +283,27 @@ const attachPublicOffersToRestaurants = async (restaurants = []) => {
             id: true, couponCode: true, discountType: true, discountValue: true,
             minOrderValue: true, maxDiscount: true,
             restaurantScope: true, restaurantId: true, restaurantIds: true,
+            zoneIds: true, cityIds: true,
         },
         orderBy: { createdAt: 'desc' },
     });
+
+    // Zone/city-limited offers only show on cards of restaurants in that area.
+    const zoneOfRestaurant = new Map();
+    const cityOfZone = new Map();
+    if (offers.some(isZoneRestricted)) {
+        const rows = await prisma.foodRestaurant.findMany({
+            where: { id: { in: restaurantIds } },
+            select: { id: true, zoneId: true },
+        });
+        for (const r of rows) zoneOfRestaurant.set(r.id, r.zoneId || null);
+        for (const [z, c] of await cityIdsOfZones(rows.map((r) => r.zoneId))) cityOfZone.set(z, c);
+    }
+    const offerFitsRestaurant = (offer, restaurantId) => {
+        if (!isZoneRestricted(offer)) return true;
+        const zoneId = zoneOfRestaurant.get(restaurantId) || null;
+        return offerCoversZone(offer, zoneId, zoneId ? cityOfZone.get(zoneId) : null);
+    };
 
     const globalOfferSummaries = [];
     const selectedOfferMap = new Map();
@@ -295,6 +324,9 @@ const attachPublicOffersToRestaurants = async (restaurants = []) => {
             maxDiscount: Number.isFinite(Number(offer.maxDiscount)) ? Number(offer.maxDiscount) : null,
             restaurantScope: offer.restaurantScope,
         };
+
+        // Kept off the response; used to drop zone-limited offers per card.
+        Object.defineProperty(payload, '__offer', { value: offer, enumerable: false });
 
         if (offer.restaurantScope === 'all') {
             globalOfferSummaries.push(payload);
@@ -318,7 +350,7 @@ const attachPublicOffersToRestaurants = async (restaurants = []) => {
         const combinedOffers = [
             ...globalOfferSummaries,
             ...(selectedOfferMap.get(restaurantId) || []),
-        ];
+        ].filter((o) => offerFitsRestaurant(o.__offer, restaurantId));
         // A restaurant can be named both directly and by an all-restaurants
         // offer; the card must not show the same coupon twice.
         const dedupedOffers = [...new Map(combinedOffers.map((o) => [o.id, o])).values()];
@@ -1188,7 +1220,7 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
             id: true, restaurantName: true, restaurantNameNormalized: true,
             ownerPhone: true, ownerPhoneDigits: true, ownerPhoneLast10: true,
             primaryContactNumber: true, status: true,
-            latitude: true, longitude: true,
+            latitude: true, longitude: true, pureVegRestaurant: true,
         },
     });
 
@@ -1282,6 +1314,17 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
             }
         } else {
             throw new ValidationError('pureVegRestaurant must be a boolean');
+        }
+        // Pure veg means Veg dishes only: Egg and Non-Veg ones must go first.
+        if (update.pureVegRestaurant === true && currentRestaurant?.pureVegRestaurant !== true) {
+            const notVeg = await prisma.foodItem.count({
+                where: { restaurantId: String(restaurantId), foodType: { not: 'Veg' } },
+            });
+            if (notVeg > 0) {
+                throw new ValidationError(
+                    `${notVeg} item${notVeg === 1 ? ' is' : 's are'} marked Non-veg or Egg. Change or remove ${notVeg === 1 ? 'it' : 'them'} before switching to pure veg.`,
+                );
+            }
         }
     }
 
@@ -1833,16 +1876,28 @@ export const listApprovedRestaurants = async (query = {}) => {
 
     if (query.hasOffers === 'true') {
         const activeOfferFilter = buildActivePublicOfferFilter();
-        const [globalOffer, selectedOffers] = await Promise.all([
+        const [globalOffer, selectedOffers, zonedGlobalOffers] = await Promise.all([
             prisma.foodOffer.findFirst({
-                where: { ...activeOfferFilter, restaurantScope: 'all' },
+                where: { ...activeOfferFilter, restaurantScope: 'all', zoneIds: { isEmpty: true }, cityIds: { isEmpty: true } },
                 select: { id: true },
             }),
             prisma.foodOffer.findMany({
                 where: { ...activeOfferFilter, restaurantScope: 'selected' },
                 select: { restaurantId: true, restaurantIds: true },
             }),
+            // All-restaurant offers limited to zones/cities count for the
+            // restaurants in those areas.
+            prisma.foodOffer.findMany({
+                where: {
+                    ...activeOfferFilter,
+                    restaurantScope: 'all',
+                    OR: [{ zoneIds: { isEmpty: false } }, { cityIds: { isEmpty: false } }],
+                },
+                select: { zoneIds: true, cityIds: true },
+            }),
         ]);
+        const offerZoneIds = [...new Set(zonedGlobalOffers.flatMap((o) => o.zoneIds || []))].filter(isId);
+        const offerCityIds = [...new Set(zonedGlobalOffers.flatMap((o) => o.cityIds || []))].filter(isId);
 
         // A live all-restaurants offer means everyone qualifies, so the filter
         // adds nothing and is skipped entirely.
@@ -1861,6 +1916,8 @@ export const listApprovedRestaurants = async (query = {}) => {
                     // A restaurant's own banner text counts as an offer, as before.
                     { offer: { not: null, notIn: [''] } },
                     ...(eligibleIds.length ? [{ id: { in: eligibleIds } }] : []),
+                    ...(offerZoneIds.length ? [{ zoneId: { in: offerZoneIds } }] : []),
+                    ...(offerCityIds.length ? [{ zone: { cityId: { in: offerCityIds } } }] : []),
                 ],
             });
         }
@@ -1899,6 +1956,10 @@ export const listApprovedRestaurants = async (query = {}) => {
             });
         }
     }
+
+    // Expired FSSAI licence: hidden while the admin's block is on.
+    const fssaiFilter = await fssaiListingFilter();
+    if (fssaiFilter) AND.push(fssaiFilter);
 
     const where = { status: 'approved', ...(AND.length ? { AND } : {}) };
 
@@ -2149,9 +2210,29 @@ export const listPublicOffers = async (query = {}) => {
         where: filter,
         orderBy: { createdAt: 'desc' },
     });
+    // Zone/city-limited coupons: the zone is the restaurant's when one is
+    // asked about (what checkout uses), else ?zoneId=, else ?lat=&lng=. With
+    // no zone known, limited coupons are left out rather than risk listing
+    // one checkout would refuse.
+    let listZoneId = null;
+    if (listAll.some(isZoneRestricted)) {
+        if (isId(restaurantId)) {
+            const r = await prisma.foodRestaurant.findUnique({
+                where: { id: String(restaurantId) },
+                select: { zoneId: true },
+            });
+            listZoneId = r?.zoneId || null;
+        }
+        if (!listZoneId && isId(query.zoneId)) listZoneId = String(query.zoneId);
+        if (!listZoneId && query.lat != null && query.lng != null) {
+            listZoneId = (await findZoneForPoint(query.lat, query.lng).catch(() => null))?.id || null;
+        }
+    }
+    const listCityId = listZoneId ? (await cityIdsOfZones([listZoneId])).get(listZoneId) || null : null;
+
     // A lunch-only code is not shown at dinner: checkout would refuse it, and
     // advertising a coupon that fails at the till is worse than not showing it.
-    const list = listAll.filter((o) => checkSchedule(o, now).ok);
+    const list = listAll.filter((o) => checkSchedule(o, now).ok && offerCoversZone(o, listZoneId, listCityId));
 
     // restaurantIds is a plain array column, so the second .populate() has no
     // relation to walk. Every named restaurant across every offer is fetched
@@ -2230,6 +2311,9 @@ export const listPublicOffers = async (query = {}) => {
             activeFromTime: o.activeFromTime || null,
             activeToTime: o.activeToTime || null,
             newToRestaurantOnly: o.newToRestaurantOnly === true,
+            // Empty = everywhere; otherwise the zones/cities it works in.
+            zoneIds: o.zoneIds || [],
+            cityIds: o.cityIds || [],
         };
     });
 

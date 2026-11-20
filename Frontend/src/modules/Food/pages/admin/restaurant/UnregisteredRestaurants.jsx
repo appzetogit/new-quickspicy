@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Search, Trash2, Building2, User, Phone, Mail, MapPin, Calendar, 
-  UtensilsCrossed, ArrowUpDown, Loader2, RefreshCw, AlertCircle, Eye, X
+  UtensilsCrossed, ArrowUpDown, Loader2, RefreshCw, AlertCircle, Eye, X, PlusCircle
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { adminAPI } from "@food/api";
 
 export default function UnregisteredRestaurants() {
@@ -15,6 +16,26 @@ export default function UnregisteredRestaurants() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedForView, setSelectedForView] = useState(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const navigate = useNavigate();
+
+  // Opens Add Restaurant prefilled from the lead; the backend drops the lead
+  // once the restaurant is created (leadId travels with the create payload).
+  const handleCreateFromLead = (lead) => {
+    const leadId = lead?._id || lead?.id;
+    if (!leadId) return;
+    navigate(`/admin/food/restaurants/add?leadId=${encodeURIComponent(leadId)}`, {
+      state: {
+        lead: {
+          id: leadId,
+          restaurantName: lead.restaurantName || "",
+          ownerName: lead.ownerName || "",
+          mobileNumber: lead.mobileNumber || "",
+          emailId: lead.emailId || "",
+          location: lead.location || "",
+        },
+      },
+    });
+  };
 
   // Track first render to avoid duplicate fetch in StrictMode
   const hasFetchedOnceRef = useRef(false);
@@ -70,7 +91,7 @@ export default function UnregisteredRestaurants() {
 
     try {
       setProcessing(true);
-      await adminAPI.deleteUnregisteredRestaurant(selectedForDelete._id);
+      await adminAPI.deleteUnregisteredRestaurant(selectedForDelete._id || selectedForDelete.id);
       
       // Refresh list
       await fetchRequests();
@@ -290,6 +311,13 @@ export default function UnregisteredRestaurants() {
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => handleCreateFromLead(request)}
+                            className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                            title="Create restaurant from this lead"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteClick(request)}
                             className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                             title="Delete Lead inquiry"
@@ -440,7 +468,14 @@ export default function UnregisteredRestaurants() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                onClick={() => handleCreateFromLead(selectedForView)}
+                className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all rounded-xl shadow-sm inline-flex items-center gap-1.5"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                Create Restaurant
+              </button>
               <button
                 onClick={() => {
                   setShowViewDialog(false);

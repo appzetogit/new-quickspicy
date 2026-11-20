@@ -1552,6 +1552,10 @@ export async function autoDeliverStaleOrders() {
         to: 'delivered',
         note: `Auto-closed after ${cutoffHours}h without completion`,
       });
+      // Salaried riders: first N deliveries of the day covered by salary. Never throws.
+      await import('../../delivery/services/salariedIncentive.service.js')
+        .then((m) => m.applySalariedPayRuleSafely(order.id))
+        .catch(() => {});
 
       closed += 1;
       logger.warn(
@@ -3040,6 +3044,12 @@ export async function markOrderDeliveredAdmin(orderId, adminId, note = "") {
     to: "delivered",
     note: note || "Order marked as delivered by admin",
   });
+
+  // Salaried riders: first N deliveries of the day covered by salary. Never throws.
+  if (row.dispatchDeliveryPartnerId) {
+    const { applySalariedPayRuleSafely } = await import("../../delivery/services/salariedIncentive.service.js");
+    await applySalariedPayRuleSafely(order.id);
+  }
 
   try {
     const ledgerKind = codBecomesPaid ? "cod_marked_paid_on_delivery" : "payment_snapshot_sync";

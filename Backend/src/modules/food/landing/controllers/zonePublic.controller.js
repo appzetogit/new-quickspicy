@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { getRedisClient } from '../../../../config/redis.js';
 import { findZoneForPoint } from '../../shared/zone.service.js';
+import { getServiceStatus } from '../../admin/services/businessSettings.service.js';
 
 const ACTIVE_ZONES_CACHE_KEY = 'zones:active:list:v1';
 const ACTIVE_ZONES_CACHE_TTL_SECONDS = 120;
@@ -80,16 +81,26 @@ export const detectZonePublicController = async (req, res, next) => {
             ? await prisma.foodZone.findUnique({ where: { id: match.id } })
             : null;
 
+        // Admin "Pause orders" for this zone (or everywhere): the apps show a
+        // popup/banner with the message instead of letting the customer reach checkout.
+        const serviceStatus = await getServiceStatus(zone ? [zone.id] : []);
+        const pauseFields = {
+            servicePaused: serviceStatus.paused,
+            serviceMessage: serviceStatus.message,
+            resumeAt: serviceStatus.resumeAt,
+            serviceStatus,
+        };
+
         const response = zone
             ? {
                 success: true,
                 message: 'Zone detected',
-                data: { status: 'IN_SERVICE', zoneId: zone.id, zone },
+                data: { status: 'IN_SERVICE', zoneId: zone.id, zone, ...pauseFields },
             }
             : {
                 success: true,
                 message: 'Out of service',
-                data: { status: 'OUT_OF_SERVICE', zoneId: null, zone: null },
+                data: { status: 'OUT_OF_SERVICE', zoneId: null, zone: null, ...pauseFields },
             };
 
         return res.status(200).json(response);
@@ -121,6 +132,29 @@ export const listZonesNearbyPublicController = async (_req, res, next) => {
             message: 'Nearby zones fetched',
             data: { zones: zones.map(toPublicZone) },
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /public/service-status?lat=..&lng=.. or ?zoneId=..
+ * { paused, servicePaused, message, resumeAt, scope, zoneId }: whether the
+ * admin has paused ordering where this customer is. Public: the home screen
+ * shows it before sign-in.
+ */
+export const serviceStatusPublicController = async (req, res, next) => {
+    try {
+        let zoneId = /^[a-f0-9]{24}$/i.test(String(req.query.zoneId || '')) ? String(req.query.zoneId) : null;
+        if (!zoneId) {
+            const lat = toFinite(req.query.lat);
+            const lng = toFinite(req.query.lng);
+            if (lat !== null && lng !== null) {
+                zoneId = (await findZoneForPoint(lat, lng))?.id || null;
+            }
+        }
+        const status = await getServiceStatus(zoneId ? [zoneId] : []);
+        return res.status(200).json({ success: true, message: 'Service status', data: { ...status, zoneId } });
     } catch (error) {
         next(error);
     }

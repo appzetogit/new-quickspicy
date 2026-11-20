@@ -3,6 +3,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
 import { config } from '../../../../config/env.js';
+import { loadReferralSettingsForZone } from '../../shared/referralZone.js';
 
 /** Fallback path when only an origin is configured (no {code} template). */
 const REFERRAL_SIGNUP_PATH = '/food/delivery/signup';
@@ -50,12 +51,6 @@ const maskPhone = (phone) => {
     return `${p.slice(0, 2)}${'*'.repeat(Math.max(0, p.length - 6))}${p.slice(-4)}`;
 };
 
-/** Newest active referral settings row. */
-const loadReferralSettings = () =>
-    prisma.foodReferralSettings.findFirst({
-        where: { isActive: true },
-        orderBy: { createdAt: 'desc' },
-    });
 
 export const getDeliveryReferralStats = async (deliveryPartnerId) => {
     const id = String(deliveryPartnerId || '');
@@ -66,7 +61,11 @@ export const getDeliveryReferralStats = async (deliveryPartnerId) => {
             where: { id },
             select: { id: true, referralCount: true, referralCode: true },
         }),
-        loadReferralSettings(),
+        // The amount shown is the rider's home zone's (zone override or global);
+        // the global link template is kept either way.
+        prisma.foodDeliveryPartner
+            .findUnique({ where: { id }, select: { zoneId: true } })
+            .then((p) => loadReferralSettingsForZone(p?.zoneId)),
         prisma.deliveryBonusTransaction.aggregate({
             where: { deliveryPartnerId: id, reference: { contains: 'referral', mode: 'insensitive' } },
             _sum: { amount: true },
@@ -153,7 +152,7 @@ export const creditDeliveryReferralOnFirstDelivery = async (refereePartnerId) =>
 
         const referee = await prisma.foodDeliveryPartner.findUnique({
             where: { id },
-            select: { id: true, referredById: true, status: true, name: true },
+            select: { id: true, referredById: true, status: true, name: true, zoneId: true },
         });
         if (!referee?.referredById) return { credited: false, reason: 'no_referrer' };
 
@@ -163,13 +162,12 @@ export const creditDeliveryReferralOnFirstDelivery = async (refereePartnerId) =>
         });
         if (existing) return { credited: false, reason: 'already_decided' };
 
-        const [settingsDoc, referrer] = await Promise.all([
-            loadReferralSettings(),
-            prisma.foodDeliveryPartner.findUnique({
-                where: { id: referee.referredById },
-                select: { id: true, referralCount: true, status: true },
-            }),
-        ]);
+        const referrer = await prisma.foodDeliveryPartner.findUnique({
+            where: { id: referee.referredById },
+            select: { id: true, referralCount: true, status: true, zoneId: true },
+        });
+        // Zone override: the referred rider's home zone, else the referrer's.
+        const settingsDoc = await loadReferralSettingsForZone(referee.zoneId || referrer?.zoneId || null);
 
         const reward = Math.max(0, Number(settingsDoc?.referralRewardDelivery) || 0);
         const limit = Math.max(0, Number(settingsDoc?.referralLimitDelivery) || 0);

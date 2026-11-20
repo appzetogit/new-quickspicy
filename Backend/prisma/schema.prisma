@@ -248,6 +248,7 @@ enum ServiceAccess {
 enum FoodType {
   Veg
   NonVeg @map("Non-Veg")
+  Egg
 }
 
 enum AddonFoodType {
@@ -986,6 +987,10 @@ model FoodDeliveryPartner {
   /// Rider cohort (FoodRiderCohort). Groups riders for incentives, pay rules
   /// and zone eligibility; null means not in any cohort.
   cohortId String? @db.VarChar(24)
+  /// Gig riders earn per order. Salaried riders earn nothing per order for
+  /// their first N deliveries of the IST day (the salary covers them), then
+  /// the normal rider earning as an incentive (settings key salaried_incentive).
+  payType  RiderPayType @default(gig)
 
   vehicleType   String?
   vehicleName   String?
@@ -1577,6 +1582,14 @@ model FoodOrder {
   scheduledAt   DateTime?
 
   riderEarning      Decimal @default(0) @db.Decimal(14, 2)
+  /// Salaried riders only: 'salaried_covered' (one of the day's first N,
+  /// paid by salary: riderEarning keeps the tip only) or 'salaried_incentive'
+  /// (order N+1 onward: normal pay). Null for gig riders. Set once, on delivery.
+  riderPayBasis     String? @db.VarChar(20)
+  /// Which delivery of the rider's IST day this was (1-based), when classified.
+  riderDaySeq       Int?
+  /// Delivery pay a salaried rider did not get on this order (salary covers it).
+  riderPayWaived    Decimal @default(0) @db.Decimal(14, 2)
   /// Can be negative when discounts/rider pay exceed platform income.
   platformProfit    Decimal @default(0) @db.Decimal(14, 2)
   /// See FoodTransaction.priceMarkupAmount.
@@ -2379,6 +2392,12 @@ model FoodOffer {
   /// here, since the list is only ever read whole to check membership.
   customerIds String[]
 
+  /// Zones (FoodZone ids) and cities (FoodCity ids) the code works in. Both
+  /// empty = everywhere. Otherwise the restaurant's zone must be listed, or
+  /// belong to a listed city. Checked in offerRules.checkOfferEligibility.
+  zoneIds String[] @default([])
+  cityIds String[] @default([])
+
   minOrderValue Decimal  @default(0) @db.Decimal(14, 2)
   maxDiscount   Decimal? @db.Decimal(14, 2)
   usageLimit    Int?
@@ -2513,6 +2532,27 @@ model FoodReferralLog {
   @@index([referrerId, role, createdAt(sort: Desc)])
   @@index([status])
   @@map("food_referral_logs")
+}
+
+/// A zone's own referral rewards and limits. Any null field falls back to the
+/// global FoodReferralSettings row, which stays the default everywhere.
+/// zoneId is a plain FoodZone id (no relation, so FoodZone is untouched).
+model FoodReferralZoneSetting {
+  id String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+
+  zoneId String @unique @db.VarChar(24)
+
+  referralRewardUser     Decimal? @db.Decimal(14, 2)
+  referralRewardDelivery Decimal? @db.Decimal(14, 2)
+  referralLimitUser      Int?
+  referralLimitDelivery  Int?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("food_referral_zone_settings")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3160,6 +3200,12 @@ model DeliveryBonusTransaction {
 }
 
 /// What a rider has to do to earn an incentive.
+/// How a rider is paid (FoodDeliveryPartner.payType).
+enum RiderPayType {
+  gig
+  salaried
+}
+
 enum EarningAddonCriteria {
   /// Deliveries completed inside the offer window.
   orders

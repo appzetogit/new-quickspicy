@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Search, Trash2, Loader2, Eye, Pencil, Plus, Save, ChevronDown, ChevronLeft, ChevronRight, FileUp, Download, X, Upload } from "lucide-react"
 import { adminAPI, uploadAPI } from "@food/api"
+import FoodAddonPicker, { saveFoodAddons } from "@food/components/shared/FoodAddonPicker"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@food/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@food/components/ui/popover"
@@ -101,6 +102,14 @@ export default function FoodsList() {
   const [foodForm, setFoodForm] = useState(createFoodForm())
   const [editingFood, setEditingFood] = useState(null)
   const [submittingFood, setSubmittingFood] = useState(false)
+  // Add-ons picked for the dish in the form; saved (PUT /foods/:id/addons)
+  // only when the admin changed them.
+  const [foodAddonIds, setFoodAddonIds] = useState([])
+  const [foodAddonsTouched, setFoodAddonsTouched] = useState(false)
+  const handleFoodAddonsChange = useCallback((ids, meta = {}) => {
+    setFoodAddonIds(Array.isArray(ids) ? ids : [])
+    if (!meta.initial) setFoodAddonsTouched(true)
+  }, [])
   const [categoryOptions, setCategoryOptions] = useState([])
   const [categorySearch, setCategorySearch] = useState("")
   const [categoryPopoverOpen, setCategoryPopoverOpen] = useState(false)
@@ -470,6 +479,8 @@ export default function FoodsList() {
     setImagePreviewUrl("")
     setFoodImages([])
     setFoodVideo(null)
+    setFoodAddonIds([])
+    setFoodAddonsTouched(false)
     setCategorySearch("")
     setCategoryPopoverOpen(false)
     setShowFoodFormModal(true)
@@ -489,7 +500,7 @@ export default function FoodsList() {
       variants: getFoodVariants(food).map(createVariantDraft),
       description: String(food.description || ""),
       image: String(food.image || ""),
-      foodType: String(food.foodType || "Non-Veg"),
+      foodType: ["Veg", "Egg", "Non-Veg"].includes(String(food.foodType)) ? String(food.foodType) : "Non-Veg",
       isAvailable: food.isAvailable !== false,
       preparationTime: String(food.preparationTime || ""),
       commissionType: String(food.commission?.commissionType || "percentage"),
@@ -515,6 +526,8 @@ export default function FoodsList() {
         .filter(Boolean)
         .map((url, i) => ({ key: `saved-${i}-${url}`, url, previewUrl: url })),
     )
+    setFoodAddonIds([])
+    setFoodAddonsTouched(false)
     setCategorySearch("")
     setCategoryPopoverOpen(false)
     setShowFoodFormModal(true)
@@ -599,8 +612,8 @@ export default function FoodsList() {
       toast.error("Food name is required")
       return
     }
-    if (foodForm.foodType !== "Veg" && foodForm.foodType !== "Non-Veg") {
-      toast.error("Choose Veg or Non-Veg")
+    if (!["Veg", "Egg", "Non-Veg"].includes(foodForm.foodType)) {
+      toast.error("Choose Veg, Egg or Non-Veg")
       return
     }
 
@@ -717,7 +730,7 @@ export default function FoodsList() {
         image: imageUrl,
         images: imageUrls,
         videoUrl,
-        foodType: foodForm.foodType === "Veg" ? "Veg" : "Non-Veg",
+        foodType: foodForm.foodType,
         isAvailable: foodForm.isAvailable !== false,
         preparationTime: String(foodForm.preparationTime || "").trim(),
         // null clears the dish rate back to the restaurant's; omitting the key
@@ -726,10 +739,22 @@ export default function FoodsList() {
         commission: commissionPayload,
       }
 
+      let savedFoodId = editingFood?._id || editingFood?.id
       if (foodFormMode === "edit") {
-        await adminAPI.updateFood(editingFood?._id || editingFood?.id, payload)
+        await adminAPI.updateFood(savedFoodId, payload)
       } else {
-        await adminAPI.createFood(payload)
+        const createRes = await adminAPI.createFood(payload)
+        const created = createRes?.data?.data?.food
+        savedFoodId = created?._id || created?.id
+      }
+      // Add-ons are saved on the add-ons themselves (FoodAddon.foodIds), after
+      // the dish exists. A failure here leaves the dish saved.
+      if (foodAddonsTouched && savedFoodId) {
+        try {
+          await saveFoodAddons("admin", savedFoodId, foodAddonIds)
+        } catch (addonError) {
+          toast.error(addonError?.response?.data?.message || "Food saved, but the add-ons could not be saved")
+        }
       }
       toast.success(foodFormMode === "edit" ? "Food updated successfully" : "Food added successfully")
       setShowFoodFormModal(false)
@@ -1490,13 +1515,25 @@ export default function FoodsList() {
                   onChange={(e) => setFoodForm((prev) => ({ ...prev, foodType: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                 >
-                  <option value="" disabled>Choose Veg or Non-Veg</option>
+                  <option value="" disabled>Choose Veg, Egg or Non-Veg</option>
                   <option value="Veg">Veg</option>
+                  <option value="Egg" disabled={selectedRestaurantIsPureVeg}>Egg</option>
                   <option value="Non-Veg" disabled={selectedRestaurantIsPureVeg}>Non-Veg</option>
                 </select>
                 {selectedRestaurantIsPureVeg ? (
-                  <p className="mt-1 text-xs text-emerald-700">Pure veg restaurant: every dish is Veg.</p>
+                  <p className="mt-1 text-xs text-emerald-700">Pure veg restaurant: every dish is Veg (no egg).</p>
                 ) : null}
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Add-ons</label>
+                <FoodAddonPicker
+                  scope="admin"
+                  foodId={foodFormMode === "edit" ? editingFood?._id || editingFood?.id : undefined}
+                  restaurantId={foodForm.restaurantId}
+                  value={foodAddonIds}
+                  onChange={handleFoodAddonsChange}
+                />
+                <p className="mt-1 text-xs text-slate-500">Approved add-ons of this restaurant shown on this item.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Upload Images</label>

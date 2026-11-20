@@ -722,7 +722,12 @@ export function buildDeliverySocketPayload(orderDoc, restaurantDoc = null) {
     cookingNote: order?.note || "",
     deliveryInstructions: order?.deliveryInstructions || "",
     riderEarning: order?.riderEarning || 0,
-    earnings: order?.riderEarning || order?.pricing?.deliveryFee || 0,
+    // A salaried rider's covered order really earns 0 (or the tip); never fall back to the fee.
+    earnings: order?.riderPayBasis === "salaried_covered"
+      ? Number(order?.riderEarning || 0)
+      : order?.riderEarning || order?.pricing?.deliveryFee || 0,
+    riderPayBasis: order?.riderPayBasis ?? null,
+    riderDaySeq: order?.riderDaySeq ?? null,
     deliveryFee: order?.pricing?.deliveryFee || 0,
     deliveryFleet: order?.deliveryFleet,
     dispatch: order?.dispatch,

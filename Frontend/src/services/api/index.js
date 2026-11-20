@@ -792,6 +792,11 @@ export const adminAPI = {
     }),
   deleteFood: (id) =>
     apiClient.delete(`/food/admin/foods/${id}`, { contextModule: "admin" }),
+  /** Add-ons on a dish (dish side): GET options with `selected`, PUT { addonIds }. */
+  getFoodAddons: (id) =>
+    apiClient.get(`/food/admin/foods/${String(id)}/addons`, { contextModule: "admin" }),
+  setFoodAddons: (id, addonIds) =>
+    apiClient.put(`/food/admin/foods/${String(id)}/addons`, { addonIds: addonIds || [] }, { contextModule: "admin" }),
   /** Food approvals (admin) - pending items created by restaurants */
   getPendingFoodApprovals: (params = {}) =>
     apiClient.get("/food/admin/foods/pending-approvals", {
@@ -969,6 +974,18 @@ export const adminAPI = {
     apiClient.get("/food/admin/business-settings/order-pause", { contextModule: "admin" }),
   updateOrderPause: (body) =>
     apiClient.put("/food/admin/business-settings/order-pause", body ?? {}, { contextModule: "admin" }),
+  /** Zone maintenance: counts for one zone, and all its restaurants offline / back online. */
+  getZoneMaintenance: (zoneId) =>
+    apiClient.get("/food/admin/restaurants/zone-maintenance", { params: { zoneId }, contextModule: "admin" }),
+  takeZoneOffline: (zoneId) =>
+    apiClient.post("/food/admin/restaurants/zone-maintenance/offline", { zoneId }, { contextModule: "admin" }),
+  bringZoneOnline: (zoneId) =>
+    apiClient.post("/food/admin/restaurants/zone-maintenance/online", { zoneId }, { contextModule: "admin" }),
+  /** FSSAI compliance: { expired, expiring, settings: { blockExpired } }. */
+  getFssaiCompliance: (params = {}) =>
+    apiClient.get("/food/admin/restaurants/fssai-compliance", { params, contextModule: "admin" }),
+  updateFssaiCompliance: (body) =>
+    apiClient.put("/food/admin/restaurants/fssai-compliance/settings", body ?? {}, { contextModule: "admin" }),
 
   /** List delivery zones. Query: limit, page, isActive, search */
   getZones: (params = {}) =>
@@ -1510,6 +1527,13 @@ export const adminAPI = {
     apiClient.put("/food/admin/fee-settings", body ?? {}, {
       contextModule: "admin",
     }),
+  /** Salaried rider incentive: { enabled, dailyThreshold, zones } */
+  getSalariedIncentive: () =>
+    apiClient.get("/food/admin/fee-settings/salaried-incentive", { contextModule: "admin" }),
+  saveSalariedIncentive: (body) =>
+    apiClient.put("/food/admin/fee-settings/salaried-incentive", body ?? {}, {
+      contextModule: "admin",
+    }),
 
   /** Referral Settings (admin) */
   getReferralSettings: () =>
@@ -1518,6 +1542,24 @@ export const adminAPI = {
     apiClient.put("/food/admin/referral-settings", body ?? {}, {
       contextModule: "admin",
     }),
+  /** Per-zone referral overrides (null field = use global). */
+  getReferralZoneSettings: () =>
+    apiClient.get("/food/admin/referral-settings/zones", { contextModule: "admin" }),
+  upsertReferralZoneSetting: (zoneId, body) =>
+    apiClient.put(`/food/admin/referral-settings/zones/${zoneId}`, body ?? {}, { contextModule: "admin" }),
+  deleteReferralZoneSetting: (zoneId) =>
+    apiClient.delete(`/food/admin/referral-settings/zones/${zoneId}`, { contextModule: "admin" }),
+  /** Referrals report: params { type: user|delivery, from, to, search, zoneId, cityId, page, limit } */
+  getReferrers: (params = {}) =>
+    apiClient.get("/food/admin/referrals", { params, contextModule: "admin" }),
+  exportReferrersCsv: (params = {}) =>
+    apiClient.get("/food/admin/referrals", {
+      params: { ...params, format: "csv" },
+      responseType: "blob",
+      contextModule: "admin",
+    }),
+  getReferrerReferees: (referrerId, params = {}) =>
+    apiClient.get(`/food/admin/referrals/${referrerId}`, { params, contextModule: "admin" }),
 
   /** Safety / Emergency Reports (admin) */
   getSafetyEmergencyReports: (params) =>
@@ -1970,6 +2012,11 @@ export const restaurantAPI = {
     apiClient.patch(`/food/restaurant/foods/${String(id)}`, body ?? {}, {
       contextModule: "restaurant",
     }),
+  /** Add-ons on one of the restaurant's own dishes: GET options, PUT { addonIds }. */
+  getFoodAddons: (id) =>
+    apiClient.get(`/food/restaurant/foods/${String(id)}/addons`, { contextModule: "restaurant" }),
+  setFoodAddons: (id, addonIds) =>
+    apiClient.put(`/food/restaurant/foods/${String(id)}/addons`, { addonIds: addonIds || [] }, { contextModule: "restaurant" }),
   bulkUploadTemplate: () =>
     apiClient.get("/food/restaurant/bulk-upload/template", {
       responseType: 'blob',
@@ -3074,6 +3121,9 @@ export const zoneAPI = {
   /** Public: list active zones (for onboarding dropdowns). */
   getPublicZones: (params = {}, config = {}) =>
     apiClient.get("/food/zones/public", { params: params ?? {}, ...config }),
+  /** Public: is ordering paused here by the admin? { paused, message, resumeAt, zoneId }. Pass { zoneId } or { lat, lng }. */
+  getServiceStatus: (params = {}) =>
+    apiClient.get("/food/public/service-status", { params: params ?? {} }),
 };
 export const uploadAPI = {
   /**

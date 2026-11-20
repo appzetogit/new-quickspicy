@@ -91,6 +91,7 @@ const PATH_PREFIX_TO_SECTION = [
   { prefix: "/admin/food/bank-change-requests", section: "transaction_management" },
   { prefix: "/admin/food/coupons", section: "promotions_management" },
   { prefix: "/admin/food/referral-settings", section: "referral_rewards" },
+  { prefix: "/admin/food/referrals", section: "referral_rewards" },
   { prefix: "/admin/food/customers", section: "customer_management" },
   { prefix: "/admin/food/support-tickets", section: "customer_management" },
   // Live chat rides on the same section as the rest of support. It is not

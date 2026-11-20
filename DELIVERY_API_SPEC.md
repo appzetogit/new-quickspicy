@@ -47,7 +47,9 @@ A rider who is not approved gets no tokens; the response carries `pendingApprova
 Show `message` as-is (it already includes the reason and the support number). With no reason it reads *"Quick Spicy has blocked your account. Please contact the Quick Spicy team at …"*.
 
 ### `POST /food/auth/refresh-token` · `POST /food/auth/logout` · `GET /food/auth/me`
-Same as the user app.
+Same as the user app. For a rider, `/me` also carries `payType`: `"gig"` (paid per order, the default) or `"salaried"` (set by admin; see salaried riders under `GET /food/delivery/earnings`).
+
+`/me` also returns `data.serviceStatus` (next to `data.user`): `{ paused, servicePaused, message, resumeAt, scope }`. When `servicePaused` is true the admin has paused ordering in the rider's home zone (or everywhere), so few or no new offers will come; show a banner with `message` and `resumeAt` (ISO, may be null). Orders already placed carry on.
 
 ---
 
@@ -345,7 +347,9 @@ Query: `type` (transaction-type filter), `limit`.
         "_id": "…", "type": "payment", "amount": 42, "status": "Completed",
         "date": "…", "createdAt": "…", "orderId": "FOD-…",
         "paymentMethod": "cash", "metadata": { "orderId": "FOD-…" },
-        "description": "COD delivery earning"
+        "description": "COD delivery earning",
+        "category": "delivery_earning",            // or salaried_covered | salaried_incentive
+        "riderPayBasis": null, "daySeq": null      // salaried riders: basis + delivery number of the day
       },
       {
         "_id": "…", "type": "earning_addon", "amount": 200, "status": "Completed",
@@ -405,6 +409,17 @@ Query: `period` = `today` | `week` (default) | `month` | `all`, `date` (anchor, 
 ```
 `totalEarnings` = `orderEarning` + `tips` (order pay). `incentive` = incentives and bonuses credited in the period; `grandTotal` = `totalEarnings` + `incentive`. Online time comes from the duty log.
 
+**Salaried riders.** The response also has `payType` (`"gig"` | `"salaried"`), and `summary` has `salariedIncentive` / `salariedIncentiveOrders` (pay from orders past the daily threshold in the period; already inside `orderEarning`). For a salaried rider `salaried` is:
+```json
+"salaried": {
+  "payType": "salaried", "isSalaried": true,
+  "incentiveEnabled": true, "dailyThreshold": 25,
+  "todayOrders": 27, "todayCoveredOrders": 25, "todayIncentiveOrders": 2,
+  "ordersUntilIncentive": 0, "todayIncentiveEarning": 84
+}
+```
+(`null` for gig riders.) The first `dailyThreshold` deliveries of the IST day are covered by salary: their `riderEarning` is 0 (tips still go to the rider). From delivery N+1 the normal pay is earned as an incentive. With `incentiveEnabled: false` the rider is paid per order like a gig rider. Show progress as `todayOrders` / `dailyThreshold`.
+
 ### `GET /food/delivery/trip-history`
 Query: `period` = `daily` (default) | `weekly` | `monthly`, `date`, `status` = `Completed` | `Cancelled` | `Pending` | `ALL TRIPS`, `limit` (default 50, max 1000).
 ```json
@@ -421,6 +436,8 @@ Query: `period` = `daily` (default) | `weekly` | `monthly`, `date`, `status` = `
     "totalAmount": 546, "orderTotal": 546,
     "codAmount": 546, "codCollectedAmount": 546,
     "deliveryEarning": 42, "earningAmount": 42, "amount": 42,
+    "riderPayBasis": null,      // salaried riders: "salaried_covered" | "salaried_incentive"
+    "payLabel": null,           // e.g. "Covered by salary (delivery 3 of the day)" / "Salaried incentive (delivery 26 of the day)"
     "createdAt": "…", "deliveredAt": "…", "completedAt": "…",
     "date": "…", "time": "07:42 PM"
   }]
@@ -511,6 +528,8 @@ Indian defaults are served when admin hasn't configured them.
 Share `referralLink` when non-empty, else the bare `referralCode`. Never hardcode the URL or
 the amount — both are admin-set. The reward pays only after the referred rider is
 **approved AND completes their first delivery**, so a referral can sit `pending` for days.
+Rewards and limits can be set per zone: the amount paid uses the referred rider's home zone
+(else the referrer's, else the global value); `rewardAmount` in stats is for the caller's home zone.
 
 Pass the code at signup as a `ref` text field on `POST /food/delivery/register`.
 

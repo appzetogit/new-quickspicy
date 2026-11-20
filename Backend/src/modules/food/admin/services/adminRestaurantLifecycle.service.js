@@ -78,6 +78,18 @@ export async function deleteUnregisteredRestaurant(id) {
     return row;
 }
 
+/**
+ * A lead turned into a real restaurant. The lead table has no status column,
+ * so a converted lead is removed (not flagged). Best effort: a missing or
+ * already-removed lead never fails the restaurant create that called it.
+ * Returns true when a lead row was deleted.
+ */
+export async function consumeUnregisteredLead(leadId) {
+    if (!leadId || !isId(leadId)) return false;
+    const { count } = await prisma.foodUnregisteredRestaurant.deleteMany({ where: { id: String(leadId) } });
+    return count > 0;
+}
+
 export async function updateRestaurantStatus(id, body = {}) {
     if (!isId(id)) return null;
 
