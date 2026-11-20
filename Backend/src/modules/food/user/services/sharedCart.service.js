@@ -5,7 +5,7 @@ import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js'
 import { applyAppPricing } from '../../pricing/priceRules.service.js';
 import { getFoodDisplayPrice, getFoodDisplayOtherPrice } from '../../admin/services/foodVariant.service.js';
 import { restaurantCards } from '../../search/services/dishSearch.service.js';
-import { syncUserCart } from './userCart.service.js';
+import { syncUserCart, getLatestCartRow, toCartResponse } from './userCart.service.js';
 
 /**
  * Share cart: send your cart to someone as a link; they open it and copy it
@@ -25,9 +25,18 @@ const newToken = () => crypto.randomBytes(12).toString('base64url'); // 16 url-s
 const shareUrl = (token) =>
     `${String(process.env.FRONTEND_URL || 'https://new.quickspicy.in').replace(/\/+$/, '')}/food/user/cart/shared/${token}`;
 
-export async function shareCart(userId) {
+/**
+ * Share one of the customer's carts: `restaurantId`'s, or the most recently
+ * changed one when not given (apps from before multiple carts).
+ */
+export async function shareCart(userId, restaurantId = null) {
     if (!isId(userId)) throw new ValidationError('Invalid user');
-    const cart = await prisma.foodUserCart.findUnique({ where: { userId: String(userId) } });
+    if (restaurantId && !isId(restaurantId)) throw new ValidationError('Invalid restaurant');
+    const cart = restaurantId
+        ? await prisma.foodUserCart.findUnique({
+            where: { userId_restaurantId: { userId: String(userId), restaurantId: String(restaurantId) } },
+        })
+        : await getLatestCartRow(userId);
     const lines = Array.isArray(cart?.items) ? cart.items : [];
     if (!cart || !lines.length || !isId(cart.restaurantId)) {
         throw new ValidationError('Your cart is empty. Add something before sharing it.');
@@ -130,8 +139,9 @@ export async function previewSharedCart(token) {
 }
 
 /**
- * Copy a shared cart into the signed-in customer's cart, replacing what is
- * there (the app asks first). Only available dishes are copied; the rest are
+ * Copy a shared cart into the signed-in customer's cart for that restaurant,
+ * replacing what is in that one cart (the app asks first). Carts at other
+ * restaurants are left alone. Only available dishes are copied; the rest are
  * listed back so the app can say what was left out.
  */
 export async function importSharedCart(userId, token) {
@@ -155,11 +165,11 @@ export async function importSharedCart(userId, token) {
         image: i.image,
         foodType: i.foodType,
         isVeg: i.isVeg,
-    })));
+    })), null, { restaurantId: preview.restaurant.id });
     await prisma.foodSharedCart.update({ where: { token: preview.token }, data: { importCount: { increment: 1 } } });
 
     return {
-        cart,
+        cart: toCartResponse(cart, preview.restaurant),
         added: usable.length,
         skipped: preview.items.filter((i) => !i.available).map((i) => i.name),
     };

@@ -82,6 +82,14 @@ const start = async () => {
             } catch (err) {
                 logger.error(`Order expiry error: ${err.message}`);
             }
+            try {
+                // One-time "sorry, your order is delayed" for orders more than
+                // 10 minutes past the time they were promised.
+                const { flagDelayedOrders } = await import('../src/modules/food/orders/services/orderDelay.service.js');
+                await flagDelayedOrders();
+            } catch (err) {
+                logger.error(`Delay watchdog error: ${err.message}`);
+            }
         };
 
         const runExpire = async () => {

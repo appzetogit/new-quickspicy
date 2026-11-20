@@ -75,6 +75,9 @@ export const getApprovedRestaurantController = async (req, res, next) => {
             restaurant.orderingBlocked = true;
             restaurant.orderingBlockedReason = fssai.reason;
         }
+        // Note block at the end of the menu: disclaimer, nutrition, taxes, packing, FSSAI.
+        const { getMenuFooter } = await import('../services/menuFooter.service.js');
+        restaurant.menuFooter = await getMenuFooter(restaurant);
         return sendResponse(res, 200, 'Restaurant fetched successfully', { restaurant });
     } catch (error) {
         next(error);

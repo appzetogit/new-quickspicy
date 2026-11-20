@@ -178,6 +178,109 @@ const OtpModal = ({ order, onVerified, onClose }) => {
 };
 
 
+/**
+ * "Customer has no change": the rider records the change they could not give
+ * back; ops verify it and credit it to the customer's wallet
+ * (POST /food/delivery/orders/:orderId/change-owed). Capped at ₹500.
+ */
+const MAX_CHANGE = 500;
+const ChangeOwedPanel = ({ orderId, amountToCollect }) => {
+  const [open, setOpen] = useState(false);
+  const [cashGiven, setCashGiven] = useState('');
+  const [changeOwed, setChangeOwed] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    deliveryAPI.getChangeOwed(orderId)
+      .then((res) => { if (alive && res?.data?.data?.changeCredit) setSaved(res.data.data.changeCredit); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [orderId]);
+
+  const given = Number(cashGiven) || 0;
+  const suggested = Math.max(0, Math.round((given - amountToCollect) * 100) / 100);
+
+  const submit = async () => {
+    const owed = Number(changeOwed || suggested) || 0;
+    if (!(given > 0)) { toast.error('Enter the cash the customer gave'); return; }
+    if (!(owed > 0)) { toast.error('Enter the change you could not give'); return; }
+    if (owed > MAX_CHANGE) { toast.error(`Change cannot be more than ₹${MAX_CHANGE}`); return; }
+    if (owed > given - amountToCollect + 0.001) { toast.error('Change is more than what the customer overpaid'); return; }
+    setSaving(true);
+    try {
+      const res = await deliveryAPI.recordChangeOwed(orderId, { amount: owed, cashCollected: given });
+      setSaved(res?.data?.data || { amount: owed, status: 'pending' });
+      setOpen(false);
+      toast.success(`₹${owed} will go to the customer's wallet once verified`);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Could not record the change');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (saved && saved.status !== 'pending') {
+    return (
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
+        Change ₹{saved.amount} {saved.status === 'approved' ? 'credited to the customer wallet' : `rejected${saved.rejectReason ? `: ${saved.rejectReason}` : ''}`}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[2rem] border border-blue-100 bg-blue-50/40 p-5">
+      {saved && !open ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-blue-900">
+            <span className="font-black">₹{saved.amount}</span> change to wallet, waiting for verification
+          </p>
+          <button type="button" onClick={() => setOpen(true)} className="text-[11px] font-black uppercase tracking-widest text-blue-700">Edit</button>
+        </div>
+      ) : !open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full text-[11px] font-black uppercase tracking-[0.15em] text-blue-800 flex items-center justify-center gap-2"
+        >
+          <DollarSign className="w-4 h-4" /> No change? Add it to customer wallet
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Change to customer wallet</p>
+          <label className="block text-xs font-bold text-gray-600">
+            Cash the customer gave (₹)
+            <input
+              type="number" inputMode="decimal" min="0" value={cashGiven}
+              onChange={(e) => { setCashGiven(e.target.value); setChangeOwed(''); }}
+              className="mt-1 w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-blue-400 outline-none text-base font-bold text-gray-900"
+            />
+          </label>
+          <label className="block text-xs font-bold text-gray-600">
+            Change you could not give (₹, max {MAX_CHANGE})
+            <input
+              type="number" inputMode="decimal" min="0" max={MAX_CHANGE}
+              value={changeOwed === '' ? (suggested || '') : changeOwed}
+              onChange={(e) => setChangeOwed(e.target.value)}
+              className="mt-1 w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-blue-400 outline-none text-base font-bold text-gray-900"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setOpen(false)} className="flex-1 py-3 rounded-xl bg-white border border-gray-200 text-gray-600 text-xs font-black uppercase tracking-widest">Cancel</button>
+            <button
+              type="button" onClick={submit} disabled={saving}
+              className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
   const [showQrModal, setShowQrModal] = useState(false);
   const [collectQrLink, setCollectQrLink] = useState(null);
@@ -187,6 +290,11 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCashAccepted, setIsCashAccepted] = useState(false);
   const [isSwitchingToCash, setIsSwitchingToCash] = useState(false);
+  // Company UPI QR (no gateway): the rider confirms the payment by hand.
+  const [qrProvider, setQrProvider] = useState('razorpay');
+  const [upiInfo, setUpiInfo] = useState(null);
+  const [upiRef, setUpiRef] = useState('');
+  const [isConfirmingUpi, setIsConfirmingUpi] = useState(false);
   const pollingRef = useRef(null);
 
   const orderId = order.orderId || order._id || 'ORD';
@@ -262,8 +370,11 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
         name: order.userName || 'Customer',
         phone: order.userPhone || ''
       });
-      const link = res?.data?.data?.shortUrl || res?.data?.shortUrl || null;
+      const data = res?.data?.data || res?.data || {};
+      const link = data.upiUri || data.shortUrl || null;
       if (link) {
+        setQrProvider(data.provider === 'company_upi' ? 'company_upi' : 'razorpay');
+        setUpiInfo(data.provider === 'company_upi' ? { upiId: data.upiId, payeeName: data.payeeName } : null);
         setCollectQrLink(link);
         setPaymentStatus('pending');
         setShowQrModal(true);
@@ -290,6 +401,20 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
       toast.error("Failed to switch to cash");
     } finally {
       setIsSwitchingToCash(false);
+    }
+  };
+
+  const handleConfirmUpi = async () => {
+    setIsConfirmingUpi(true);
+    try {
+      await deliveryAPI.confirmUpiPayment(orderId, { utr: upiRef.trim() || undefined });
+      setPaymentStatus('paid');
+      setShowQrModal(false);
+      toast.success("UPI payment noted");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Could not confirm the payment");
+    } finally {
+      setIsConfirmingUpi(false);
     }
   };
 
@@ -397,6 +522,10 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
                  </div>
                )}
             </div>
+
+            {isCashAccepted && !isPaid && (
+              <ChangeOwedPanel orderId={orderId} amountToCollect={Number(order.cashToCollect ?? order.amountToCollect ?? amountToCollect) || 0} />
+            )}
           </div>
 
           <div className="p-8 pt-0 pb-12 bg-white border-t border-gray-50">
@@ -437,9 +566,10 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
               <p className="text-gray-500 text-sm mb-8 font-medium">Order Total: ₹{amountToCollect.toFixed(2)}</p>
               
               <div className="relative p-6 bg-gray-50 rounded-3xl border-2 border-gray-100 mb-8">
-                 <img 
-                   src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(collectQrLink)}`} 
-                   alt="Razorpay QR"
+                 {/* No QR library in the web app: drawn by the same QR image service as before. */}
+                 <img
+                   src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(collectQrLink)}`}
+                   alt={qrProvider === 'company_upi' ? "UPI QR" : "Razorpay QR"}
                    className="w-56 h-56"
                  />
                  <button 
@@ -452,7 +582,33 @@ const PaymentModal = ({ order, otpString, onComplete, onClose }) => {
                  </button>
               </div>
 
-              <button 
+              {qrProvider === 'company_upi' && (
+                <div className="w-full mb-4 text-left">
+                  <p className="text-xs text-gray-500 mb-3 text-center">
+                    Pay to <span className="font-bold text-gray-800">{upiInfo?.payeeName}</span>
+                    <span className="block font-mono text-gray-700">{upiInfo?.upiId}</span>
+                    Check the customer's app shows the payment as successful before confirming.
+                  </p>
+                  <input
+                    type="text"
+                    value={upiRef}
+                    maxLength={40}
+                    onChange={(e) => setUpiRef(e.target.value)}
+                    placeholder="UPI ref / UTR (optional)"
+                    className="w-full mb-3 px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-emerald-400 outline-none text-sm"
+                  />
+                  <button
+                    onClick={handleConfirmUpi}
+                    disabled={isConfirmingUpi}
+                    className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {isConfirmingUpi ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Customer paid by UPI
+                  </button>
+                </div>
+              )}
+
+              <button
                 onClick={() => setShowQrModal(false)}
                 className="w-full py-4 bg-gray-100 text-gray-500 rounded-2xl font-bold text-xs uppercase tracking-widest"
               >

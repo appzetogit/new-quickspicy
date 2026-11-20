@@ -1,10 +1,9 @@
 import { memo } from "react";
-import { useNavigate } from "react-router-dom";
-import { ShoppingCart } from "lucide-react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useCart } from "@food/context/CartContext";
 import useActiveOrderTracking from "@food/hooks/useActiveOrderTracking";
 import OrderTrackingRow from "./OrderTrackingRow";
+import StickyCartCard from "./StickyCartCard";
 
 const DOCK_BOTTOM_WITH_NAV = "calc(5.75rem + env(safe-area-inset-bottom, 0px))";
 const DOCK_BOTTOM_NO_NAV = "calc(1.5rem + env(safe-area-inset-bottom, 0px))";
@@ -14,12 +13,11 @@ function FloatingHomeDockInner({
   showOrderTracking = true,
   linkTo = "/food/user/cart",
 }) {
-  const navigate = useNavigate();
-  const { itemCount, total } = useCart();
+  const { carts = [] } = useCart();
   const { activeOrder, timeRemaining, dismissOrder } = useActiveOrderTracking();
 
   const showOrder = showOrderTracking && !!activeOrder;
-  const showCart = itemCount > 0;
+  const showCart = carts.length > 0;
 
   if (!showOrder && !showCart) return null;
 
@@ -65,23 +63,8 @@ function FloatingHomeDockInner({
                 exit={{ opacity: 0, y: 8, scale: 0.98 }}
                 transition={{ type: "spring", damping: 24, stiffness: 320 }}
               >
-                <button
-                  type="button"
-                  onClick={() => navigate(linkTo)}
-                  className="w-full rounded-2xl px-4 py-3.5 flex items-center justify-between gap-3 text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)] border border-white/20 cursor-pointer hover:shadow-[0_10px_22px_rgba(0,0,0,0.2)] active:scale-[0.99] transition-all duration-200"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.94), rgba(var(--module-theme-rgb,235, 89, 14),0.78))",
-                  }}
-                >
-                  <span className="text-sm font-semibold truncate">
-                    {itemCount} {itemCount === 1 ? "Item" : "Items"} | ₹{Math.round(total || 0)}
-                  </span>
-                  <span className="flex items-center gap-2 text-sm font-semibold shrink-0">
-                    View Cart
-                    <ShoppingCart className="h-4 w-4" />
-                  </span>
-                </button>
+                {/* One card per restaurant cart (most recent first, the rest behind "Show all"). */}
+                <StickyCartCard floating={false} linkTo={linkTo} />
               </motion.div>
             )}
           </AnimatePresence>

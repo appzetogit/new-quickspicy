@@ -2,6 +2,7 @@ import { prisma } from '../../../../config/prisma.js';
 import { dayRange } from '../../../../utils/timezone.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
 
 /**
  * What the platform owes each restaurant and rider, and paying it.
@@ -197,6 +198,35 @@ export async function getRiderBalances(query = {}) {
 
     const byId = new Map(partners.map((p) => [p.id, p]));
     const cashById = new Map(cashCollected.map((c) => [c.deliveryPartnerId, num(c._sum.amountDue)]));
+    // Change the rider kept for a customer (approved change-to-wallet) is cash
+    // they hold as well; counted on the same unsettled cash orders.
+    const unsettledCash = await prisma.foodTransaction.findMany({
+        where: {
+            ...periodWhere(start, end),
+            isRiderSettled: false,
+            deliveryPartnerId: { in: partnerIds },
+            paymentMethod: 'cash',
+        },
+        select: { orderId: true },
+    });
+    const changeById = await approvedChangeByRider(partnerIds, { orderIds: unsettledCash.map((t) => t.orderId) });
+    for (const [id, amount] of changeById) cashById.set(id, num(cashById.get(id)) + amount);
+    // A COD order paid by UPI straight to the company account (razorpay_qr with
+    // qr.provider company_upi) never put cash in the rider's hand.
+    const companyUpi = await prisma.foodTransaction.groupBy({
+        by: ['deliveryPartnerId'],
+        where: {
+            ...periodWhere(start, end),
+            isRiderSettled: false,
+            deliveryPartnerId: { in: partnerIds },
+            paymentMethod: 'razorpay_qr',
+            qr: { path: ['provider'], equals: 'company_upi' },
+        },
+        _sum: { amountDue: true },
+    }).catch(() => []);
+    for (const c of companyUpi) {
+        cashById.set(c.deliveryPartnerId, Math.max(0, num(cashById.get(c.deliveryPartnerId)) - num(c._sum.amountDue)));
+    }
     const depositById = new Map((cashDeposited || []).map((d) => [d.deliveryPartnerId, num(d._sum.amount)]));
     const bonusById = new Map(bonuses.map((b) => [b.deliveryPartnerId, num(b._sum.amount)]));
 

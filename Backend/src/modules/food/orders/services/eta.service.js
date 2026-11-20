@@ -94,6 +94,7 @@ export async function refreshOrderEta(orderId, { force = false } = {}) {
             where: { id },
             select: {
                 id: true, userId: true, orderStatus: true, createdAt: true, etaComputedAt: true,
+                delayedUntil: true, promisedDeliveryAt: true,
                 addrLat: true, addrLng: true, riderLat: true, riderLng: true,
                 dispatchDeliveryPartnerId: true,
                 restaurant: { select: { latitude: true, longitude: true } },
@@ -130,7 +131,7 @@ export async function refreshOrderEta(orderId, { force = false } = {}) {
         ]);
 
         const now = new Date();
-        const minutes = etaMinutesFor({
+        const computed = etaMinutesFor({
             status: order.orderStatus,
             prepMinutes,
             placedAt: order.createdAt,
@@ -139,12 +140,22 @@ export async function refreshOrderEta(orderId, { force = false } = {}) {
             restaurantToCustomer,
             riderToCustomer,
         });
-        if (minutes == null) return null;
+        if (computed == null) return null;
 
-        const estimatedDeliveryAt = new Date(now.getTime() + minutes * 60000);
+        // A "running late" update told the customer a later time; the next
+        // ping must not quietly pull it back (orderDelay.service.js).
+        let estimatedDeliveryAt = new Date(now.getTime() + computed * 60000);
+        if (order.delayedUntil && new Date(order.delayedUntil) > estimatedDeliveryAt) {
+            estimatedDeliveryAt = new Date(order.delayedUntil);
+        }
+        const minutes = Math.max(0, Math.ceil((estimatedDeliveryAt.getTime() - now.getTime()) / 60000));
         await prisma.foodOrder.update({
             where: { id },
-            data: { etaMinutes: minutes, estimatedDeliveryAt, etaComputedAt: now },
+            data: {
+                etaMinutes: minutes, estimatedDeliveryAt, etaComputedAt: now,
+                // The first ETA is the promise the delay watchdog checks against.
+                ...(order.promisedDeliveryAt ? {} : { promisedDeliveryAt: estimatedDeliveryAt }),
+            },
         });
 
         const payload = {

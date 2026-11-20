@@ -634,7 +634,8 @@ model FoodUser {
 
   addresses     UserAddress[]
   orders        FoodOrder[]
-  cart          FoodUserCart?
+  /// One cart per restaurant (multi-cart).
+  carts         FoodUserCart[]
   favorites     FoodUserFavorite[]
   supportTicket FoodSupportTicket[]
   payments      Payment[]
@@ -1613,6 +1614,22 @@ model FoodOrder {
   etaComputedAt       DateTime?
   lastRiderLocation   Unsupported("geography(Point, 4326)")?
 
+  // ── running late (orderDelay.service.js) ──
+  /// The first ETA the customer was shown; the watchdog measures lateness against it.
+  promisedDeliveryAt DateTime?
+  /// traffic | rain | restaurant_delay | other, from the last "running late" update.
+  delayReason        String?   @db.VarChar(20)
+  delayNote          String?   @db.VarChar(200)
+  /// Extra minutes announced so far, summed over every update.
+  delayExtraMinutes  Int       @default(0)
+  /// The new ETA announced; the live ETA never shows earlier than this.
+  delayedUntil       DateTime?
+  delayReportedAt    DateTime?
+  /// DELIVERY_PARTNER | ADMIN | SYSTEM
+  delayReportedBy    String?   @db.VarChar(20)
+  /// When the automatic one-time "your order is delayed" notice went out.
+  delayAutoNoticeAt  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2137,9 +2154,12 @@ model FoodRestaurantOutletTimings {
 // Cart and favourites
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// One cart per (customer, restaurant): a customer can keep several carts open,
+/// one for each restaurant. Checkout is still one restaurant per order, so
+/// ordering from one cart leaves the others as they are.
 model FoodUserCart {
   id     String @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
-  userId String @unique @db.VarChar(24)
+  userId String @db.VarChar(24)
 
   restaurantId   String @default("") @db.VarChar(24)
   restaurantName String @default("")
@@ -2157,6 +2177,8 @@ model FoodUserCart {
 
   user FoodUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, restaurantId])
+  @@index([userId, updatedAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
   @@index([restaurantId])
   @@map("food_user_carts")
@@ -4267,4 +4289,57 @@ model FoodPlatformSetting {
   updatedAt DateTime @updatedAt
 
   @@map("food_platform_settings")
+}
+
+/// Change the rider could not give back on a cash order, to be credited to the
+/// customer's wallet once ops verify it. The rider keeps the customer's extra
+/// cash, so an approved request adds `amount` to the rider's cash in hand.
+model FoodChangeCredit {
+  id                String    @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+  orderId           String    @unique @db.VarChar(24)
+  deliveryPartnerId String    @db.VarChar(24)
+  userId            String    @db.VarChar(24)
+  /// The change owed, credited to the customer on approval.
+  amount            Decimal   @db.Decimal(14, 2)
+  /// What the customer handed over.
+  cashCollected     Decimal   @db.Decimal(14, 2)
+  /// The cash part of the order (total less wallet / online parts).
+  orderCashDue      Decimal   @db.Decimal(14, 2)
+  riderNote         String    @default("") @db.VarChar(200)
+  /// pending | approved | rejected
+  status            String    @default("pending") @db.VarChar(12)
+  rejectReason      String?   @db.VarChar(300)
+  reviewedById      String?   @db.VarChar(24)
+  reviewedAt        DateTime?
+  walletTxnId       String?   @db.VarChar(24)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([deliveryPartnerId, status])
+  @@map("food_change_credits")
+}
+
+/// A COD order paid by UPI straight into the company account (no gateway).
+/// Nothing confirms such a payment automatically: the rider says the customer
+/// paid, and finance reconciles it against the bank statement.
+model FoodUpiCollection {
+  id                String    @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+  orderId           String    @unique @db.VarChar(24)
+  deliveryPartnerId String?   @db.VarChar(24)
+  amount            Decimal   @db.Decimal(14, 2)
+  upiId             String    @db.VarChar(100)
+  /// awaiting_payment | rider_confirmed | reconciled | mismatch
+  status            String    @default("awaiting_payment") @db.VarChar(20)
+  /// UPI reference the customer showed, when the rider typed it in.
+  utr               String?   @db.VarChar(40)
+  confirmedAt       DateTime?
+  reconciledAt      DateTime?
+  reconciledById    String?   @db.VarChar(24)
+  reconcileNote     String?   @db.VarChar(300)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("food_upi_collections")
 }

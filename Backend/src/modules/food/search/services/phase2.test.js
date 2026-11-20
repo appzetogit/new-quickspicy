@@ -234,7 +234,7 @@ test('share cart: a link with today\'s prices, unavailable dishes marked, import
     const imported = await importSharedCart(receiver.id, link.token);
     assert.equal(imported.added, 1);
     assert.deepEqual(imported.skipped, [rice.name]);
-    const cart = await prisma.foodUserCart.findUnique({ where: { userId: receiver.id } });
+    const cart = await prisma.foodUserCart.findFirst({ where: { userId: receiver.id, restaurantId: r.id } });
     assert.deepEqual(cart.items.map((i) => [i.itemId, i.quantity, i.price]), [[curry.id, 2, 220]], 'replaced, not merged');
     assert.equal((await prisma.foodSharedCart.findUnique({ where: { token: link.token } })).importCount, 1);
 });

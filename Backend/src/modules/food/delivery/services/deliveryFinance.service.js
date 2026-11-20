@@ -11,6 +11,7 @@ import {
 } from '../../orders/helpers/razorpay.helper.js';
 import { logger } from '../../../../utils/logger.js';
 import { recordTransaction } from '../../../../core/payments/transaction.service.js';
+import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -104,10 +105,13 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         num(withdrawalsByStatus.find((r) => r.status === status)?._sum?.amount);
 
     const aggTotalEarned = num(earningsAgg?._sum?.riderEarning);
+    // Change the rider kept for a customer (credited to the customer's wallet
+    // once approved) is cash they hold for the company too.
+    const changeKept = num((await approvedChangeByRider([partnerId])).get(partnerId));
     const grossCashCollected = Math.max(0,
         num(cashCollectedAgg?._sum?.total)
         - num(cashCollectedAgg?._sum?.walletAmount)
-        - num(cashCollectedAgg?._sum?.onlineAmount));
+        - num(cashCollectedAgg?._sum?.onlineAmount)) + changeKept;
     const totalDepositedCash = num(cashDepositsAgg?._sum?.amount);
     const computedCashInHand = Math.max(0, grossCashCollected - totalDepositedCash);
     const aggTotalBonus = num(bonusAgg?._sum?.amount);
@@ -182,6 +186,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         totalBalance: totalEarned + totalBonus, // gross lifetime earnings
         pocketBalance,                          // available to withdraw
         cashInHand,                             // COD still to be deposited
+        changeKeptForCustomers: changeKept,     // part of cashInHand: approved change-to-wallet
         totalWithdrawn,                         // actually paid out
         pendingWithdrawals,                     // in process
         lockedAmount: effectiveLockedAmount,

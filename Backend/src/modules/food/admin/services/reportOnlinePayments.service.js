@@ -177,9 +177,17 @@ export async function getOnlinePaymentsReport(query = {}) {
             orderTotal: num(o.total),
             walletPart: num(o.walletAmount),
             refundAmount: num(o.refundAmount),
-            method: `${METHOD_LABELS[o.paymentMethod] || o.paymentMethod}${wallet ? ' + Wallet' : ''}`,
-            paymentId: o.razorpayPaymentId || o.qr?.paymentLinkId || o.razorpayOrderId || '',
-            status: statusLabel(o),
+            // A COD order paid by UPI straight to the company account: no gateway
+            // record, so it stays flagged until finance matches it to the bank.
+            method: o.qr?.provider === 'company_upi'
+                ? `Company UPI${wallet ? ' + Wallet' : ''}`
+                : `${METHOD_LABELS[o.paymentMethod] || o.paymentMethod}${wallet ? ' + Wallet' : ''}`,
+            paymentId: o.razorpayPaymentId || o.qr?.paymentLinkId || o.qr?.utr || o.razorpayOrderId || '',
+            status: o.qr?.provider === 'company_upi' && o.qr?.needsReconciliation
+                ? (o.qr?.reconciliation === 'mismatch' ? 'UPI mismatch' : 'Rider confirmed – reconcile')
+                : statusLabel(o),
+            companyUpi: o.qr?.provider === 'company_upi',
+            needsReconciliation: o.qr?.provider === 'company_upi' && o.qr?.needsReconciliation === true,
             orderStatus: o.orderStatus,
         };
     });

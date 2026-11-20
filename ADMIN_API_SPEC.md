@@ -155,3 +155,25 @@ Setting keys: `app_web, firebase, analytics, ai, react_site, join_us, login_setu
 - Admin wallet credits are capped at ₹50,000 each, need a reason, and a repeated `requestId` credits once.
 - `wallet_bonus` = `{ enabled, rules: [{ title, minAmount, bonusType: flat|percentage, value, maxBonus, startDate, endDate, isActive }] }`. The best matching rule is credited once per confirmed wallet top-up.
 - Bulk-imported restaurants are `pending` with no documents; the owner finishes onboarding after OTP login.
+
+## Order bill, running late, change to wallet, company UPI (2026-11-20)
+All under `/food/admin`.
+
+| Method | Path | Section | Body / query → data |
+|---|---|---|---|
+| GET | `/orders/:orderId/invoice` | order_management | the customer's bill JSON (same as `GET /food/orders/:id/invoice`) |
+| GET | `/orders/:orderId/invoice.html` | order_management | printable bill (₹, GST, platform fee, full address) |
+| POST | `/orders/:orderId/running-late` | order_management | `{ reason: traffic\|rain\|restaurant_delay\|other, extraMinutes: 1–120, note? }` → `{ etaMinutes, estimatedDeliveryAt, delay, message }`; pushes the customer |
+| GET | `/change-credits` | transaction_management | `status=pending\|approved\|rejected`, `fromDate`, `toDate`, `deliveryPartnerId`, `page`, `limit` → `{ items: [{ id, orderId, orderDisplayId, orderTotal, orderStatus, rider, customer, amount, cashCollected, orderCashDue, overpaid, riderNote, status, rejectReason, reviewedAt, walletTxnId, createdAt }], pagination }` |
+| GET | `/change-credits/summary` | transaction_management | `date=YYYY-MM-DD` (IST, default today) → `{ requested: { pending, approved, rejected }, approvedToday, rejectedToday, pendingTotal: { count, amount, oldestAt }, approvedByRider: [...] }` |
+| POST | `/change-credits/:id/approve` | transaction_management (edit) | credits the customer's wallet (`recordTransaction`, category `adjustment`, idempotent per request) and pushes them; the amount is added to the rider's cash in hand |
+| POST | `/change-credits/:id/reject` | transaction_management (edit) | `{ reason }` (required, shown to the rider) |
+| GET / PUT | `/company-collection-settings` | system_settings | `{ useCompanyUpiQr, upiId, payeeName, bank: { accountHolderName, accountNumber, ifsc, bankName } }`. Read returns the account number masked (`••••1234`) plus `razorpayConfigured` and `activeMode` (`company_upi \| razorpay \| none`); sending the mask or an empty number keeps the stored one (`bank.clearAccountNumber: true` removes it) |
+| GET | `/upi-collections` | transaction_management | `status=awaiting_payment\|rider_confirmed\|reconciled\|mismatch\|abandoned` → `{ items, summary: { <status>: { count, amount } }, pagination }` |
+| POST | `/upi-collections/:orderId/reconcile` | transaction_management (edit) | `{ outcome: reconciled\|mismatch, note }` (note required for mismatch) |
+
+**Change-to-wallet accounting.** The rider keeps the customer's whole note (e.g. ₹500 on a ₹380 order) and the ₹120 change goes to the customer's wallet. On approval the ₹120 is added to the rider's cash in hand everywhere it is computed (rider wallet `cashInHand` + `changeKeptForCustomers`, admin rider list, balance sheet / payout statements on unsettled cash orders), so their deposit covers it. Pending or rejected requests change nothing.
+
+**Company UPI.** Orders collected this way carry `payment.qr.provider = "company_upi"` and `payment.qr.needsReconciliation` (true until reconciled). The online payments report labels them `Company UPI` with status `Rider confirmed – reconcile` / `UPI mismatch`, and `companyUpi` / `needsReconciliation` flags per row; the admin orders list shows "Company UPI (verify)". Admin page: Transactions → Change to Wallet & UPI (`/admin/food/change-to-wallet`). Settings: 3rd Party page, "Company UPI collection".
+
+**Late-order watchdog.** The scheduler (`run-scheduled-jobs.js`, every 5 min) sends a one-time "Sorry, your order is delayed" push for live, unscheduled orders more than 10 min past `promisedDeliveryAt` (the first ETA, or the time last announced in a running-late update). `order.delay.autoNotice` turns true.

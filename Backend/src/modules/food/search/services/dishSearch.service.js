@@ -8,7 +8,9 @@ import { getFoodDisplayPrice, getFoodDisplayOtherPrice } from '../../admin/servi
 import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
 import { withOpenStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
 import { restoreExpiredFoodAvailability } from '../../restaurant/services/foodAvailability.service.js';
-import { foodTypeWhereFromQuery } from '../../shared/foodType.util.js';
+import { foodTypeWhereFromQuery, fromFoodTypeColumn } from '../../shared/foodType.util.js';
+import { toRestaurant } from '../../restaurant/restaurant.mapper.js';
+import { openFirst } from '../../shared/openFirst.js';
 
 /**
  * Dish-level search and type-ahead suggestions.
@@ -198,32 +200,185 @@ export async function searchDishes(query = {}) {
     return { items, total, page, limit };
 }
 
+
+// ----- Dish varieties and "restaurants serving <dish>" -----
+
+/** Most dishes considered when grouping varieties or listing restaurants. */
+const MAX_MATCH_ROWS = 1500;
+/** Shortest query the restaurants-serving listing answers. */
+export const DISH_RESTAURANTS_MIN_CHARS = 2;
+
+/**
+ * A dish name for grouping: trimmed, inner spaces collapsed, lower case.
+ * "Chicken  Biryani ", "chicken biryani" and "CHICKEN BIRYANI" are one variety.
+ */
+export const normalizeDishName = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Display spelling of a name: trimmed, inner spaces collapsed, case kept. */
+const tidyName = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+
+/**
+ * openOnly for the variety counts and the restaurants-serving listing defaults
+ * to true: only restaurants that can take an order right now. openOnly=false
+ * also lists closed ones (after the open ones).
+ */
+const openOnlyDefaultOn = (query) => String(query.openOnly ?? 'true').toLowerCase() !== 'false';
+
+/** Relevance of a dish name to the needle: exact 3, prefix 2, contains 1. */
+const nameRelevance = (name, needle) => {
+    const n = normalizeDishName(name);
+    if (!needle || !n) return 0;
+    if (n === needle) return 3;
+    if (n.startsWith(needle)) return 2;
+    return n.includes(needle) ? 1 : 0;
+};
+
+/** Columns the restaurant cards need, plus the address columns toRestaurant() rebuilds `location` from. */
+const LISTING_SELECT = {
+    id: true, restaurantName: true, nameSlug: true, cuisines: true, profileImage: true, coverImages: true,
+    estimatedDeliveryTime: true, estimatedDeliveryTimeMinutes: true, offer: true, featuredDish: true,
+    featuredPrice: true, rating: true, totalRatings: true, isAcceptingOrders: true, status: true,
+    pureVegRestaurant: true, zoneId: true, area: true, city: true, latitude: true, longitude: true,
+    formattedAddress: true, addressLine1: true, addressLine2: true, state: true, pincode: true, landmark: true,
+    openingTime: true, closingTime: true, openDays: true,
+};
+
+/**
+ * Every orderable dish matching `q` (name or Telugu name), from restaurants
+ * the customer can order from, and the restaurants still eligible after the
+ * restaurant-level filters. A restaurant with no matching available dish can
+ * never be in `eligible`, because eligibility is only computed over the
+ * restaurants of the matched dishes.
+ *
+ * Filters: lat, lng, radiusKm (reach), verticalId | vertical, categoryId,
+ * isVeg / foodType (dish diet), openOnly (default true), minRating,
+ * maxDeliveryTime, pureVeg=true (pure-veg restaurants only), exact=true
+ * (dish name equals q, case/space-insensitive, instead of containing it).
+ *
+ * Returns { requiresLocation } or { foods, eligible: Map(id -> card) }.
+ */
+async function matchDishRestaurants(query, q, knownReach = null) {
+    const reach = knownReach || await reachableRestaurants(query);
+    if (reach.requiresLocation) return { requiresLocation: true };
+    if (reach.empty) return { foods: [], eligible: new Map() };
+
+    // Each word must appear, so "chicken   biryani" (extra spaces) still reaches
+    // the exact-name check below, which compares space-collapsed names. A single
+    // contains on the whole phrase dropped such dishes from their own variety.
+    const words = normalizeDishName(q).split(' ').filter(Boolean);
+    const wordsMatch = (field) => ({ AND: words.map((w) => ({ [field]: { contains: w, mode: 'insensitive' } })) });
+    const AND = [
+        { restaurantId: { in: reach.ids } },
+        { approvalStatus: 'approved' },
+        { isAvailable: true },
+        { OR: [wordsMatch('name'), wordsMatch('nameTe')] },
+    ];
+    if (isId(query.categoryId)) AND.push({ categoryId: String(query.categoryId) });
+    const typeWhere = foodTypeWhereFromQuery(query);
+    if (typeWhere) AND.push(typeWhere);
+
+    let foods = await prisma.foodItem.findMany({
+        where: { AND },
+        select: { id: true, restaurantId: true, name: true, nameTe: true, image: true, foodType: true },
+        orderBy: { createdAt: 'desc' },
+        take: MAX_MATCH_ROWS,
+    });
+    if (String(query.exact) === 'true') {
+        const want = normalizeDishName(q);
+        foods = foods.filter((f) => normalizeDishName(f.name) === want || normalizeDishName(f.nameTe) === want);
+    }
+    if (!foods.length) return { foods, eligible: new Map() };
+
+    const where = { id: { in: [...new Set(foods.map((f) => f.restaurantId))] }, status: 'approved' };
+    const rating = Number.parseFloat(query.minRating);
+    if (Number.isFinite(rating) && rating > 0) where.rating = { gte: Math.min(rating, 5) };
+    const minutes = Number.parseInt(query.maxDeliveryTime, 10);
+    if (Number.isFinite(minutes) && minutes > 0) where.estimatedDeliveryTimeMinutes = { lte: Math.min(minutes, 1440) };
+    if (String(query.pureVeg) === 'true') where.pureVegRestaurant = true;
+
+    const rows = await prisma.foodRestaurant.findMany({ where, select: LISTING_SELECT });
+    const openOnly = openOnlyDefaultOn(query);
+    const eligible = new Map();
+    for (const row of await attachOutletTimingsToRestaurants(rows)) {
+        const { nameSlug, ...rest } = row;
+        const km = reach.distanceById.get(row.id) ?? null;
+        const card = withOpenStatus({ ...toRestaurant(rest), slug: nameSlug || null, distanceKm: km, distanceInKm: km });
+        if (openOnly && !card.isOpenNow) continue;
+        eligible.set(row.id, card);
+    }
+    return { foods, eligible };
+}
+
+/**
+ * Group matched dishes into varieties: one per normalized name, counting the
+ * eligible restaurants that serve it. Display name is the most used spelling.
+ */
+function groupVarieties(foods, eligible, needle, lang) {
+    const byKey = new Map();
+    for (const f of foods) {
+        if (!eligible.has(f.restaurantId)) continue;
+        const key = normalizeDishName(f.name);
+        if (!key) continue;
+        let v = byKey.get(key);
+        if (!v) {
+            v = { key, spellings: new Map(), nameTe: '', image: '', restaurants: new Set(), itemCount: 0, types: new Set() };
+            byKey.set(key, v);
+        }
+        const spelling = tidyName(f.name);
+        v.spellings.set(spelling, (v.spellings.get(spelling) || 0) + 1);
+        if (!v.nameTe && f.nameTe) v.nameTe = tidyName(f.nameTe);
+        if (!v.image && f.image) v.image = f.image;
+        v.restaurants.add(f.restaurantId);
+        v.itemCount += 1;
+        v.types.add(fromFoodTypeColumn(f.foodType));
+    }
+    return [...byKey.values()]
+        .map((v) => {
+            const nameEn = [...v.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0];
+            return {
+                name: pickText(nameEn, v.nameTe, lang),
+                nameEn,
+                restaurantCount: v.restaurants.size,
+                itemCount: v.itemCount,
+                foodType: v.types.size === 1 ? [...v.types][0] : 'Mixed',
+                image: v.image,
+                relevance: nameRelevance(nameEn, needle),
+            };
+        })
+        .sort((a, b) => b.relevance - a.relevance
+            || b.restaurantCount - a.restaurantCount
+            || a.nameEn.localeCompare(b.nameEn));
+}
+
 /**
  * GET /food/search/suggest
  *
  * Type-ahead. Nothing until the customer has typed SUGGEST_MIN_CHARS
- * characters; then dish names, restaurants and categories they can order from.
+ * characters; then:
+ *  - seeAll: "<q> — See all restaurants", with how many restaurants serve a
+ *    matching dish right now (null when none do);
+ *  - varieties: distinct matching dish names (grouped case/space-insensitively)
+ *    with restaurant and item counts, from open restaurants in reach;
+ *  - restaurants (by name) and categories, as before;
+ *  - dishes: the older per-name list, kept for older app builds.
+ * Accepts the same filters as /search/restaurants (see matchDishRestaurants).
  */
 export async function suggest(query = {}) {
     const q = term(query.q);
     const lang = languageFromQuery(query);
-    const base = { query: q, minChars: SUGGEST_MIN_CHARS, dishes: [], restaurants: [], categories: [] };
+    const base = {
+        query: q, minChars: SUGGEST_MIN_CHARS, seeAll: null, varieties: [], noResults: false,
+        dishes: [], restaurants: [], categories: [],
+    };
     if (q.length < SUGGEST_MIN_CHARS) return base;
 
     const reach = await reachableRestaurants(query);
     if (reach.requiresLocation) return { ...base, requiresLocation: true };
-    if (reach.empty) return base;
+    if (reach.empty) return { ...base, noResults: true };
 
     const match = { contains: q, mode: 'insensitive' };
-    const [foods, restaurants, categories] = await Promise.all([
-        prisma.foodItem.findMany({
-            where: {
-                restaurantId: { in: reach.ids }, approvalStatus: 'approved', isAvailable: true,
-                OR: [{ name: match }, { nameTe: match }],
-            },
-            select: { name: true, nameTe: true, image: true },
-            take: 200,
-        }),
+    const [matched, restaurants, categories] = await Promise.all([
+        matchDishRestaurants(query, q, reach),
         prisma.foodRestaurant.findMany({
             where: { id: { in: reach.ids }, status: 'approved', restaurantName: match },
             select: { id: true, restaurantName: true, nameSlug: true, profileImage: true },
@@ -239,9 +394,12 @@ export async function suggest(query = {}) {
             take: 10,
         }),
     ]);
+    const foods = matched.foods || [];
+    const eligible = matched.eligible || new Map();
+    const needle = normalizeDishName(q);
 
-    // One entry per dish name, with how many restaurants serve it.
-    const needle = q.toLowerCase();
+    // Legacy: one entry per dish name, with how many dishes carry it (any
+    // restaurant in reach, open or not) -- unchanged for older app builds.
     const byName = new Map();
     for (const f of foods) {
         const key = String(f.name).trim().toLowerCase();
@@ -255,8 +413,18 @@ export async function suggest(query = {}) {
         .sort((a, b) => rank(a.nameEn) - rank(b.nameEn) || b.count - a.count || a.nameEn.localeCompare(b.nameEn))
         .slice(0, 8);
 
-    return {
+    const varieties = groupVarieties(foods, eligible, needle, lang)
+        .slice(0, 10)
+        .map(({ relevance, ...v }) => v);
+    const serving = new Set(foods.filter((f) => eligible.has(f.restaurantId)).map((f) => f.restaurantId));
+    const seeAll = serving.size
+        ? { label: `${q} — See all restaurants`, query: q, restaurantCount: serving.size }
+        : null;
+
+    const out = {
         ...base,
+        seeAll,
+        varieties,
         dishes,
         restaurants: restaurants
             .sort((a, b) => rank(a.restaurantName) - rank(b.restaurantName)
@@ -270,4 +438,104 @@ export async function suggest(query = {}) {
             id: c.id, name: pickText(c.name, c.nameTe, lang), nameEn: c.name, image: c.image || '',
         })),
     };
+    out.noResults = !out.seeAll && !out.varieties.length && !out.restaurants.length && !out.categories.length;
+    return out;
+}
+
+const RESTAURANT_SORTS = {
+    rating: (a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0) || (Number(b.totalRatings) || 0) - (Number(a.totalRatings) || 0),
+    distance: (a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity),
+    deliveryTime: (a, b) => (a.estimatedDeliveryTimeMinutes ?? Infinity) - (b.estimatedDeliveryTimeMinutes ?? Infinity),
+};
+
+/**
+ * GET /food/search/restaurants
+ *
+ * "See all restaurants" for a dish search: only restaurants that currently
+ * serve at least one available dish matching q, in reach of lat/lng.
+ * q (>= 2 chars, required -- an empty q never lists anything), lat, lng,
+ * radiusKm, exact=true, openOnly (default true), isVeg, foodType, categoryId,
+ * verticalId | vertical, minRating, maxDeliveryTime, pureVeg=true,
+ * sortBy = relevance (default) | rating | distance | deliveryTime, lang, page, limit (<= 50).
+ *
+ * Each card is the unified-search restaurant card plus matchedDishCount and
+ * up to 3 matchedDishes at the customer's price.
+ */
+export async function searchDishRestaurants(query = {}) {
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 50);
+    const q = term(query.q);
+    const lang = languageFromQuery(query);
+    const empty = (extra = {}) => ({ query: q, restaurants: [], total: 0, page, limit, ...extra });
+    if (q.length < DISH_RESTAURANTS_MIN_CHARS) return empty({ minChars: DISH_RESTAURANTS_MIN_CHARS });
+
+    const reach = await reachableRestaurants(query);
+    if (reach.requiresLocation) return empty({ requiresLocation: true });
+    if (reach.empty) return empty();
+    // Timed out-of-stock that has run out comes back before matching.
+    await restoreExpiredFoodAvailability({ restaurantId: { in: reach.ids } });
+
+    const { foods = [], eligible = new Map() } = await matchDishRestaurants(query, q, reach);
+    const needle = normalizeDishName(q);
+
+    // Dishes per eligible restaurant, best match first.
+    const dishesBy = new Map();
+    for (const f of foods) {
+        if (!eligible.has(f.restaurantId)) continue;
+        const list = dishesBy.get(f.restaurantId) || [];
+        list.push({ ...f, relevance: nameRelevance(f.name, needle) });
+        dishesBy.set(f.restaurantId, list);
+    }
+    const ranked = [...dishesBy.entries()].map(([id, list]) => {
+        list.sort((a, b) => b.relevance - a.relevance);
+        return { card: eligible.get(id), list, relevance: list[0].relevance };
+    });
+    const within = RESTAURANT_SORTS[String(query.sortBy || '')]
+        ? (a, b) => RESTAURANT_SORTS[String(query.sortBy)](a.card, b.card)
+        : (a, b) => b.relevance - a.relevance
+            || b.list.length - a.list.length
+            || (a.card.distanceKm ?? Infinity) - (b.card.distanceKm ?? Infinity);
+    ranked.sort((a, b) => openFirst(a.card, b.card) || within(a, b));
+
+    const total = ranked.length;
+    const pageRows = ranked.slice((page - 1) * limit, page * limit);
+
+    // Prices only for the dishes shown: the customer's price after app price rules.
+    const shownIds = pageRows.flatMap((r) => r.list.slice(0, 3).map((f) => f.id));
+    const full = shownIds.length
+        ? await applyAppPricing(await prisma.foodItem.findMany({
+            where: { id: { in: shownIds } },
+            include: { variants: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] } },
+        }))
+        : [];
+    const fullById = new Map(full.map((f) => [f.id, f]));
+
+    const restaurants = pageRows.map(({ card, list }) => {
+        const matchedDishes = list.slice(0, 3).map((f) => {
+            const food = fullById.get(f.id) || f;
+            return {
+                id: f.id,
+                name: pickText(f.name, f.nameTe, lang),
+                nameEn: f.name,
+                price: Number(getFoodDisplayPrice(food)) || 0,
+                otherPrice: Number(getFoodDisplayOtherPrice(food)) || 0,
+                hasVariants: Array.isArray(food.variants) && food.variants.length > 0,
+                image: f.image || '',
+                foodType: fromFoodTypeColumn(f.foodType),
+                isVeg: fromFoodTypeColumn(f.foodType) === 'Veg',
+            };
+        });
+        const first = matchedDishes[0];
+        return {
+            ...card,
+            // Same keys unified search uses for a dish match, so existing cards render it.
+            matchType: 'food',
+            matchedDish: first?.nameEn || null,
+            matchedDishId: first?.id || null,
+            matchedDishImage: first?.image || null,
+            matchedDishCount: list.length,
+            matchedDishes,
+        };
+    });
+    return { query: q, restaurants, total, page, limit };
 }

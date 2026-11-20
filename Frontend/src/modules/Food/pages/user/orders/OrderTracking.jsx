@@ -21,6 +21,7 @@ import {
   FileText
 } from "lucide-react"
 import AnimatedPage from "@food/components/user/AnimatedPage"
+import OrderDelayBanner from "@food/components/user/OrderDelayBanner"
 import { Card, CardContent } from "@food/components/ui/card"
 import { Button } from "@food/components/ui/button"
 import {
@@ -280,6 +281,9 @@ const transformOrderForTracking = (apiOrder, previousOrder = null, explicitResta
   return {
     id: apiOrder?.orderId || apiOrder?._id,
     mongoId: apiOrder?._id || null,
+    // Running late (rider / admin update or the late-order watchdog): reason and new ETA.
+    delay: apiOrder?.delay ?? previousOrder?.delay ?? null,
+    estimatedDeliveryAt: apiOrder?.estimatedDeliveryAt || previousOrder?.estimatedDeliveryAt || null,
     orderId: apiOrder?.orderId || apiOrder?._id,
     restaurant: apiOrder?.restaurantName || previousOrder?.restaurant || 'Restaurant',
     restaurantPhone:
@@ -1397,6 +1401,7 @@ export default function OrderTracking() {
 
       {/* Scrollable Content */}
       <div className="max-w-4xl mx-auto px-4 md:px-6 lg:px-8 py-6 space-y-6">
+        <OrderDelayBanner delay={order?.delay} hidden={isDeliveredOrder || orderStatus === 'cancelled' || isCancelledOrder} />
         
         {/* Main Status Card */}
         <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-zinc-800 relative overflow-hidden">

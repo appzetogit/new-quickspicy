@@ -10,6 +10,7 @@ import { uploadAPI } from '@food/api';
 import { toast } from 'sonner';
 import { openCamera } from "@food/utils/imageUploadUtils";
 import { resolveRestaurantAddress } from '@/modules/DeliveryV2/utils/orderAddress';
+import RunningLateButton from '@/modules/DeliveryV2/components/RunningLateButton';
 
 /**
  * PickupActionModal - Unified White/Green Theme with Slider Actions.
@@ -188,6 +189,8 @@ export const PickupActionModal = ({
                 </div>
                 )
               })()}
+
+              <RunningLateButton order={order} />
 
               {/* Order Items Summary */}
               <div className="space-y-4">

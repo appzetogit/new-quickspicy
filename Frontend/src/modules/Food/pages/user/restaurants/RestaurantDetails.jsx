@@ -111,7 +111,7 @@ function RestaurantDetailsContent() {
   const [searchParams] = useSearchParams()
   const showOnlyUnder250 = searchParams.get('under250') === 'true'
   const targetDishId = useMemo(() => String(searchParams.get('dish') || '').trim(), [searchParams])
-  const { addToCart, updateQuantity, removeFromCart, getCartItem, cart, itemCount } = useCart()
+  const { addToCart, updateQuantity, removeFromCart, getCartItem, cart, itemCount, selectCart } = useCart()
   const { vegMode, addDishFavorite, removeDishFavorite, isDishFavorite, getDishFavorites, getFavorites, addFavorite, removeFavorite, isFavorite } = useProfile()
   const {
     effectiveLocation: userLocation,
@@ -570,6 +570,9 @@ function RestaurantDetailsContent() {
             menuSections: [],
             // Onboarding data including FSSAI license
             onboarding: actualRestaurant?.onboarding || apiRestaurant?.onboarding || null,
+            // FSSAI number and the end-of-menu notes (taxes, packing, nutrition) from the API.
+            fssaiNumber: actualRestaurant?.fssaiNumber || apiRestaurant?.fssaiNumber || actualRestaurant?.onboarding?.step3?.fssai?.registrationNumber || null,
+            menuFooter: actualRestaurant?.menuFooter || apiRestaurant?.menuFooter || null,
             // Availability fields for grayscale styling
             isActive: actualRestaurant?.isActive !== false, // Default to true if not specified
             isAcceptingOrders: actualRestaurant?.isAcceptingOrders !== false, // Default to true if not specified
@@ -1105,6 +1108,12 @@ function RestaurantDetailsContent() {
     setQuantities(cartQuantities)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.name, cart])
+
+  // Multiple carts: on a restaurant's page the cart bar shows that restaurant's cart.
+  useEffect(() => {
+    const id = restaurant?.restaurantId || restaurant?._id || restaurant?.id
+    if (id && typeof selectCart === "function") selectCart(String(id))
+  }, [restaurant?.restaurantId, restaurant?._id, restaurant?.id, selectCart])
 
   useEffect(() => {
     if (!selectedItem) {
@@ -2950,28 +2959,59 @@ function RestaurantDetailsContent() {
         </div>
       </div>
 
-      {/* FSSAI License Information - Bottom of page */}
-      {restaurant?.onboarding?.step3?.fssai?.registrationNumber && (
-        <div className="px-4 py-4 mt-2 mb-24 border-t border-dashed border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-white/5 mx-4 rounded-xl">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-20 flex items-center justify-center bg-white rounded-lg p-1.5 shadow-sm border border-gray-100">
-              <img
-                src={fssaiLogo}
-                alt="FSSAI"
-                className="h-full w-auto object-contain"
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold mb-1">
-                License No.
-              </p>
-              <p className="text-sm font-semibold text-gray-600 dark:text-gray-300 font-mono tracking-wide">
-                {restaurant?.onboarding?.step3?.fssai?.registrationNumber}
-              </p>
-            </div>
+      {/* Menu footer notes (restaurant.menuFooter from the API): disclaimer, nutrition, taxes, packing, FSSAI */}
+      {restaurant && (() => {
+        const footer = restaurant?.menuFooter
+        const fssaiNumber = footer?.fssaiNumber || restaurant?.fssaiNumber
+        const notes = (Array.isArray(footer?.notes) && footer.notes.length
+          ? footer.notes
+          : [
+              { key: "menu_disclaimer", title: "Menu disclaimer", text: "Menu items, prices, photos and descriptions are set by the restaurant. Dishes may vary from the pictures shown." },
+              { key: "nutrition", title: "Nutritional information", text: "An average active adult requires 2,000 kcal energy per day, however calorie needs may vary." },
+            ]
+        ).filter((note) => note?.key !== "fssai" && note?.text)
+        return (
+          <div className="px-4 py-4 mt-2 mb-24 border-t border-dashed border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-white/5 mx-4 rounded-xl space-y-3">
+            {notes.map((note) => (
+              <div key={note.key}>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold mb-0.5">
+                  {note.title}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{note.text}</p>
+              </div>
+            ))}
+            {(footer?.legalName || footer?.address) && (
+              <div>
+                {footer?.legalName && (
+                  <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">{footer.legalName}</p>
+                )}
+                {footer?.address && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{footer.address}</p>
+                )}
+              </div>
+            )}
+            {fssaiNumber && (
+              <div className="flex items-center gap-4 pt-1">
+                <div className="h-12 w-20 flex items-center justify-center bg-white rounded-lg p-1.5 shadow-sm border border-gray-100">
+                  <img
+                    src={fssaiLogo}
+                    alt="FSSAI"
+                    className="h-full w-auto object-contain"
+                  />
+                </div>
+                <div className="flex-1">
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold mb-1">
+                    License No.
+                  </p>
+                  <p className="text-sm font-semibold text-gray-600 dark:text-gray-300 font-mono tracking-wide">
+                    {fssaiNumber}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Menu Button - fixed bottom right; shifts up when cart bar is visible */}
       {typeof window !== "undefined" &&
@@ -4117,7 +4157,7 @@ function RestaurantDetailsContent() {
                     </div>
 
                     {/* FSSAI License Information */}
-                    {restaurant?.onboarding?.step3?.fssai?.registrationNumber && (
+                    {restaurant?.fssaiNumber && (
                       <div className="mt-4 px-2 pt-4 border-t border-gray-100 dark:border-gray-800 flex items-center gap-3 opacity-80 mb-2">
                         <div className="h-8 w-14 flex items-center justify-center bg-white rounded p-1 border border-gray-100">
                           <img
@@ -4131,7 +4171,7 @@ function RestaurantDetailsContent() {
                             Lic. No.
                           </p>
                           <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                            {restaurant?.onboarding?.step3?.fssai?.registrationNumber}
+                            {restaurant?.fssaiNumber}
                           </p>
                         </div>
                       </div>

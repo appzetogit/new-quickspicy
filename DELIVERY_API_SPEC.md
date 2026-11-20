@@ -323,6 +323,41 @@ Falls back from QR to physical cash. → `data: { "success": true }`
 
 Rejected unless the order's payment method is `cash` or `razorpay_qr` and it is not already paid — online-prepaid orders cannot be switched.
 
+### Company UPI QR (no Razorpay)
+When Razorpay is not configured, or the admin turned on "Use company UPI QR" (3rd-party settings), `collect/qr` returns a UPI deep link for the company account instead of a Razorpay link:
+```json
+{
+  "provider": "company_upi",                 // absent / "razorpay" for the gateway QR
+  "shortUrl": "upi://pay?pa=quickspicy%40okaxis&pn=Quick%20Spicy&am=546.00&cu=INR&tn=Order%20FOD-123&tr=<orderId>",
+  "upiUri":   "upi://pay?...same...",
+  "upiId": "quickspicy@okaxis",
+  "payeeName": "Quick Spicy",
+  "amount": 546,
+  "expiresAt": null,
+  "awaitingManualConfirmation": true,
+  "confirmEndpoint": "/food/delivery/orders/<orderId>/collect/upi-confirm"
+}
+```
+Draw the QR from `upiUri` (any QR library; it is plain text). Nothing confirms such a payment automatically, so `payment-status` stays `pending_qr` until the rider confirms. Show "Customer paid by UPI" once the customer's app shows success.
+
+### `POST /food/delivery/orders/:orderId/collect/upi-confirm`
+Body: `{ "utr": "4123..." }` (optional UPI reference from the customer's screen, ≤40 chars).
+→ `data: { "orderId", "paymentStatus": "paid", "needsReconciliation": true, "utr" }`. The order is now paid (complete delivery as usual); finance reconciles it against the bank statement. Not counted in the rider's cash in hand. `collect/cash` after showing the company QR abandons it. Errors: `This order is not being collected by company UPI`, `Not your order`.
+
+### Change to customer wallet — `POST /food/delivery/orders/:orderId/change-owed`
+The customer paid cash and the rider has no change: record it, ops verify it, and it is credited to the customer's wallet.
+Body: `{ "amount": 120, "cashCollected": 500, "note": "no ₹100 notes" }`
+Rules: cash orders only (`payment.method` `cash`), after pickup (or up to 6 h after delivery); `0 < amount ≤ 500`; `amount ≤ cashCollected`; `cashCollected − amount ≥ cashToCollect`. Re-sending while `pending` corrects it.
+→ `data: { id, orderId, orderDisplayId, amount, cashCollected, orderCashDue, status: "pending", riderNote, rejectReason, createdAt }`
+`GET /food/delivery/orders/:orderId/change-owed` → `data: { changeCredit: <same or null> }` (status `pending | approved | rejected`, `rejectReason` when rejected).
+Once approved, the change is added to the rider's `cashInHand` (they kept the customer's money) and `GET /wallet` shows it in `changeKeptForCustomers`. Pending/rejected requests do not change cash in hand.
+
+### Running late — `POST /food/delivery/orders/:orderId/running-late`
+Body: `{ "reason": "traffic", "extraMinutes": 10, "note": "optional, required when reason is other" }`
+`reason`: `traffic | rain | restaurant_delay | other`; `extraMinutes` 1–120. Any live status (accepted → reached drop). One update per minute per order.
+Moves the order's ETA out by `extraMinutes` from the later of now and the ETA last told to the customer, and pushes the customer ("Your order is running late").
+→ `data: { orderId, orderDisplayId, etaMinutes, estimatedDeliveryAt, delay: { … see order.delay … }, message }`
+
 ---
 
 ## 6. Wallet / pocket
@@ -612,6 +647,7 @@ Handshake with the access token (`auth.token`, `Authorization` header, or `?toke
 | `order_deassigned` | the order was taken off you |
 | `order_ready` | restaurant marked ready for pickup |
 | `order_status_update` | any status change |
+| `order_delay` | a running-late update on your order (yours or an admin's): `{ orderId, etaMinutes, estimatedDeliveryAt, delay }` |
 
 Poll `/orders/available` as a fallback — the modal must not depend on the socket alone.
 

@@ -6,6 +6,7 @@ import { authMiddleware } from '../../../../core/auth/auth.middleware.js';
 import { requireRoles } from '../../../../core/roles/role.middleware.js';
 import { uploadRateLimiter } from '../../../uploads/middleware/upload.middleware.js';
 import * as orderController from '../../orders/controllers/order.controller.js';
+import * as riderOps from '../controllers/riderOps.controller.js';
 import { registerDeliveryPartnerController, updateDeliveryPartnerProfileController, updateDeliveryPartnerBankDetailsController, listSupportTicketsController, createSupportTicketController, getSupportTicketByIdController, listOrderEmergencyRequestsController, createOrderEmergencyRequestController, getOrderEmergencyRequestController, updateDeliveryPartnerDetailsController, updateDeliveryPartnerProfilePhotoBase64Controller, updateAvailabilityController, getWalletController, createWithdrawalRequestController, createCashDepositOrderController, verifyCashDepositPaymentController, getEarningsController, getTripHistoryController, getPocketDetailsController, getEmergencyHelpController, getCashLimitController, getDeliveryReferralStatsController, getActiveEarningAddonsController, deleteDeliveryPartnerAccountController } from '../controllers/delivery.controller.js';
 import { getPublicFormSchemaController } from '../controllers/driverRegistrationField.controller.js';
 import { getMyServiceArea, listOwnPayoutStatements, getOwnPayoutStatement, ownPayoutStatementPdf, getOwnDocuments, reuploadOwnDocument } from '../../admin/controllers/adminFoundations.controller.js';
@@ -97,6 +98,11 @@ router.patch('/orders/:orderId/rate-customer', authMiddleware, requireRoles('DEL
 
 router.get('/orders/:orderId/payment-status', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.getPaymentStatusController);
 router.post('/orders/:orderId/collect/cash', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.switchToCashController);
+// Running late, change owed to the customer, company-UPI payment confirmation (riderOps.controller.js).
+router.post('/orders/:orderId/running-late', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.runningLateController);
+router.post('/orders/:orderId/change-owed', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.recordChangeOwedController);
+router.get('/orders/:orderId/change-owed', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.getChangeOwedController);
+router.post('/orders/:orderId/collect/upi-confirm', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.confirmUpiPaymentController);
 
 
 // ----- Earnings / Settings -----

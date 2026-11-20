@@ -62,6 +62,35 @@ const chargeLines = (o) => {
     return lines;
 };
 
+/**
+ * The delivery address as the order snapshot holds it. The saved address and
+ * the order carry the same fields (street, additionalDetails, city, state,
+ * zipCode, phone); the checkout form labels additionalDetails "House No. /
+ * Flat / Floor" and street "Street / Area / Landmark", so the house line comes
+ * first, as an address is written on a parcel.
+ */
+export const deliveryAddressParts = (o = {}) => {
+    const t = (v) => text(v).trim();
+    const label = t(o.addrLabel);
+    return {
+        label: label || null,
+        house: t(o.addrAdditionalDetails) || null,
+        street: t(o.addrStreet) || null,
+        city: t(o.addrCity) || null,
+        state: t(o.addrState) || null,
+        pincode: t(o.addrZipCode) || null,
+    };
+};
+
+export const deliveryAddressLine = (p = {}) => {
+    // The house line sometimes repeats the street when the form was filled from
+    // the map pin; print it once.
+    const house = p.house && p.street && p.street.toLowerCase().includes(p.house.toLowerCase()) ? null : p.house;
+    const head = [house, p.street, p.city].filter(Boolean);
+    const tail = [p.state, p.pincode].filter(Boolean).join(' - ');
+    return [...head, tail].filter(Boolean).join(', ');
+};
+
 export const buildInvoice = ({ order, business = null } = {}) => {
     if (!order) throw new NotFoundError('Order not found');
 
@@ -105,8 +134,8 @@ export const buildInvoice = ({ order, business = null } = {}) => {
     });
 
     const r = order.restaurant || {};
-    const addr = [order.addrStreet, order.addrAdditionalDetails, order.addrCity, order.addrState, order.addrZipCode]
-        .map(text).map((s) => s.trim()).filter(Boolean).join(', ');
+    const addressParts = deliveryAddressParts(order);
+    const addr = deliveryAddressLine(addressParts);
 
     return {
         // Not a new sequence: the order id already identifies the sale uniquely,
@@ -146,6 +175,11 @@ export const buildInvoice = ({ order, business = null } = {}) => {
             ),
             phone: text(order.addrPhone || order.customerPhone),
             address: addr,
+            // The same address, field by field, for an app that lays it out
+            // itself. `house` is what the customer typed as house / flat /
+            // floor; `street` holds the area and landmark line.
+            addressParts,
+            deliveryInstructions: text(order.deliveryInstructions).trim() || null,
             ...(order.isForSomeoneElse ? { orderedBy: text(order.customerName) } : {}),
         },
 
@@ -184,6 +218,7 @@ const ORDER_SELECT = {
     customerName: true, customerPhone: true, isForSomeoneElse: true, recipientName: true,
     addrName: true, addrFullName: true, addrPhone: true, addrStreet: true,
     addrAdditionalDetails: true, addrCity: true, addrState: true, addrZipCode: true,
+    addrLabel: true, deliveryInstructions: true,
     items: {
         select: {
             name: true, variantName: true, variantPrice: true, price: true,
@@ -205,12 +240,12 @@ const ORDER_SELECT = {
  * They only ever label a line ("GST (5%)"); every rupee figure is the one the
  * customer was charged, so a rate changed since then cannot alter the bill.
  */
-export async function getOrderInvoice({ orderId, userId } = {}) {
+export async function getOrderInvoice({ orderId, userId, asAdmin = false } = {}) {
     if (!isId(orderId)) throw new ValidationError('Order id required');
 
     const order = await prisma.foodOrder.findFirst({ where: { id: String(orderId) }, select: ORDER_SELECT });
     if (!order) throw new NotFoundError('Order not found');
-    if (!userId || order.userId !== String(userId)) throw new ForbiddenError('Not your order');
+    if (!asAdmin && (!userId || order.userId !== String(userId))) throw new ForbiddenError('Not your order');
 
     const [business, fees] = await Promise.all([
         prisma.foodBusinessSettings.findFirst({
@@ -296,7 +331,8 @@ export const renderInvoiceHtml = (inv) => {
       ${inv.restaurant.fssaiNumber ? `<div class="muted">FSSAI ${esc(inv.restaurant.fssaiNumber)}</div>` : ''}</div>
     <div><div class="label">To</div><strong>${esc(inv.customer.name)}</strong>
       <div class="muted">${esc(inv.customer.phone)}</div>
-      <div class="muted">${esc(inv.customer.address)}</div></div>
+      <div class="muted">${inv.customer.addressParts?.label ? `${esc(inv.customer.addressParts.label)}: ` : ''}${esc(inv.customer.address)}</div>
+      ${inv.customer.deliveryInstructions ? `<div class="muted">Instructions: ${esc(inv.customer.deliveryInstructions)}</div>` : ''}</div>
   </div>
   <table><thead><tr><th>Item</th><th class="qty">Qty</th><th class="amt">Amount</th></tr></thead>
     <tbody>${inv.items.map(item).join('')}</tbody></table>

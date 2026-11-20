@@ -3,6 +3,7 @@ import { exportToCSV, exportToExcel, exportToPDF, exportToJSON } from "./ordersE
 import brandLogo from "@food/assets/quickspicy-logo.png"
 import { getCachedSettings, loadBusinessSettings } from "@food/utils/businessSettings"
 import { restaurantLabel } from "@food/utils/entityLabels"
+import { adminAPI } from "@food/api"
 const debugError = () => {}
 
 
@@ -285,7 +286,28 @@ export function useOrdersManagement(orders, statusKey, title, options = {}) {
     setIsViewOrderOpen(true)
   }
 
+  // The order's bill from the server: GST, platform fee, the full delivery
+  // address and ₹, exactly what the customer gets. The jsPDF sheet below is the
+  // fallback when the bill cannot be fetched (e.g. a subscription row).
   const handlePrintOrder = async (order) => {
+    const billOrderId = order?._id || order?.id
+    if (billOrderId && /^[a-f0-9]{24}$/i.test(String(billOrderId))) {
+      try {
+        const res = await adminAPI.getOrderInvoiceHtml(billOrderId)
+        const html = typeof res?.data === "string" ? res.data : ""
+        if (html) {
+          const { invoiceHtmlToPdf } = await import("@food/utils/invoicePdf")
+          await invoiceHtmlToPdf(html, `Invoice_${order.orderId || billOrderId}.pdf`)
+          return
+        }
+      } catch (error) {
+        debugError("Server bill unavailable, building the PDF here:", error)
+      }
+    }
+    return handlePrintOrderLocal(order)
+  }
+
+  const handlePrintOrderLocal = async (order) => {
     try {
       const { default: jsPDF } = await import("jspdf")
       const { default: autoTable } = await import("jspdf-autotable")
@@ -339,7 +361,10 @@ export function useOrdersManagement(orders, statusKey, title, options = {}) {
         order.discountAmount ??
         order.pricing?.discount
       )
-      const computedTotal = subtotal + deliveryFee + taxAmount - discountAmount
+      const platformFeeAmount = toNumber(order.platformFee ?? order.pricing?.platformFee)
+      const deliveryGstAmount = toNumber(order.deliveryFeeGst ?? order.pricing?.deliveryFeeGst)
+      const packagingAmount = toNumber(order.packagingFee ?? order.pricing?.packagingFee)
+      const computedTotal = subtotal + deliveryFee + deliveryGstAmount + packagingAmount + platformFeeAmount + taxAmount - discountAmount
       const totalAmount = toNumber(
         order.totalAmount ??
         order.pricing?.total ??
@@ -540,14 +565,17 @@ export function useOrdersManagement(orders, statusKey, title, options = {}) {
       const summaryStartY = (doc.lastAutoTable?.finalY || 130) + 10
       doc.setDrawColor(226, 232, 240)
       doc.setFillColor(248, 250, 252)
-      doc.roundedRect(pageWidth - 92, summaryStartY - 5, 78, 35, 2, 2, "FD")
+      doc.roundedRect(pageWidth - 92, summaryStartY - 5, 78, 55, 2, 2, "FD")
       autoTable(doc, {
         startY: summaryStartY,
         body: [
           ["Subtotal", formatMoney(subtotal)],
+          ...(packagingAmount ? [["Packaging", formatMoney(packagingAmount)]] : []),
+          ["GST", formatMoney(taxAmount)],
           ["Delivery Fee", formatMoney(deliveryFee)],
-          ["Tax", formatMoney(taxAmount)],
-          ["Discount", formatMoney(discountAmount)],
+          ...(deliveryGstAmount ? [["GST on delivery", formatMoney(deliveryGstAmount)]] : []),
+          ["Platform Fee", formatMoney(platformFeeAmount)],
+          ["Discount", formatMoney(-discountAmount)],
           ["Grand Total", formatMoney(totalAmount)],
         ],
         theme: "plain",
@@ -562,7 +590,7 @@ export function useOrdersManagement(orders, statusKey, title, options = {}) {
         },
         margin: { left: pageWidth - 88 },
         didParseCell: (hookData) => {
-          if (hookData.row.index === 4) {
+          if (hookData.row.index === hookData.table.body.length - 1) {
             hookData.cell.styles.fontStyle = "bold"
             hookData.cell.styles.fontSize = 11
             hookData.cell.styles.textColor = [15, 118, 110]

@@ -45,6 +45,7 @@ import * as reportPerformance from '../controllers/reportPerformance.controller.
 import * as reportInsights from '../controllers/reportInsights.controller.js';
 import * as adminReferrals from '../controllers/adminReferrals.controller.js';
 import * as adminCompliance from '../controllers/adminCompliance.controller.js';
+import opsMoneyRoutes from './opsMoney.routes.js';
 
 const router = express.Router();
 
@@ -894,5 +895,8 @@ router.get('/alerts/ending-soon', async (req, res, next) => {
         return next(error);
     }
 });
+
+// Order bill, running late, change to wallet, company UPI collection (opsMoney.routes.js).
+router.use(opsMoneyRoutes);
 
 export default router;

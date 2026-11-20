@@ -89,6 +89,7 @@ const PATH_PREFIX_TO_SECTION = [
   { prefix: "/admin/food/order-refunds", section: "order_management" },
   // The API guards payout account changes with transaction_management.
   { prefix: "/admin/food/bank-change-requests", section: "transaction_management" },
+  { prefix: "/admin/food/change-to-wallet", section: "transaction_management" },
   { prefix: "/admin/food/coupons", section: "promotions_management" },
   { prefix: "/admin/food/referral-settings", section: "referral_rewards" },
   { prefix: "/admin/food/referrals", section: "referral_rewards" },

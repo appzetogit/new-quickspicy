@@ -230,7 +230,24 @@ export default function UserOrderDetails() {
     window.location.href = `tel:${restaurantPhone}`
   }
 
+  // The server's bill (GST, platform fee, full address, ₹), the same one the
+  // app prints. The old jsPDF summary below is kept only for when the bill
+  // cannot be fetched.
   const handleDownloadSummary = async () => {
+    try {
+      const res = await orderAPI.getOrderInvoiceHtml(order._id || order.id || orderId)
+      const html = typeof res?.data === "string" ? res.data : ""
+      if (!html) throw new Error("Empty bill")
+      const { invoiceHtmlToPdf } = await import("@food/utils/invoicePdf")
+      await invoiceHtmlToPdf(html, `Bill_${orderIdDisplay}.pdf`)
+      toast.success("Bill downloaded")
+    } catch (error) {
+      debugError("Bill download failed, using the summary instead:", error)
+      await handleDownloadSummaryLegacy()
+    }
+  }
+
+  const handleDownloadSummaryLegacy = async () => {
     try {
       const [{ jsPDF }, { default: autoTable }] = await Promise.all([
         import("jspdf"),
@@ -321,11 +338,32 @@ export default function UserOrderDetails() {
       // Get final Y position after table (autoTable adds lastAutoTable property)
       const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY : yPos + (tableData.length * 8) + 20
 
+      // Charges (helvetica has no ₹ glyph, hence "Rs.")
+      const chargeRows = [
+        ['Item total', pricing.subtotal],
+        ['Discount', -Number(pricing.discount || 0)],
+        ['Packaging charge', pricing.packagingFee],
+        ['GST', pricing.tax],
+        ['Delivery fee', pricing.deliveryFee],
+        ['GST on delivery', pricing.deliveryFeeGst],
+        ['Platform fee', pricing.platformFee],
+        ['Tip', pricing.tipAmount ?? order.tipAmount],
+      ].filter(([, v]) => Number(v || 0) !== 0)
+      let chargeY = finalY + 8
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      chargeRows.forEach(([label, v]) => {
+        const n = Number(v || 0)
+        doc.text(`${label}:`, 145, chargeY, { align: 'right' })
+        doc.text(`${n < 0 ? '- ' : ''}Rs. ${Math.abs(n).toFixed(2)}`, 195, chargeY, { align: 'right' })
+        chargeY += 6
+      })
+
       // Total
       doc.setFontSize(12)
       doc.setFont('helvetica', 'bold')
-      doc.text('Total:', 145, finalY + 10, { align: 'right' })
-      doc.text(`Rs. ${Number(pricing.total || 0).toFixed(2)}`, 195, finalY + 10, { align: 'right' })
+      doc.text('Total:', 145, chargeY + 4, { align: 'right' })
+      doc.text(`Rs. ${Number(pricing.total || 0).toFixed(2)}`, 195, chargeY + 4, { align: 'right' })
 
       // Save PDF instantly
       const fileName = `Order_Summary_${orderIdDisplay}_${Date.now()}.pdf`

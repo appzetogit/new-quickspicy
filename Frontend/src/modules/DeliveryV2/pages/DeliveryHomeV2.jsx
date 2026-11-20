@@ -14,6 +14,7 @@ import LiveMap from '@/modules/DeliveryV2/components/map/LiveMap';
 import { NewOrderModal } from '@/modules/DeliveryV2/components/modals/NewOrderModal';
 import { PickupActionModal } from '@/modules/DeliveryV2/components/modals/PickupActionModal';
 import { DeliveryVerificationModal } from '@/modules/DeliveryV2/components/modals/DeliveryVerificationModal';
+import RunningLateButton from '@/modules/DeliveryV2/components/RunningLateButton';
 import { OrderSummaryModal } from '@/modules/DeliveryV2/components/modals/OrderSummaryModal';
 import ActionSlider from '@/modules/DeliveryV2/components/ui/ActionSlider';
 import { openGoogleMapsForAddress, resolveCustomerAddress } from '@/modules/DeliveryV2/utils/orderAddress';
@@ -1054,6 +1055,7 @@ export default function DeliveryHomeV2({ tab = 'feed' }) {
                             </div>
                             )
                           })()}
+                          <RunningLateButton order={activeOrder} />
                         </div>
 
                         <div className="p-8 pt-0 pb-12 bg-white border-t border-gray-50">

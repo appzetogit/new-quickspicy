@@ -315,7 +315,14 @@ export default function Cart() {
     );
   }
 
-  const { cart, updateQuantity, addToCart, getCartCount, clearCart, cleanCartForRestaurant, replaceCart } = cartContext;
+  // One cart per restaurant: this page shows (and checks out) the selected one.
+  const {
+    activeCart: cart,
+    carts: allCarts = [],
+    activeRestaurantId,
+    selectCart,
+    updateQuantity, addToCart, getCartCount, clearCart, cleanCartForRestaurant, replaceCart,
+  } = cartContext;
   const { getDefaultAddress, getDefaultPaymentMethod, setDefaultAddress, addresses, paymentMethods, userProfile, vegMode } = useProfile()
   const { createOrder } = useOrders()
   const { location: currentLocation, loading: currentLocationLoading } = useUserLocation() // Get live location address
@@ -1328,7 +1335,11 @@ export default function Cart() {
               ? Number(pricing.roadDistanceKm)
               : roadDistanceKm,
       })
-      sessionStorage.setItem("food_cart_pricing_snapshot", JSON.stringify(snapshot))
+      // Tagged with its restaurant so the cart sync saves it with the right cart.
+      sessionStorage.setItem(
+        "food_cart_pricing_snapshot",
+        JSON.stringify({ ...snapshot, restaurantId: cart[0]?.restaurantId || null }),
+      )
       window.dispatchEvent(new CustomEvent("food_cart_pricing_updated"))
     } catch {
       // ignore storage errors
@@ -1550,6 +1561,26 @@ export default function Cart() {
 
   // Restaurant name from data or cart
   const restaurantName = restaurantData?.name || restaurantData?.restaurantName || cart[0]?.restaurant || "Restaurant"
+
+  // Switch to another restaurant's cart. The coupon and quote were for the
+  // cart being left, so they are dropped and fetched again for the new one.
+  const switchCart = useCallback((restaurantKey) => {
+    if (!restaurantKey || restaurantKey === activeRestaurantId || typeof selectCart !== "function") return
+    setRestaurantData(null)
+    setPricing(null)
+    setAppliedCoupon(null)
+    setCouponCode("")
+    setManualCouponCode("")
+    selectCart(restaurantKey)
+  }, [activeRestaurantId, selectCart])
+
+  // /cart?restaurant=<id> opens that restaurant's cart (floating carts, links).
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const wanted = new URLSearchParams(window.location.search).get("restaurant")
+    if (wanted) switchCart(wanted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleShare = async () => {
     const restaurantNameStr = restaurantName || companyName || "this restaurant"
@@ -2546,6 +2577,30 @@ export default function Cart() {
                 <Share2 className="h-4 w-4" />
               </Button>
             </div>
+            {allCarts.length > 1 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]" role="tablist" aria-label="Your carts">
+                {allCarts.map((entry) => {
+                  const entryKey = entry.restaurantId || entry.key
+                  const isSelected = entryKey === activeRestaurantId
+                  return (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={isSelected}
+                      onClick={() => switchCart(entryKey)}
+                      className={`shrink-0 max-w-[14rem] truncate rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        isSelected
+                          ? "bg-white text-gray-900 border-white"
+                          : "bg-white/10 text-white border-white/30 hover:bg-white/20"
+                      }`}
+                    >
+                      {entry.restaurantName || "Restaurant"} · {entry.itemCount} {entry.itemCount === 1 ? "item" : "items"}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 

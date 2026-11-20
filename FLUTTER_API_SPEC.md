@@ -229,6 +229,24 @@ Accepts an ObjectId **or** a name slug. Approved restaurants only; `pendingLocat
 
 **Expired FSSAI licence** (only while the admin's "stop ordering when expired" switch is on): the restaurant is left out of `GET /food/restaurant/restaurants` listings; opened directly, it comes back with `isAcceptingOrders: false`, `orderingBlocked: true` and `orderingBlockedReason` (show it instead of "closed"). The menu response carries the same `menu.orderingBlocked` / `menu.orderingBlockedReason`, and pricing / place order refuse with that reason (`400`).
 
+**Menu footer** — render `restaurant.menuFooter` as a note block after the last menu section (the web does the same):
+```json
+"menuFooter": {
+  "legalName": "Spice Hut Foods LLP",        // GST legal name, else the store name
+  "address": "12 Main Rd, Ongole, AP 523001", // or null
+  "fssaiNumber": "12345678901234",           // or null; show with the FSSAI logo
+  "gstNumber": "37XXXXXXXXXX1ZX",            // masked, null when not GST-registered
+  "packagingCharge": 0,                      // the platform adds no packing charge today
+  "packagingNote": "No packing charges are added to your bill.",
+  "tax": { "gstRate": 5, "pricesIncludeTax": false, "appliesTo": "food",
+           "note": "Menu prices are exclusive of taxes. GST of 5% on food is added at checkout." },
+  "nutritionNote": "An average active adult requires 2,000 kcal energy per day, however calorie needs may vary.",
+  "menuDisclaimer": "Menu items, prices, photos and descriptions are set by the restaurant. …",
+  "notes": [ { "key": "menu_disclaimer|nutrition|taxes|packing|fssai", "title": "…", "text": "…" } ]
+}
+```
+`notes` is the ready-to-render list, in display order (`fssai` only when the store has a number). `tax.gstRate` is the zone's GST on food, the same rate checkout uses; `pricesIncludeTax` is `true` when that rate is 0 and `null` (note says "shown at checkout") if the rate could not be read.
+
 ### `GET /food/restaurant/restaurants/:id/menu`
 ```json
 {
@@ -364,14 +382,47 @@ Query: `q` (≥ 2 chars; or `categoryId` alone), `lat`, `lng` (required), `sortB
 Dishes from open restaurants always come first. `minChars: 2` comes back when `q` is too short; `requiresLocation: true` without lat/lng. If `hasVariants`, open the dish to pick a variant before adding it to the cart.
 
 ### `GET /food/search/suggest`
-Type-ahead. Query: `q`, `lat`, `lng`, `lang`. Returns nothing until 3 characters (`minChars: 3`), so call it on every keystroke and let the server decide.
+Type-ahead. Query: `q`, `lat`, `lng` (required; without them → `requiresLocation: true`), `lang`, and optionally the same filters as `/search/restaurants` below (`openOnly`, `isVeg`, `foodType`, `categoryId`, `verticalId`/`vertical`, `minRating`, `maxDeliveryTime`, `pureVeg`). Returns nothing until 3 characters (`minChars: 3`). Call it as the user types (debounce ~300 ms, cancel the previous request); it is cached 60 s per query + location.
 ```json
-{ "query": "bir", "minChars": 3,
-  "dishes":      [{ "name": "Veg Biryani", "nameEn": "Veg Biryani", "image": "…", "count": 2 }],
-  "restaurants": [{ "id": "…", "name": "…", "slug": "…", "image": "…", "distanceKm": 3.9 }],
-  "categories":  [{ "id": "…", "name": "Biryani", "nameEn": "Biryani", "image": "…" }] }
+{ "query": "Biryani", "minChars": 3, "noResults": false,
+  "seeAll": { "label": "Biryani — See all restaurants", "query": "Biryani", "restaurantCount": 7 },
+  "varieties": [
+    { "name": "Chicken Biryani", "nameEn": "Chicken Biryani", "restaurantCount": 6, "itemCount": 9, "foodType": "Non-Veg", "image": "…" },
+    { "name": "Veg Biryani",     "nameEn": "Veg Biryani",     "restaurantCount": 4, "itemCount": 4, "foodType": "Veg",     "image": "…" },
+    { "name": "Mutton Biryani",  "nameEn": "Mutton Biryani",  "restaurantCount": 2, "itemCount": 2, "foodType": "Non-Veg", "image": "" }
+  ],
+  "restaurants": [{ "id": "…", "name": "Biryani House", "slug": "biryani-house", "image": "…", "distanceKm": 3.9 }],
+  "categories":  [{ "id": "…", "name": "Biryani", "nameEn": "Biryani", "image": "…" }],
+  "dishes":      [{ "name": "Chicken Biryani", "nameEn": "Chicken Biryani", "image": "…", "count": 9 }] }
 ```
-`count` = how many restaurants near the customer serve that dish. Tapping a dish suggestion → `/search/dishes?q=<nameEn>`.
+- **`seeAll`** — render first, prominently: `"<query> — See all restaurants"` (use `label`, or build it from `query`). `restaurantCount` = restaurants that serve at least one matching dish right now. `null` when none do — then hide the row. Tap → `GET /food/search/restaurants?q=<seeAll.query>&lat&lng` (listing screen).
+- **`varieties`** — distinct dish names containing `q`, grouped case- and space-insensitively (`"chicken  biryani"` and `"Chicken Biryani"` are one entry; `nameEn` is the most used spelling, `name` is Telugu when `lang=te` and available). Only approved, in-stock dishes from approved restaurants that deliver to `lat`/`lng` **and are open now** (pass `openOnly=false` to also count closed ones). `restaurantCount` = distinct restaurants, `itemCount` = matching dishes. `foodType` is `"Veg"`, `"Egg"`, `"Non-Veg"`, or `"Mixed"` when the grouped dishes differ (show no dot). Sorted: exact match, then names starting with `q`, then most restaurants. Up to 10. Tap → the normal results screen for `q=<nameEn>` (`/search/unified` or `/search/dishes`), or `/search/restaurants?q=<nameEn>&exact=true` for restaurants serving exactly that dish.
+- **`restaurants`** — restaurants whose *name* matches (up to 5); tap → the restaurant menu.
+- **`noResults: true`** — nothing matched in the customer's area: show "No results for "<q>" in your area". It is `false` when `q` is too short, so don't show the empty state then.
+- **`dishes`** — legacy, kept for older builds; `count` is the number of matching dishes (not restaurants), open or closed. New code should use `varieties`.
+- Save the term to recent searches only when the user submits or taps a suggestion — not per keystroke — and ignore a second tap while the first navigation is in progress.
+
+### `GET /food/search/restaurants`
+"See all restaurants" for a dish: **only** restaurants that currently serve at least one approved, in-stock dish whose name (or Telugu name) contains `q`, and that deliver to `lat`/`lng`. A restaurant with no matching available dish never appears; an empty or 1-character `q` returns nothing (`minChars: 2`).
+Query: `q` (≥ 2 chars, required), `lat`, `lng` (required → else `requiresLocation: true`), `radiusKm`, `exact=true` (dish name equals `q`, case/space-insensitive — use for a tapped variety), `openOnly` (**default `true`**; `false` also lists closed restaurants, after the open ones), `isVeg=true` / `foodType=Veg|Egg|Non-Veg` (diet of the matching dish), `categoryId`, `verticalId` (or `vertical=<name>`), `minRating`, `maxDeliveryTime` (minutes), `pureVeg=true` (pure-veg restaurants only), `sortBy` = `relevance` (default: best name match, then most matching dishes, then nearest) | `rating` | `distance` | `deliveryTime`, `lang`, `page` (1), `limit` (20, ≤ 50). Open restaurants always come first.
+```json
+{ "query": "Biryani", "total": 7, "page": 1, "limit": 20,
+  "restaurants": [{
+    "id": "…", "_id": "…", "restaurantName": "Biryani House", "slug": "biryani-house",
+    "profileImage": "…", "coverImages": ["…"], "cuisines": ["Biryani"], "rating": 4.4, "totalRatings": 120,
+    "estimatedDeliveryTime": "30-35 mins", "estimatedDeliveryTimeMinutes": 35, "pureVegRestaurant": false,
+    "offer": "", "location": { "area": "…", "city": "…", "formattedAddress": "…", "latitude": 15.73, "longitude": 79.27 },
+    "distanceKm": 1.2, "distanceInKm": 1.2,
+    "isOpenNow": true, "openStatusReason": "open", "closingSoon": false, "closesInMinutes": 240, "nextOpeningAt": null,
+    "matchType": "food", "matchedDish": "Chicken Biryani", "matchedDishId": "…", "matchedDishImage": "…",
+    "matchedDishCount": 3,
+    "matchedDishes": [
+      { "id": "…", "name": "Chicken Biryani", "nameEn": "Chicken Biryani", "price": 240, "otherPrice": 0,
+        "hasVariants": false, "image": "…", "foodType": "Non-Veg", "isVeg": false }
+    ]
+  }] }
+```
+Cards are the `/search/unified` restaurant card plus `matchedDishCount` and up to 3 `matchedDishes` (best match first, at the price the customer pays). Tap a card → the restaurant menu (`GET /food/restaurant/restaurants/:id/menu` with `id`; pass `matchedDishId` to scroll to the dish). `requiresLocation: true` without lat/lng.
 
 ### "Closing soon", hiding closed restaurants
 Every restaurant card (list, detail, unified search, dish search) has `closingSoon` (open and within `closingSoonThresholdMinutes`, 30 by default, of closing) and `closesInMinutes` (`null` when closed, open all day, or no hours set). Overnight hours count through midnight.
@@ -474,10 +525,80 @@ Dishes and restaurants from the customer's **delivered** orders that can still b
 ```
 Most-ordered first, open restaurants before closed. Empty lists for a new customer.
 
+### `GET /food/user/reorder?lat=&lng=&restaurantId=&lang=&limit=` — Reorder screen
+The customer's own **delivered** orders grouped by store, the store ordered from most recently first (`limit` stores, default 20, max 50; `restaurantId` = that one store only, e.g. from an order's "Reorder" button). Up to 30 dishes per store, addable ones first, then most recently ordered. A new order shows up once it is delivered — just call again on pull-to-refresh.
+```json
+{ "stores": [{
+    "restaurant": { "id": "…", "name": "…", "slug": "…", "image": "…", "rating": 4.2, "totalRatings": 120, "pureVeg": false,
+                    "deliveryTime": "25-30 mins", "distanceKm": 2.1,
+                    "isOpen": false, "closedReason": "outside-hours", "closedMessage": "Closed now", "nextOpeningAt": "…",
+                    "closingSoon": false, "closesInMinutes": null,
+                    "isDeliverable": true, "ordersCount": 3 },
+    "lastOrderedAt": "…",
+    "items": [{
+      "foodId": "…", "name": "Mutton Biryani", "nameEn": "…", "image": "…", "description": "…",
+      "price": 400, "otherPrice": 0, "priceIsFrom": false, "previousPrice": 350,
+      "foodType": "Non-Veg", "isVeg": false,
+      "isAvailable": true, "unavailableReason": null, "unavailableMessage": null, "availableAgainAt": null,
+      "canAdd": false, "blockedReason": "store_closed",
+      "hasVariants": true,
+      "variants": [{ "id": "…", "name": "Mutton half", "price": 220, "otherPrice": 0 }, { "id": "…", "name": "Mutton full", "price": 400, "otherPrice": 0 }],
+      "lastVariant": { "id": "…", "name": "Mutton full", "price": 400, "otherPrice": 0, "stillExists": true },
+      "needsVariantChoice": false,
+      "hasAddons": true, "lastAddons": [{ "id": "…", "name": "Extra raita", "stillAvailable": true }],
+      "lastQuantity": 1, "timesOrdered": 2, "lastOrderedAt": "…" }] }] }
+```
+Rules the app must follow:
+- **Prices are today's** (admin price rules applied). `price` is the last-chosen variant's current price; when that variant is gone or there was none, it is the lowest variant price and `priceIsFrom` is `true` (show "from ₹X"). `previousPrice` is what was paid per unit then (add-ons included) — informational only, never charge it.
+- **Never hide, never swap.** `isAvailable=false` dishes stay in the list, disabled, with `unavailableMessage`: `unavailableReason` = `discontinued` (deleted / not approved; `price` is `null`, name and image come from the receipt) or `out_of_stock` (`availableAgainAt` when the restaurant set one).
+- **`canAdd`** = dish available **and** store open **and** delivers to `lat/lng`. When `false`, `blockedReason` is the item reason or `store_closed` / `not_deliverable`. Show the store's `closedMessage` on the card.
+- **Variants:** `lastVariant` is matched by id, then by name. `needsVariantChoice=true` (the old size no longer exists, or the dish gained sizes) → open the variant picker with nothing preselected; otherwise preselect `lastVariant.id`. A dish that has no variants now but had one (`lastVariant.stillExists=false`, `hasVariants=false`) is added plain — say "previous option no longer offered".
+- **Add-ons:** `lastAddons` is what was picked last time, `stillAvailable` against today's add-ons; preselect only those that are still available. When `hasAddons`, open the item sheet (`GET /food/restaurant/restaurants/:id/addons?foodId=` for options and prices) before adding.
+- Adding goes through the normal cart: a dish already in the cart with the same variant increments its quantity (same cart line id `foodId::variantId`), so repeat taps add quantity instead of duplicating, and several dishes from one store can be added one after another. Only the caller's own orders are read.
+- Stores that were removed from the platform are left out. Empty `stores` for a new customer.
+
+### Carts — one per restaurant (multiple carts)
+
+A customer keeps a **separate cart for each restaurant** (adding a dish from a second restaurant never replaces the first cart and needs no "replace cart?" prompt). Checkout is still **one restaurant per order**: `/food/orders/calculate` and place-order read the items you send, so ordering from cart A leaves cart B untouched. After a successful order, delete that restaurant's cart (`DELETE /food/user/carts/:restaurantId`).
+
+**UI (client spec):** floating carts — each shows restaurant name, item count, *View Menu*, *View Cart*, and a remove (x) that asks first and then deletes that whole cart. With several carts show only the most recently updated one (`carts[0]`) and put the rest behind **"Show all (N)"**. The cart screen shows one restaurant's cart; offer a switcher when `count > 1`.
+
+A cart object (every endpoint below returns this shape):
+```json
+{ "id": "…", "restaurantId": "…", "restaurantName": "Spice Hub",
+  "restaurant": { "id": "…", "name": "Spice Hub", "slug": "spice-hub", "image": "…", "rating": 4.3, "isOpenNow": true, "closingSoon": false, "…": "same compact card as search" },
+  "restaurantAvailable": true,
+  "items": [ { "lineItemId": "<itemId>::<variantId|base>", "itemId": "…", "name": "…", "price": 260, "otherPrice": 0, "quantity": 2,
+               "variantId": "", "variantName": "", "variantPrice": 260, "image": "…", "foodType": "Veg", "isVeg": true } ],
+  "itemCount": 2, "subtotal": 520, "pricing": { … } | null,
+  "createdAt": "…", "updatedAt": "…" }
+```
+`restaurantAvailable: false` means the restaurant is no longer listed (checkout will refuse it) — show the cart greyed out with only *Remove*. `pricing` is the last quote a client saved (or `null`); always re-quote with `/calculate` before showing totals.
+
+| Method & path | Body / query | Returns |
+|---|---|---|
+| `GET /food/user/carts` | — | `{ carts: [cart], count, totalItems, latestRestaurantId }` — newest `updatedAt` first (max 50) |
+| `DELETE /food/user/carts` | — | `{ deleted: <number> }` — clears every cart |
+| `GET /food/user/carts/:restaurantId` | — | `{ cart }`, `cart: null` when there is none |
+| `PUT /food/user/carts/:restaurantId` | `{ items: [...], pricing? }` | `{ cart }` — replaces that cart's lines wholesale (same item fields as `PUT /cart`); `items: []` deletes it (`cart: null`). Lines with a different `restaurantId` are ignored. |
+| `DELETE /food/user/carts/:restaurantId` | — | `{ deleted: true or false, restaurantId }` |
+| `POST /food/user/carts/:restaurantId/items` | `{ itemId, variantId?, quantity? = 1 }` | `{ cart }` — adds the dish (or adds to its quantity). **Priced by the server** from today's menu; client prices are ignored. Creates the cart if needed. |
+| `PATCH /food/user/carts/:restaurantId/items/:itemId` | `{ quantity, variantId? }` | `{ cart }` — sets the line's quantity; `0` removes it. A cart whose last line goes is deleted (`cart: null`). |
+| `DELETE /food/user/carts/:restaurantId/items/:itemId` | `?variantId=` | `{ cart }` (or `cart: null` if it was the last line) |
+
+Rules: quantity is a whole number 1–99 (0 allowed on PATCH). A line is identified by `itemId` + `variantId` (send the `variantId` for a variant line). Errors: 400 *"Choose an option for this dish"* (dish has variants, none sent), 400 *"… is not available right now"*, 404 *"Dish not found at this restaurant"*, 404 *"That dish is not in this cart"*, 400 *"Invalid restaurant"*. Item changes clear the cart's stored `pricing`.
+
+Use either style: item endpoints (`POST/PATCH/DELETE …/items`) for server-held carts, or keep the cart in the app and save it whole with `PUT /carts/:restaurantId` (what the web app does, debounced).
+
+### Single-cart endpoints (kept for app builds from before multiple carts)
+- `PUT /food/user/cart` — unchanged request (below). Lines are saved to the cart of **their own** `restaurantId` (an item without one takes the first item's, then the top-level `restaurantId`), so it never overwrites another restaurant's cart; lines from two restaurants are split into two carts. `items: []` deletes the top-level `restaurantId`'s cart if sent, otherwise **the most recently updated cart** (what an old build does after placing an order). Response adds `restaurantId`.
+- `GET /food/user/cart[?restaurantId=]` → `{ cart }`: that restaurant's cart, or the most recently updated one (`null` if none).
+- What an old build sees: it still behaves as one cart. If it "replaces" its cart with another restaurant, the server now keeps both; the earlier cart stays visible on the web/new app until removed there.
+
 ### Share cart
-- `POST /food/user/cart/share` → `{ token, shareUrl, expiresAt, itemCount }`. Shares the cart last saved with `PUT /cart`, so sync first. The link lasts 7 days. Put `shareUrl` in the share sheet; the app opens it with the token. 400 if the cart is empty.
+- `POST /food/user/cart/share` `{ restaurantId? }` → `{ token, shareUrl, expiresAt, itemCount }`. Shares that restaurant's saved cart, or the most recently updated cart when `restaurantId` is left out — so save the cart first. The link lasts 7 days. Put `shareUrl` in the share sheet; the app opens it with the token. 400 if the cart is empty.
 - `GET /food/user/cart/shared/:token` → `{ sharedBy, restaurant, restaurantAvailable, items: [{ itemId, name, quantity, variantId, variantName, price, otherPrice, image, foodType, isVeg, available }], availableCount, unavailableCount, subtotal, expiresAt }`. Prices are today's, not the sender's. 404 for an unknown or expired link (`message` says which).
-- `POST /food/user/cart/shared/:token/import` → `{ cart, added, skipped: ["dish names"] }`. **Replaces** the customer's cart with the available dishes, so ask before calling it if their cart has something in it. Show `skipped` as "not available right now".
+- `POST /food/user/cart/shared/:token/import` → `{ cart, added, skipped: ["dish names"] }` (`cart` is the cart object above). **Replaces that restaurant's cart** with the available dishes — ask first only if the customer already has a cart at that restaurant (`GET /carts/:restaurantId`); carts at other restaurants are not touched. Show `skipped` as "not available right now".
 
 ### `PUT /food/user/cart`
 ```json
@@ -486,11 +607,13 @@ Most-ordered first, open restaurants before closed. Empty lists for a new custom
   "restaurantId": "…", "restaurantName": "…" }
 ```
 `restaurantId` / `restaurantName` are backfilled per item from the first item or the top-level field, so you can send either.
-→ `{ "synced": true, "itemCount": 3 }`
+→ `{ "synced": true, "itemCount": 3, "restaurantId": "…" }`
 
-Server-side cart is for cross-device continuity only — checkout reads the cart you send it, not this.
+Server-side carts are for cross-device continuity and the floating carts — checkout reads the cart you send it, not these.
 
 ### Wallet
+
+Change the rider could not give back on a cash order arrives here once ops approve it: a credit (`type: "addition"`, `category: "adjustment"`, `metadata.kind: "cod_change_credit"`) described "Change from order #FOD-… (rider had no change)", with a push "Change added to your wallet" (`data.type: wallet_update`). When the rider records it the customer gets "Change added for review".
 
 `GET /food/user/wallet` → `{ wallet: … }`:
 ```json
@@ -797,6 +920,25 @@ Returned by every order endpoint, normalized for clients:
 **Status values** — `pending_payment`, `created`, `confirmed`, `preparing`, `ready_for_pickup`, `reached_pickup`, `picked_up`, `reached_drop`, `delivered`, `cancelled_by_user`, `cancelled_by_restaurant`, `cancelled_by_admin`.
 
 **Phases** — `en_route_to_pickup` → `at_pickup` → `en_route_to_delivery` → `at_drop` → `delivered` → `completed`.
+
+**Running late — `order.delay`** (null until a delay is reported). Also `promisedDeliveryAt`, `estimatedDeliveryAt`, `etaMinutes` on the order.
+```json
+"delay": {
+  "reason": "traffic",                 // traffic | rain | restaurant_delay | other | null (watchdog notice)
+  "reasonLabel": "Heavy traffic",      // ready to show
+  "note": "Accident on ring road",     // free text or null
+  "extraMinutes": 15,                  // total announced so far
+  "newEta": "2026-11-20T14:05:00.000Z",// latest arrival time the customer has been told
+  "promisedAt": "2026-11-20T13:45:00.000Z",
+  "reportedAt": "…", "reportedBy": "DELIVERY_PARTNER",   // or ADMIN; null for a watchdog-only notice
+  "autoNotice": false, "autoNoticeAt": null              // true once the "your order is delayed" apology went out
+}
+```
+Show a banner while the order is live: "Running about {extraMinutes} min late · {reasonLabel} · new arrival {newEta}". Two sources: the rider or an admin sends a running-late update (reason + minutes; push `type: order_update, event: running_late`), and the server sends a one-time apology when an order is more than 10 min past its promised time (push `event: delayed`, `autoNotice: true`). Socket: `order_delay` `{ orderId, orderMongoId, orderStatus, etaMinutes, estimatedDeliveryAt, delay, message }` on `user:<id>` and the tracking room, plus `order_eta` and an `order_status_update` carrying `message` and `delay`.
+
+### The bill — `GET /food/orders/:orderId/invoice` · `GET /food/orders/:orderId/invoice.html`
+JSON: `{ invoiceNumber, orderId, issuedAt, placedAt, currency, orderStatus, restaurant: { name, address, gstin, fssaiNumber }, platform: { name, address, email, phone }, customer: { name, phone, address, addressParts: { label, house, street, city, state, pincode }, deliveryInstructions, orderedBy? }, items: [{ name, variant, isVeg, quantity, unitPrice, addons, amount }], charges: [{ label, amount, note? }], total, payment: { method, status, paid, refundStatus, refundAmount }, paidSeparately: [...], notes: { tipTotal, reconciled } }`.
+`charges` are ready-to-print lines in order (item total, discount, packaging, GST, delivery fee, GST on delivery, platform fee, tip). `customer.address` is the full one-line address, house / flat / floor first (`addressParts.house` is what the customer typed as "House No. / Flat / Floor", `street` the area / landmark line). `invoice.html` is the same bill as a printable page (₹, share it as PDF). The web app renders exactly this.
 
 ### Remaining order endpoints
 

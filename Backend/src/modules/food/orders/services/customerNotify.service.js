@@ -54,6 +54,17 @@ export const CUSTOMER_EVENTS = {
     title: 'Delivered',
     body: () => 'Yay! Your order has been delivered',
   },
+  // Running late (orderDelay.service.js). Sent with a per-update key, so each
+  // "running late" update the rider or admin sends reaches the customer once.
+  running_late: {
+    title: 'Your order is running late',
+    body: (o) => `Sorry, your order is running ${o.extraMinutes || 'a few'} min late${o.reasonText ? ` due to ${o.reasonText}` : ''}.${o.etaText ? ` New arrival time ${o.etaText}.` : ''}`,
+  },
+  // The watchdog's one-time apology for an order well past its promised time.
+  delayed: {
+    title: 'Sorry, your order is delayed',
+    body: (o) => `Your order is taking longer than we promised. We are on it${o.etaText ? ` and expect it by ${o.etaText}` : ''}. Thank you for your patience.`,
+  },
 };
 
 /** The customer event an order status change stands for, if any. */
@@ -80,6 +91,8 @@ const STALE_FROM = {
   picked_up: 7,
   rider_at_location: 7,
   delivered: 99,
+  running_late: 7,
+  delayed: 7,
 };
 
 /**
@@ -87,7 +100,7 @@ const STALE_FROM = {
  * order has moved past it. Never throws: a push must not break the action that
  * triggered it. Returns true when a push was sent.
  */
-export async function notifyCustomer(orderId, event, { riderId = null } = {}) {
+export async function notifyCustomer(orderId, event, { riderId = null, key: customKey = null, ctx: extraCtx = null } = {}) {
   const spec = CUSTOMER_EVENTS[event];
   if (!spec || !orderId) return false;
   try {
@@ -117,7 +130,7 @@ export async function notifyCustomer(orderId, event, { riderId = null } = {}) {
     // Claim the event first: only the path that inserts the row sends the push.
     // "Rider assigned" is keyed per rider, so a new rider after a cancellation
     // is announced again.
-    const key = event === 'rider_assigned' ? `${event}:${rider}` : event;
+    const key = customKey ? String(customKey).slice(0, 80) : event === 'rider_assigned' ? `${event}:${rider}` : event;
     try {
       await prisma.foodOrderNotification.create({ data: { orderId: row.id, key, event } });
     } catch (err) {
@@ -125,7 +138,7 @@ export async function notifyCustomer(orderId, event, { riderId = null } = {}) {
       throw err;
     }
 
-    const ctx = { restaurantName: row.restaurant?.restaurantName || '', riderName };
+    const ctx = { ...(extraCtx || {}), restaurantName: row.restaurant?.restaurantName || '', riderName };
     const { notifyOwnersSafely } = await import('../../../../core/notifications/firebase.service.js');
     const { BRAND_IMAGE_URL } = await import('../../../../config/brand.js');
     await notifyOwnersSafely([{ ownerType: 'USER', ownerId: row.userId }], {

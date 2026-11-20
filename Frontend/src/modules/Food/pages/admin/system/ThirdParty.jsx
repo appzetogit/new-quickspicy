@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Settings, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react"
 import { usePlatformSetting } from "@food/hooks/usePlatformSetting"
+import CompanyCollectionSettings from "./CompanyCollectionSettings"
 
 const thirdPartyServices = [
   {
@@ -194,6 +195,8 @@ export default function ThirdParty() {
             <h1 className="text-lg font-bold text-slate-900">3rd Party Configuration</h1>
           </div>
         </div>
+
+        <CompanyCollectionSettings />
 
         {loading ? (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 text-xs text-slate-500">

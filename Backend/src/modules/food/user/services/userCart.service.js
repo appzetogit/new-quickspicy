@@ -2,7 +2,11 @@ import { dayRange } from '../../../../utils/timezone.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
+import { Prisma } from '@prisma/client';
 import { calculateOrderPricing } from '../../orders/services/order-pricing.service.js';
+import { applyAppPricing } from '../../pricing/priceRules.service.js';
+import { getFoodDisplayPrice, getFoodDisplayOtherPrice } from '../../admin/services/foodVariant.service.js';
+import { restaurantCards } from '../../search/services/dishSearch.service.js';
 
 const toPositiveInt = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -158,46 +162,361 @@ async function enrichStoredCartPricing(cart, storedPricing) {
     }
 }
 
-export async function syncUserCart(userId, rawItems = [], rawPricing = null) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Multiple carts: one cart per (customer, restaurant).
+//
+// A customer can keep a cart open at several restaurants at once. Each is its
+// own row, keyed by (userId, restaurantId). Checkout stays one restaurant per
+// order and reads the items the app sends, so ordering from one cart leaves
+// the others untouched; the app deletes the cart it checked out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_LINE_QUANTITY = 99;
+const MAX_CARTS_LISTED = 50;
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/** Same line id the web app builds: `<itemId>::<variantId | base>`. */
+export const cartLineId = (itemId, variantId = '') =>
+    `${String(itemId || '')}::${String(variantId || '') || 'base'}`;
+
+const isSameLine = (line, itemId, variantId = '') =>
+    String(line.itemId) === String(itemId) && String(line.variantId || '') === String(variantId || '');
+
+const cartTotals = (items) => ({
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    subtotal: round2(items.reduce((sum, item) => sum + item.price * item.quantity, 0)),
+});
+
+const requireUserId = (userId) => {
     if (!isId(userId)) throw new ValidationError('Invalid user');
+    return String(userId);
+};
 
-    const id = String(userId);
+const requireRestaurantId = (restaurantId) => {
+    if (!isId(restaurantId)) throw new ValidationError('Invalid restaurant');
+    return String(restaurantId);
+};
+
+async function restaurantNameFor(restaurantId) {
+    if (!isId(restaurantId)) return '';
+    const restaurant = await prisma.foodRestaurant.findUnique({
+        where: { id: String(restaurantId) },
+        select: { restaurantName: true },
+    });
+    return restaurant?.restaurantName || '';
+}
+
+/** The customer's most recently changed cart (what the single-cart endpoints act on). */
+export async function getLatestCartRow(userId) {
+    return prisma.foodUserCart.findFirst({
+        where: { userId: requireUserId(userId), itemCount: { gt: 0 } },
+        orderBy: { updatedAt: 'desc' },
+    });
+}
+
+/** Replace one restaurant's cart wholesale; an empty list deletes it. */
+async function writeCart(userId, restaurantId, rawItems, rawPricing, restaurantNameHint = '') {
     const items = normalizeCartItems(rawItems);
-
     if (items.length === 0) {
         // deleteMany, not delete: emptying a cart that was never saved is a
         // no-op, not a missing-record error.
-        await prisma.foodUserCart.deleteMany({ where: { userId: id } });
+        await prisma.foodUserCart.deleteMany({ where: { userId, restaurantId } });
         return null;
     }
 
-    const rawFirst = Array.isArray(rawItems) ? rawItems[0] : null;
-    const restaurantId = String(rawFirst?.restaurantId || '');
-    let restaurantName = String(rawFirst?.restaurant || rawFirst?.restaurantName || '').trim();
     // The user app sends only the restaurant id, so the name was saved blank
     // and the admin User Carts list showed an empty restaurant column.
-    if (!restaurantName && isId(restaurantId)) {
-        const restaurant = await prisma.foodRestaurant.findUnique({
-            where: { id: restaurantId },
-            select: { restaurantName: true },
-        });
-        restaurantName = restaurant?.restaurantName || '';
-    }
+    const restaurantName = String(restaurantNameHint || '').trim() || (await restaurantNameFor(restaurantId));
     const data = {
-        restaurantId,
         restaurantName,
-        // The cart is replaced wholesale on every sync and never queried across
-        // users, so items and pricing stay snapshots rather than tables.
+        // A cart is replaced wholesale and never queried across users, so
+        // items and pricing stay snapshots rather than tables.
         items,
-        itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal: items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+        ...cartTotals(items),
         pricing: normalizePricingSnapshot(rawPricing) ?? undefined,
     };
 
     return prisma.foodUserCart.upsert({
-        where: { userId: id },
-        create: { userId: id, ...data },
+        where: { userId_restaurantId: { userId, restaurantId } },
+        create: { userId, restaurantId, ...data },
         update: data,
+    });
+}
+
+/**
+ * Save the cart the app holds (PUT /cart and PUT /carts/:restaurantId).
+ *
+ * options.restaurantId names the cart. Without it (the old single-cart app),
+ * items go to the cart of their own restaurantId (the first item's when an
+ * item has none), so one call can never overwrite another restaurant's cart.
+ * An empty list deletes the named cart, or without a name the most recently
+ * changed one: the old app empties "the" cart after an order.
+ *
+ * Returns the last cart row written, or null when a cart was deleted.
+ */
+export async function syncUserCart(userId, rawItems = [], rawPricing = null, options = {}) {
+    const id = requireUserId(userId);
+    const list = Array.isArray(rawItems) ? rawItems.filter((item) => item && typeof item === 'object') : [];
+    const explicit = options?.restaurantId != null && String(options.restaurantId) !== ''
+        ? String(options.restaurantId)
+        : null;
+
+    if (list.length === 0) {
+        const target = explicit ?? (await getLatestCartRow(id))?.restaurantId;
+        if (target == null) return null;
+        await prisma.foodUserCart.deleteMany({ where: { userId: id, restaurantId: target } });
+        return null;
+    }
+
+    const nameOf = (item) =>
+        String((typeof item.restaurant === 'string' ? item.restaurant : '') || item.restaurantName || '').trim();
+    const groups = new Map();
+    for (const item of list) {
+        const own = String(item.restaurantId || '');
+        // A dish from another restaurant never lands in the named cart.
+        if (explicit && own && own !== explicit) continue;
+        const restaurantId = explicit ?? (own || String(list[0].restaurantId || ''));
+        if (!groups.has(restaurantId)) groups.set(restaurantId, { items: [], name: '' });
+        const group = groups.get(restaurantId);
+        group.items.push(item);
+        if (!group.name) group.name = nameOf(item);
+    }
+
+    let last = null;
+    for (const [restaurantId, group] of groups) {
+        // A pricing snapshot describes one cart, so it is only kept when the
+        // call is about one restaurant.
+        last = await writeCart(
+            id,
+            restaurantId,
+            group.items,
+            groups.size === 1 ? rawPricing : null,
+            group.name || options?.restaurantName || '',
+        );
+    }
+    return last;
+}
+
+/** A cart row as the user API returns it. `card` is the restaurant summary, if still listed. */
+export function toCartResponse(row, card = null) {
+    if (!row) return null;
+    const items = (Array.isArray(row.items) ? row.items : []).map((item) => ({
+        ...item,
+        lineItemId: item.lineItemId || cartLineId(item.itemId, item.variantId),
+    }));
+    const restaurantName = card?.name || row.restaurantName || '';
+    return {
+        id: row.id,
+        restaurantId: row.restaurantId || '',
+        restaurantName,
+        restaurant: card
+            ? { ...card }
+            : { id: row.restaurantId || '', name: restaurantName, slug: null, image: null, isOpenNow: false },
+        // False when the restaurant is no longer approved; checkout will refuse it.
+        restaurantAvailable: Boolean(card),
+        items,
+        itemCount: Number(row.itemCount) || 0,
+        subtotal: Number(row.subtotal) || 0,
+        pricing: row.pricing ? normalizePricingSnapshot(row.pricing) : null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    };
+}
+
+async function withRestaurantCards(rows) {
+    const ids = [...new Set(rows.map((row) => row.restaurantId).filter(isId))];
+    const cards = ids.length ? await restaurantCards(ids, null) : new Map();
+    return rows.map((row) => toCartResponse(row, cards.get(row.restaurantId) || null));
+}
+
+/** GET /carts: every open cart, most recently changed first. */
+export async function listUserCarts(userId) {
+    const id = requireUserId(userId);
+    const rows = await prisma.foodUserCart.findMany({
+        // Carts saved before restaurants were required have no restaurant to
+        // open or order from; they stay in the table (and the admin list).
+        where: { userId: id, itemCount: { gt: 0 }, restaurantId: { not: '' } },
+        orderBy: { updatedAt: 'desc' },
+        take: MAX_CARTS_LISTED,
+    });
+    const carts = await withRestaurantCards(rows);
+    return {
+        carts,
+        count: carts.length,
+        totalItems: carts.reduce((sum, cart) => sum + cart.itemCount, 0),
+        latestRestaurantId: carts[0]?.restaurantId || null,
+    };
+}
+
+/** GET /carts/:restaurantId. `cart` is null when there is none. */
+export async function getUserCart(userId, restaurantId) {
+    const row = await prisma.foodUserCart.findUnique({
+        where: { userId_restaurantId: { userId: requireUserId(userId), restaurantId: requireRestaurantId(restaurantId) } },
+    });
+    if (!row || !(row.itemCount > 0)) return { cart: null };
+    const [cart] = await withRestaurantCards([row]);
+    return { cart };
+}
+
+/** GET /cart (single-cart clients): the named restaurant's cart, else the latest. */
+export async function getLatestUserCart(userId, restaurantId = null) {
+    if (restaurantId) return getUserCart(userId, restaurantId);
+    const row = await getLatestCartRow(userId);
+    if (!row) return { cart: null };
+    const [cart] = await withRestaurantCards([row]);
+    return { cart };
+}
+
+/** PUT /carts/:restaurantId: replace that cart's items (empty list deletes it). */
+export async function replaceUserCart(userId, restaurantId, rawItems = [], rawPricing = null) {
+    const rid = requireRestaurantId(restaurantId);
+    const items = (Array.isArray(rawItems) ? rawItems : []).map((item) => ({
+        ...item,
+        restaurantId: item?.restaurantId || rid,
+    }));
+    const row = await syncUserCart(userId, items, rawPricing, { restaurantId: rid });
+    if (!row) return { cart: null };
+    const [cart] = await withRestaurantCards([row]);
+    return { cart };
+}
+
+/** DELETE /carts/:restaurantId */
+export async function deleteUserCart(userId, restaurantId) {
+    const rid = requireRestaurantId(restaurantId);
+    const { count } = await prisma.foodUserCart.deleteMany({ where: { userId: requireUserId(userId), restaurantId: rid } });
+    return { deleted: count > 0, restaurantId: rid };
+}
+
+/** DELETE /carts: every cart the customer has. */
+export async function clearUserCarts(userId) {
+    const { count } = await prisma.foodUserCart.deleteMany({ where: { userId: requireUserId(userId) } });
+    return { deleted: count };
+}
+
+/** One cart line priced from the menu now (app price rules applied), never from the client. */
+async function priceDishForCart(restaurantId, itemId, variantId = '') {
+    if (!isId(itemId)) throw new ValidationError('Invalid dish');
+    const food = await prisma.foodItem.findFirst({
+        where: { id: String(itemId), restaurantId },
+        include: { variants: true },
+    });
+    if (!food || food.approvalStatus !== 'approved') throw new NotFoundError('Dish not found at this restaurant');
+    if (!food.isAvailable) throw new ValidationError(`${food.name} is not available right now`);
+
+    const [priced] = await applyAppPricing([food]);
+    const variants = Array.isArray(priced?.variants) ? priced.variants : [];
+    let variant = null;
+    if (variantId) {
+        variant = variants.find((entry) => String(entry.id) === String(variantId)) || null;
+        if (!variant) throw new NotFoundError('That option is not available any more');
+    } else if (variants.length > 0) {
+        throw new ValidationError('Choose an option for this dish');
+    }
+
+    const price = round2(variant ? Number(variant.price) : getFoodDisplayPrice(priced));
+    const otherPrice = round2(variant ? Number(variant.otherPrice) : getFoodDisplayOtherPrice(priced));
+    const foodType = food.foodType === 'NonVeg' ? 'Non-Veg' : String(food.foodType || '');
+    return {
+        lineItemId: cartLineId(food.id, variant?.id),
+        itemId: food.id,
+        name: food.name,
+        price,
+        otherPrice: otherPrice > price ? otherPrice : 0,
+        variantId: variant ? String(variant.id) : '',
+        variantName: variant?.name || '',
+        variantPrice: price,
+        image: food.image || '',
+        foodType,
+        isVeg: foodType === 'Veg',
+    };
+}
+
+const toQuantity = (value, { allowZero = false } = {}) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < (allowZero ? 0 : 1) || parsed > MAX_LINE_QUANTITY) {
+        throw new ValidationError(`Quantity must be a whole number from ${allowZero ? 0 : 1} to ${MAX_LINE_QUANTITY}`);
+    }
+    return parsed;
+};
+
+/**
+ * Change one restaurant's cart under a row lock, so two quick taps cannot
+ * both read the old items and lose one update. `change` gets the current
+ * lines and returns the new ones; an empty result deletes the cart.
+ */
+async function mutateCart(userId, restaurantId, change) {
+    const restaurantName = await restaurantNameFor(restaurantId);
+    const row = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+            INSERT INTO "food_user_carts" ("userId", "restaurantId", "restaurantName", "updatedAt")
+            VALUES (${userId}, ${restaurantId}, ${restaurantName}, now())
+            ON CONFLICT ("userId", "restaurantId") DO NOTHING`;
+        await tx.$queryRaw`
+            SELECT "id" FROM "food_user_carts"
+            WHERE "userId" = ${userId} AND "restaurantId" = ${restaurantId}
+            FOR UPDATE`;
+        const current = await tx.foodUserCart.findUnique({
+            where: { userId_restaurantId: { userId, restaurantId } },
+        });
+        const next = normalizeCartItems(change(normalizeCartItems(current.items)));
+        if (next.length === 0) {
+            await tx.foodUserCart.delete({ where: { id: current.id } });
+            return null;
+        }
+        return tx.foodUserCart.update({
+            where: { id: current.id },
+            data: {
+                items: next,
+                ...cartTotals(next),
+                restaurantName: current.restaurantName || restaurantName,
+                // The stored quote was for the old items.
+                pricing: Prisma.DbNull,
+            },
+        });
+    });
+    if (!row) return { cart: null };
+    const [cart] = await withRestaurantCards([row]);
+    return { cart };
+}
+
+/** POST /carts/:restaurantId/items: add a dish (or more of it). Creates the cart if needed. */
+export async function addUserCartItem(userId, restaurantId, body = {}) {
+    const uid = requireUserId(userId);
+    const rid = requireRestaurantId(restaurantId);
+    const quantity = toQuantity(body.quantity ?? 1);
+    const line = await priceDishForCart(rid, body.itemId, body.variantId || '');
+    return mutateCart(uid, rid, (items) => {
+        const existing = items.find((item) => isSameLine(item, line.itemId, line.variantId));
+        if (!existing) return [...items, { ...line, quantity }];
+        return items.map((item) => (item === existing
+            // Today's price, not the one from when it was first added.
+            ? { ...item, ...line, quantity: Math.min(MAX_LINE_QUANTITY, item.quantity + quantity) }
+            : item));
+    });
+}
+
+/** PATCH /carts/:restaurantId/items/:itemId: set a line's quantity; 0 removes it. */
+export async function updateUserCartItem(userId, restaurantId, itemId, body = {}) {
+    const uid = requireUserId(userId);
+    const rid = requireRestaurantId(restaurantId);
+    const quantity = toQuantity(body.quantity, { allowZero: true });
+    const variantId = String(body.variantId || '');
+    return mutateCart(uid, rid, (items) => {
+        if (!items.some((item) => isSameLine(item, itemId, variantId))) throw new NotFoundError('That dish is not in this cart');
+        return quantity === 0
+            ? items.filter((item) => !isSameLine(item, itemId, variantId))
+            : items.map((item) => (isSameLine(item, itemId, variantId) ? { ...item, quantity } : item));
+    });
+}
+
+/** DELETE /carts/:restaurantId/items/:itemId[?variantId=] */
+export async function removeUserCartItem(userId, restaurantId, itemId, variantId = '') {
+    const uid = requireUserId(userId);
+    const rid = requireRestaurantId(restaurantId);
+    return mutateCart(uid, rid, (items) => {
+        if (!items.some((item) => isSameLine(item, itemId, variantId))) throw new NotFoundError('That dish is not in this cart');
+        return items.filter((item) => !isSameLine(item, itemId, variantId));
     });
 }
 

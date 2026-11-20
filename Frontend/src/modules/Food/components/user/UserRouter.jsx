@@ -25,6 +25,7 @@ const TableBookingConfirmation = lazy(() => import("@food/pages/user/dining/Tabl
 const TableBookingSuccess = lazy(() => import("@food/pages/user/dining/TableBookingSuccess"))
 const MyBookings = lazy(() => import("@food/pages/user/dining/MyBookings"))
 const SearchResults = lazy(() => import("@food/pages/user/search/ProfessionalSearch"))
+const DishRestaurants = lazy(() => import("@food/pages/user/search/DishRestaurants"))
 const ProductDetail = lazy(() => import("@food/pages/user/ProductDetail"))
 
 // Cart
@@ -37,6 +38,7 @@ const Orders = lazy(() => import("@food/pages/user/orders/Orders"))
 const OrderTracking = lazy(() => import("@food/pages/user/orders/OrderTracking"))
 const OrderInvoice = lazy(() => import("@food/pages/user/orders/OrderInvoice"))
 const UserOrderDetails = lazy(() => import("@food/pages/user/orders/UserOrderDetails"))
+const Reorder = lazy(() => import("@food/pages/user/orders/Reorder"))
 
 // Offers
 const Offers = lazy(() => import("@food/pages/user/Offers"))
@@ -121,6 +123,7 @@ export default function UserRouter() {
           <Route path="restaurants" element={<Restaurants />} />
           <Route path="restaurants/:slug" element={<RestaurantDetails />} />
           <Route path="search" element={<SearchResults />} />
+          <Route path="search/restaurants" element={<DishRestaurants />} />
           <Route path="product/:id" element={<ProductDetail />} />
 
           {/* Cart - Now Public */}
@@ -158,6 +161,15 @@ export default function UserRouter() {
             element={
               <ProtectedRoute requiredRole="user" loginPath="/food/user/auth/login">
                 <UserOrderDetails />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="reorder"
+            element={
+              <ProtectedRoute requiredRole="user" loginPath="/food/user/auth/login">
+                <Reorder />
               </ProtectedRoute>
             }
           />

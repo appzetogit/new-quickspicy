@@ -1,7 +1,7 @@
 import express from 'express';
 import { searchController, listAdminCategoriesController } from '../controllers/search.controller.js';
 import { cacheResponse } from '../../../../middleware/cache.js';
-import { searchDishesController, suggestController } from '../controllers/dishSearch.controller.js';
+import { searchDishesController, suggestController, dishRestaurantsController } from '../controllers/dishSearch.controller.js';
 
 const router = express.Router();
 
@@ -19,6 +19,12 @@ router.get('/dishes', cacheResponse(60, 'search_dishes', { browserTtlSeconds: 30
 
 /** Type-ahead, from the 3rd character. GET /api/v1/food/search/suggest */
 router.get('/suggest', cacheResponse(60, 'search_suggest', { browserTtlSeconds: 30 }), suggestController);
+
+/**
+ * "See all restaurants" for a dish: only restaurants that serve an available
+ * dish matching q, in reach. GET /api/v1/food/search/restaurants
+ */
+router.get('/restaurants', cacheResponse(60, 'search_dish_restaurants', { browserTtlSeconds: 30 }), dishRestaurantsController);
 
 /**
  * Admin Categories Only Endpoint (to avoid restaurant-created ones as requested)

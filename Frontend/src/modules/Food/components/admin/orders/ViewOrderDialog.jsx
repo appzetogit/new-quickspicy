@@ -17,6 +17,7 @@ import { restaurantLabel } from "@food/utils/entityLabels"
 import { RiderPicker } from "@food/pages/admin/dispatch/AssignRider"
 import RefundModal, { refundPicture } from "./RefundModal"
 import OrderLiveTrackingMap from "./OrderLiveTrackingMap"
+import AdminRunningLate from "./AdminRunningLate"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -406,6 +407,8 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
               )}
             </div>
           </div>
+
+          <AdminRunningLate order={order} onChanged={onChanged} />
 
           {/* Assign / re-assign a rider: any order not yet accepted by one. */}
           {RIDER_ASSIGNABLE.includes(String(order.status || order.orderStatus || "")) &&

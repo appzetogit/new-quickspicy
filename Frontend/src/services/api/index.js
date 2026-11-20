@@ -22,6 +22,12 @@ export const searchAPI = {
     apiClient.get("/food/search/unified", { params }),
   getAdminCategories: (params = {}) =>
     apiClient.get("/food/search/categories/admin", { params }),
+  /** Type-ahead: { query, seeAll, varieties, restaurants, categories, noResults }. params: q, lat, lng, ... */
+  suggest: (params = {}, config = {}) =>
+    apiClient.get("/food/search/suggest", { params, ...config }),
+  /** Restaurants serving an available dish matching q. params: q, lat, lng, exact, openOnly, sortBy, page, limit, ... */
+  dishRestaurants: (params = {}, config = {}) =>
+    apiClient.get("/food/search/restaurants", { params, ...config }),
 };
 
 const createStubAPI = () =>
@@ -1310,6 +1316,32 @@ export const adminAPI = {
   /** { summary, payments, pagination }. params: fromDate, toDate, zoneId, kind (all|orders|topups) */
   getOnlinePaymentsReport: (params = {}) =>
     apiClient.get("/food/admin/reports/online-payments", { params, contextModule: "admin" }),
+  /** The order's bill as the customer sees it (JSON / printable HTML). */
+  getOrderInvoice: (orderId) =>
+    apiClient.get(`/food/admin/orders/${String(orderId)}/invoice`, { contextModule: "admin" }),
+  getOrderInvoiceHtml: (orderId) =>
+    apiClient.get(`/food/admin/orders/${String(orderId)}/invoice.html`, { contextModule: "admin", responseType: "text" }),
+  /** body: { reason: traffic|rain|restaurant_delay|other, extraMinutes, note? } */
+  reportOrderRunningLate: (orderId, body = {}) =>
+    apiClient.post(`/food/admin/orders/${String(orderId)}/running-late`, body ?? {}, { contextModule: "admin" }),
+  /** Change to wallet. params: status (pending|approved|rejected), fromDate, toDate, page, limit */
+  getChangeCredits: (params = {}) =>
+    apiClient.get("/food/admin/change-credits", { params, contextModule: "admin" }),
+  getChangeCreditSummary: (params = {}) =>
+    apiClient.get("/food/admin/change-credits/summary", { params, contextModule: "admin" }),
+  approveChangeCredit: (id) =>
+    apiClient.post(`/food/admin/change-credits/${String(id)}/approve`, {}, { contextModule: "admin" }),
+  rejectChangeCredit: (id, reason) =>
+    apiClient.post(`/food/admin/change-credits/${String(id)}/reject`, { reason }, { contextModule: "admin" }),
+  /** Company UPI ID / bank details for COD collection, and the "use company UPI QR" switch. */
+  getCompanyCollectionSettings: () =>
+    apiClient.get("/food/admin/company-collection-settings", { contextModule: "admin" }),
+  saveCompanyCollectionSettings: (body = {}) =>
+    apiClient.put("/food/admin/company-collection-settings", body ?? {}, { contextModule: "admin" }),
+  getUpiCollections: (params = {}) =>
+    apiClient.get("/food/admin/upi-collections", { params, contextModule: "admin" }),
+  reconcileUpiCollection: (orderId, body = {}) =>
+    apiClient.post(`/food/admin/upi-collections/${String(orderId)}/reconcile`, body ?? {}, { contextModule: "admin" }),
   /** Per rider and overall: pickup/transit/total times, late deliveries, utilisation. */
   getDeliveryPerformanceReport: (params = {}) =>
     apiClient.get("/food/admin/reports/delivery-performance", { params, contextModule: "admin" }),
@@ -2832,6 +2864,25 @@ export const deliveryAPI = {
     apiClient.post(`/food/delivery/orders/${String(orderId)}/collect/cash`, {}, {
       contextModule: "delivery",
     }),
+  /** Company UPI QR: "Customer paid by UPI". body: { utr? } */
+  confirmUpiPayment: (orderId, body = {}) =>
+    apiClient.post(`/food/delivery/orders/${String(orderId)}/collect/upi-confirm`, body ?? {}, {
+      contextModule: "delivery",
+    }),
+  /** Running late. body: { reason: traffic|rain|restaurant_delay|other, extraMinutes, note? } */
+  reportRunningLate: (orderId, body = {}) =>
+    apiClient.post(`/food/delivery/orders/${String(orderId)}/running-late`, body ?? {}, {
+      contextModule: "delivery",
+    }),
+  /** Change the rider could not give back. body: { amount, cashCollected, note? } */
+  recordChangeOwed: (orderId, body = {}) =>
+    apiClient.post(`/food/delivery/orders/${String(orderId)}/change-owed`, body ?? {}, {
+      contextModule: "delivery",
+    }),
+  getChangeOwed: (orderId) =>
+    apiClient.get(`/food/delivery/orders/${String(orderId)}/change-owed`, {
+      contextModule: "delivery",
+    }),
   completeDelivery: (orderId, body = {}) => {
 
     // Backward-compatible: older UI calls completeDelivery(orderId, rating, review)
@@ -3075,6 +3126,23 @@ export const userAPI = {
   /** PUT /food/user/cart (Bearer USER) */
   syncCart: (body) =>
     apiClient.put("/food/user/cart", body ?? {}, { contextModule: "user" }),
+  /** Multiple carts, one per restaurant (Bearer USER). */
+  /** GET /food/user/carts -> { carts, count, totalItems, latestRestaurantId } */
+  listCarts: () => apiClient.get("/food/user/carts", { contextModule: "user" }),
+  /** GET /food/user/carts/:restaurantId -> { cart | null } */
+  getRestaurantCart: (restaurantId) =>
+    apiClient.get(`/food/user/carts/${encodeURIComponent(restaurantId)}`, { contextModule: "user" }),
+  /** PUT /food/user/carts/:restaurantId { items, pricing } -> { cart | null }; empty items deletes it */
+  saveRestaurantCart: (restaurantId, body) =>
+    apiClient.put(`/food/user/carts/${encodeURIComponent(restaurantId)}`, body ?? {}, { contextModule: "user" }),
+  /** DELETE /food/user/carts/:restaurantId */
+  deleteRestaurantCart: (restaurantId) =>
+    apiClient.delete(`/food/user/carts/${encodeURIComponent(restaurantId)}`, { contextModule: "user" }),
+  /** DELETE /food/user/carts (every cart) */
+  clearAllCarts: () => apiClient.delete("/food/user/carts", { contextModule: "user" }),
+  /** GET /food/user/reorder: past delivered orders grouped by store, today's prices. Params: lat, lng, restaurantId, lang, limit. */
+  getReorder: (params = {}) =>
+    apiClient.get("/food/user/reorder", { params, contextModule: "user" }),
   /**
    * Legacy UI compatibility: update "current user location".
    * We already persist the user's selected location in localStorage in the UI.
@@ -3345,6 +3413,12 @@ export const orderAPI = {
     }),
   submitOrderRatings: (orderId, body = {}) =>
     apiClient.patch(`/food/orders/${String(orderId)}/ratings`, body ?? {}, { contextModule: "user" }),
+  /** The bill (JSON), the same one the app shows. */
+  getOrderInvoice: (orderId) =>
+    apiClient.get(`/food/orders/${String(orderId)}/invoice`, { contextModule: "user" }),
+  /** The printable bill page (HTML string). */
+  getOrderInvoiceHtml: (orderId) =>
+    apiClient.get(`/food/orders/${String(orderId)}/invoice.html`, { contextModule: "user", responseType: "text" }),
   /** Submit a complaint for an order (user). */
   submitComplaint: (payload) =>
     apiClient.post(

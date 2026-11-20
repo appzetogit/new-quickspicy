@@ -24,6 +24,7 @@ import {
   MapPin,
   Share2,
   Trash2,
+  RotateCcw,
 } from "lucide-react";
 
 import AnimatedPage from "@food/components/user/AnimatedPage";
@@ -756,6 +757,25 @@ export default function Profile() {
                       transition={{ duration: 0.2 }}>
                       <ChevronRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                     </motion.div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </Link>
+            <Link to="/food/user/reorder" className="block">
+              <motion.div
+                whileHover={{ x: 4, scale: 1.01 }}
+                transition={{ duration: 0.2, type: "spring", stiffness: 300 }}>
+                <Card className="bg-white dark:bg-[#1a1a1a] py-0 rounded-xl shadow-sm border-0 dark:border-gray-800 cursor-pointer">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-gray-100 dark:bg-gray-800 rounded-full p-2">
+                        <RotateCcw className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+                      </div>
+                      <span className="text-base font-medium text-gray-900 dark:text-white">
+                        Order again
+                      </span>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                   </CardContent>
                 </Card>
               </motion.div>

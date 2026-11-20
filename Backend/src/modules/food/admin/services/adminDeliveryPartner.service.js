@@ -4,6 +4,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { NotFoundError, ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
 import { resolveCohortId } from './adminRiderCohort.service.js';
+import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
 
 /**
  * The admin delivery-partner list and its money summary, extracted from
@@ -94,6 +95,11 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
             stats.cashCollected = Math.max(0,
                 num(row._sum.total) - num(row._sum.walletAmount) - num(row._sum.onlineAmount));
         }
+    }
+    // Change kept for customers (approved change-to-wallet) is cash held too.
+    for (const [id, amount] of await approvedChangeByRider(ids)) {
+        const stats = at(id);
+        if (stats) stats.cashCollected += amount;
     }
     for (const row of deposits) {
         const stats = at(row.deliveryPartnerId);

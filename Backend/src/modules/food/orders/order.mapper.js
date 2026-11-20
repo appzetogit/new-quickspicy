@@ -1,3 +1,5 @@
+import { buildDelayView } from './services/orderDelay.view.js';
+
 /**
  * Translates between the flat `food_orders` row and the nested order shape the
  * rest of the codebase and every client already speak.
@@ -221,7 +223,9 @@ export function toOrder(row) {
         riderPayWaived: money(row.riderPayWaived),
         platformProfit: money(row.platformProfit),
         priceMarkupAmount: money(row.priceMarkupAmount),
-        tripDistanceKm: num(row.tripDistanceKm)
+        tripDistanceKm: num(row.tripDistanceKm),
+        // Running late: null unless the rider, an admin or the watchdog reported it.
+        delay: buildDelayView(row)
     };
 }
 
@@ -316,7 +320,7 @@ export function fromOrder(input = {}) {
         'items', 'statusHistory', 'itemRatings', 'dispatchOffers',
         'restaurant', 'user', 'deliveryPartner', 'zone', 'foodTransaction',
         'payments', 'refunds', 'transactions', 'chatMessages',
-        '_id', 'id', 'orderId',
+        '_id', 'id', 'orderId', 'delay',
     ]);
 
     for (const [key, value] of Object.entries(input)) {

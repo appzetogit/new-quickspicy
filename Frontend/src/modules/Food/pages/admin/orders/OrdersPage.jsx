@@ -658,6 +658,12 @@ export default function OrdersPage({ statusKey = "all" }) {
         else if (paymentMethod) paymentType = "Online"
         else paymentType = "N/A"
       }
+      // COD paid by UPI to the company account: confirmed only by the rider
+      // until finance reconciles it (Change to wallet & UPI page).
+      const upiQr = order.payment?.qr || order.qr
+      if (upiQr?.provider === "company_upi") {
+        paymentType = upiQr.needsReconciliation ? "Company UPI (verify)" : "Company UPI"
+      }
 
       const backendStatus = String(order.orderStatus || "").toLowerCase()
 

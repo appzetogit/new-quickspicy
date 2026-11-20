@@ -13,6 +13,7 @@ import {
   isRazorpayConfigured,
 } from '../helpers/razorpay.helper.js';
 import * as foodTransactionService from './foodTransaction.service.js';
+import { companyUpiForCollection, companyUpiQr, recordUpiCollectionStarted } from './companyCollection.service.js';
 import {
   buildOrderIdentityFilter,
   enqueueOrderEvent,
@@ -123,6 +124,13 @@ export async function createCollectQr(orderId, deliveryPartnerId, customerInfo =
 
   const amountDue = payment.amountDue ?? tx?.pricing?.total ?? order.pricing?.total ?? 0;
   if (amountDue < 1) throw new ValidationError('No amount due');
+
+  // No gateway, or the admin chose it: a UPI QR for the company's own account
+  // (companyCollection.service.js). Confirmed by the rider, reconciled by finance.
+  const companyUpi = await companyUpiForCollection();
+  if (companyUpi) {
+    return startCompanyUpiCollect({ row, order, tx, deliveryPartnerId, amountDue, companyUpi });
+  }
   if (!isRazorpayConfigured()) {
     throw new ValidationError('QR payment not configured');
   }
@@ -221,6 +229,95 @@ export async function createCollectQr(orderId, deliveryPartnerId, customerInfo =
       : link?.expiresAt
         ? new Date(link.expiresAt)
         : null,
+  };
+}
+
+/**
+ * The company-UPI half of createCollectQr: the order moves to razorpay_qr /
+ * pending_qr like a gateway QR (so cash-in-hand and completion treat it the
+ * same), but its qr carries provider 'company_upi' and a upi:// link, and it
+ * is settled by confirmCompanyUpiPayment rather than by a gateway sync.
+ */
+async function startCompanyUpiCollect({ row, order, tx, deliveryPartnerId, amountDue, companyUpi }) {
+  const qr = companyUpiQr({
+    upiId: companyUpi.upiId,
+    payeeName: companyUpi.payeeName,
+    amount: amountDue,
+    orderDisplayId: order.order_id || order.orderId,
+    orderId: order.id,
+  });
+
+  if (tx) {
+    await prisma.foodTransaction.update({
+      where: { orderId: order.id },
+      data: { paymentMethod: 'razorpay_qr', paymentStatusLabel: 'pending_qr', amountDue, qr },
+    });
+  } else {
+    await prisma.foodTransaction.create({
+      data: {
+        orderId: order.id,
+        userId: row.userId,
+        restaurantId: row.restaurantId,
+        deliveryPartnerId: String(deliveryPartnerId),
+        paymentMethod: 'razorpay_qr',
+        paymentStatusLabel: 'pending_qr',
+        amountDue,
+        qr,
+        currency: 'INR',
+        status: 'pending',
+        subtotal: order.pricing?.subtotal || 0,
+        tax: order.pricing?.tax || 0,
+        packagingFee: order.pricing?.packagingFee || 0,
+        deliveryFee: order.pricing?.deliveryFee || 0,
+        deliveryFeeGst: order.pricing?.deliveryFeeGst || 0,
+        platformFee: order.pricing?.platformFee || 0,
+        restaurantCommission: order.pricing?.restaurantCommission || 0,
+        discount: order.pricing?.discount || 0,
+        couponCode: order.pricing?.couponCode ? String(order.pricing.couponCode).trim().toUpperCase() : null,
+        total: order.pricing?.total || 0,
+        totalCustomerPaid: order.pricing?.total || 0,
+        restaurantShare: 0,
+        riderShare: 0,
+        commissionAmount: 0,
+        platformNetProfit: 0,
+        history: { create: [{ kind: 'created', amount: amountDue, note: 'Transaction auto-created at company UPI QR' }] },
+      },
+    });
+  }
+
+  await prisma.foodOrder.update({
+    where: { id: row.id },
+    data: { paymentMethod: 'razorpay_qr', paymentStatus: 'pending_qr', qr },
+  });
+  await recordUpiCollectionStarted({
+    orderId: order.id, deliveryPartnerId: String(deliveryPartnerId), amount: amountDue, upiId: companyUpi.upiId,
+  });
+
+  await foodTransactionService.updateTransactionStatus(order.id, 'cod_collect_company_upi_created', {
+    recordedByRole: 'DELIVERY_PARTNER',
+    recordedById: deliveryPartnerId,
+    note: 'COD collection by company UPI QR; awaiting rider confirmation',
+  });
+  enqueueOrderEvent('collect_qr_created', {
+    orderMongoId: order.id,
+    orderId: order.order_id || null,
+    deliveryPartnerId,
+    provider: 'company_upi',
+    amountDue,
+  });
+
+  return {
+    provider: 'company_upi',
+    // The rider app draws a QR from shortUrl, so the UPI link goes there too.
+    shortUrl: qr.upiUri,
+    upiUri: qr.upiUri,
+    imageUrl: null,
+    upiId: qr.upiId,
+    payeeName: qr.payeeName,
+    amount: amountDue,
+    expiresAt: null,
+    awaitingManualConfirmation: true,
+    confirmEndpoint: `/food/delivery/orders/${order.id}/collect/upi-confirm`,
   };
 }
 
@@ -342,6 +439,11 @@ export async function switchToCash(orderId, deliveryPartnerId) {
     recordedById: deliveryPartnerId,
     note: 'Rider switched from QR to Cash collection',
   });
+
+  // A company-UPI QR that was shown but not paid is no longer expected.
+  await prisma.foodUpiCollection
+    .updateMany({ where: { orderId: order.id, status: 'awaiting_payment' }, data: { status: 'abandoned' } })
+    .catch((e) => logger.warn(`UPI collection abandon failed for ${order.id}: ${e?.message || e}`));
 
   return { success: true };
 }

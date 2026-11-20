@@ -8,8 +8,7 @@ import {
 import { Card, CardContent } from "@food/components/ui/card"
 import { Button } from "@food/components/ui/button"
 import { Input } from "@food/components/ui/input"
-import { useLocation as useGeoLocation } from "@food/hooks/useLocation"
-import { useZone } from "@food/hooks/useZone"
+import { useDeliveryLocation } from "@food/context/DeliveryLocationContext"
 import { adminAPI, searchAPI } from "@/services/api"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -41,9 +40,9 @@ export default function ProfessionalSearch() {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialQuery = searchParams.get("q") || ""
   const navigate = useNavigate()
-  const { location: userCoords } = useGeoLocation()
-  const { zoneId, zoneStatus } = useZone(userCoords)
-  
+  // The delivery location the rest of the app uses (saved address or live).
+  const { effectiveLocation: userCoords, zoneId, zoneStatus } = useDeliveryLocation()
+
   const [query, setQuery] = useState(initialQuery)
   const debouncedQuery = useDebounce(query, 500)
   
@@ -53,6 +52,9 @@ export default function ProfessionalSearch() {
   const [categories, setCategories] = useState([])
   const [selectedCategoryId, setSelectedCategoryId] = useState(searchParams.get("cat") || null)
   const [history, setHistory] = useState([])
+  // "Biryani — See all restaurants" and dish varieties (GET /food/search/suggest).
+  const [suggestion, setSuggestion] = useState({ seeAll: null, varieties: [] })
+  const navigatingRef = useRef(false)
 
   // Load search history
   useEffect(() => {
@@ -96,10 +98,69 @@ export default function ProfessionalSearch() {
     }
   }, [zoneId, zoneStatus])
 
+  // Saved on submit or tap only, never per keystroke; a repeat moves to the top.
   const addToHistory = (term) => {
-    const newHistory = [term, ...history.filter(h => h !== term)].slice(0, 5)
-    setHistory(newHistory)
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory))
+    const value = String(term || "").trim()
+    if (!value) return
+    setHistory((prev) => {
+      const next = [value, ...prev.filter((h) => String(h).toLowerCase() !== value.toLowerCase())].slice(0, 5)
+      try {
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next))
+      } catch {
+        // Storage blocked: the search still runs.
+      }
+      return next
+    })
+  }
+
+  useEffect(() => {
+    const q = String(debouncedQuery || "").trim()
+    if (q.length < 3) {
+      setSuggestion({ seeAll: null, varieties: [] })
+      return
+    }
+    const controller = new AbortController()
+    searchAPI
+      .suggest(
+        {
+          q,
+          ...(Number.isFinite(Number(userCoords?.latitude)) && Number.isFinite(Number(userCoords?.longitude))
+            ? { lat: userCoords.latitude, lng: userCoords.longitude }
+            : {}),
+        },
+        { signal: controller.signal },
+      )
+      .then((res) => {
+        const data = res?.data?.data || {}
+        setSuggestion({
+          seeAll: data.seeAll || null,
+          varieties: Array.isArray(data.varieties) ? data.varieties : [],
+        })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSuggestion({ seeAll: null, varieties: [] })
+      })
+    return () => controller.abort()
+  }, [debouncedQuery, userCoords?.latitude, userCoords?.longitude])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    addToHistory(query)
+  }
+
+  const openSeeAll = () => {
+    const q = suggestion.seeAll?.query || String(query).trim()
+    if (!q || navigatingRef.current) return
+    navigatingRef.current = true
+    addToHistory(q)
+    navigate(`/user/search/restaurants?q=${encodeURIComponent(q)}`)
+  }
+
+  const selectVariety = (variety) => {
+    const name = variety?.nameEn || variety?.name
+    if (!name || String(query).trim().toLowerCase() === name.toLowerCase()) return
+    addToHistory(name)
+    setQuery(name)
   }
 
   const performSearch = useCallback(async (searchTerm, catId) => {
@@ -195,27 +256,29 @@ export default function ProfessionalSearch() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           
-          <div className="flex-1 relative">
+          <form onSubmit={handleSubmit} className="flex-1 relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
-            <Input 
+            <Input
               autoFocus
-              placeholder="Search for restaurants or dishes..." 
+              placeholder="Search for restaurants or dishes..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-12 pr-12 h-12 w-full bg-slate-100 dark:bg-zinc-800 border-none focus:ring-2 focus:ring-rose-500 rounded-full text-base"
+              enterKeyHint="search"
+              className="pl-12 pr-12 h-12 w-full bg-slate-100 dark:bg-zinc-800 border-none focus:ring-2 focus:ring-brand-500 rounded-full text-base"
             />
             {query && (
-              <button onClick={handleClear} className="absolute right-12 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600">
+              <button type="button" onClick={handleClear} className="absolute right-12 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600">
                 <X className="w-4 h-4" />
               </button>
             )}
-            <button 
+            <button
+              type="button"
               onClick={handleVoiceSearch}
-              className={`absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
+              className={`absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all ${isListening ? 'bg-brand-500 text-white animate-pulse' : 'text-gray-400 hover:text-brand-500 hover:bg-brand-50'}`}
             >
               <Mic className="w-5 h-5" />
             </button>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -231,7 +294,7 @@ export default function ProfessionalSearch() {
                   onClick={() => handleCategoryClick(cat._id)}
                   className={`flex w-16 min-w-16 flex-shrink-0 snap-start flex-col items-center group transition-all ${selectedCategoryId === cat._id ? 'scale-110' : ''}`}
                 >
-                  <div className={`w-14 h-14 rounded-2xl mb-2 flex items-center justify-center overflow-hidden border-2 transition-all ${selectedCategoryId === cat._id ? 'border-rose-500 shadow-lg shadow-rose-100' : 'border-transparent bg-white dark:bg-zinc-900'}`}>
+                  <div className={`w-14 h-14 rounded-2xl mb-2 flex items-center justify-center overflow-hidden border-2 transition-all ${selectedCategoryId === cat._id ? 'border-brand-500 shadow-lg shadow-brand-100' : 'border-transparent bg-white dark:bg-zinc-900'}`}>
                     {cat.image ? (
                       <img 
                         src={getMediaUrl(cat.image)} 
@@ -242,7 +305,7 @@ export default function ProfessionalSearch() {
                       <Utensils className="w-6 h-6 text-slate-300" />
                     )}
                   </div>
-                  <span className={`text-[11px] font-medium text-center line-clamp-1 ${selectedCategoryId === cat._id ? 'text-rose-600' : 'text-slate-600 dark:text-slate-400'}`}>
+                  <span className={`text-[11px] font-medium text-center line-clamp-1 ${selectedCategoryId === cat._id ? 'text-brand-600' : 'text-slate-600 dark:text-slate-400'}`}>
                     {cat.name}
                   </span>
                 </button>
@@ -258,7 +321,7 @@ export default function ProfessionalSearch() {
                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                className="flex flex-col items-center justify-center py-20"
             >
-              <Loader2 className="w-8 h-8 text-rose-500 animate-spin mb-3" />
+              <Loader2 className="w-8 h-8 text-brand-500 animate-spin mb-3" />
               <p className="text-slate-400 text-sm">Finding the best for you...</p>
             </motion.div>
           )}
@@ -286,12 +349,55 @@ export default function ProfessionalSearch() {
         {/* Search Results */}
         {!loading && (query || selectedCategoryId) && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            
+
+            {/* "Biryani — See all restaurants" and its varieties */}
+            {query && (suggestion.seeAll || suggestion.varieties.length > 0) && (
+              <section className="space-y-3">
+                {suggestion.seeAll && (
+                  <button
+                    type="button"
+                    onClick={openSeeAll}
+                    className="w-full flex items-center gap-3 rounded-2xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-4 py-3 text-left hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors"
+                  >
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-brand-500 text-white">
+                      <Store className="h-5 w-5" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-bold text-slate-900 dark:text-white truncate">
+                        {suggestion.seeAll.query} <span className="font-semibold text-brand-600">— See all restaurants</span>
+                      </span>
+                      <span className="block text-xs text-slate-500 dark:text-zinc-400">
+                        {suggestion.seeAll.restaurantCount} {suggestion.seeAll.restaurantCount === 1 ? "restaurant" : "restaurants"} near you
+                      </span>
+                    </span>
+                  </button>
+                )}
+                {suggestion.varieties.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {suggestion.varieties.map((v) => {
+                      const active = String(query).trim().toLowerCase() === String(v.nameEn || v.name).toLowerCase()
+                      return (
+                        <button
+                          key={v.nameEn || v.name}
+                          type="button"
+                          onClick={() => selectVariety(v)}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-full border text-sm transition-colors ${active ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-900/20" : "border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:border-brand-300"}`}
+                        >
+                          {v.name}
+                          <span className="ml-1 text-xs text-slate-400">({v.restaurantCount})</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* Dish Results Section */}
             {results.dishes.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
-                   <div className="w-1 h-5 bg-orange-500 rounded-full" />
+                   <div className="w-1 h-5 bg-brand-500 rounded-full" />
                    <h2 className="text-lg font-bold dark:text-white">Dishes from restaurants</h2>
                 </div>
                 <div className="grid gap-4">
@@ -310,13 +416,13 @@ export default function ProfessionalSearch() {
                           )}
                        </div>
                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                          <div className="text-rose-500 text-[10px] font-bold uppercase tracking-wider mb-1">
+                          <div className="text-brand-500 text-[10px] font-bold uppercase tracking-wider mb-1">
                              Matched: {r.matchedDish || query}
                           </div>
                           <h3 className="font-bold text-slate-900 dark:text-white line-clamp-1">{r.restaurantName}</h3>
                           <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-zinc-400 mt-1">
                              <div className="flex items-center gap-1">
-                                <Star className="w-3 h-3 text-orange-500 fill-orange-500" />
+                                <Star className="w-3 h-3 text-brand-500 fill-brand-500" />
                                 <span className="font-semibold text-slate-700 dark:text-white">{r.rating || "New"}</span>
                              </div>
                              <span>•</span>
@@ -335,7 +441,7 @@ export default function ProfessionalSearch() {
             {results.restaurants.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
-                   <div className="w-1 h-5 bg-rose-500 rounded-full" />
+                   <div className="w-1 h-5 bg-brand-500 rounded-full" />
                    <h2 className="text-lg font-bold dark:text-white">Restaurants</h2>
                 </div>
                 <div className="grid gap-6">
@@ -374,7 +480,7 @@ export default function ProfessionalSearch() {
                             <span>•</span>
                             <span>{r.location?.area || "Nearby"}</span>
                          </div>
-                         <div className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                         <div className="text-[10px] font-bold text-brand-500 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
                             Top Pick
                          </div>
                       </div>
@@ -392,7 +498,7 @@ export default function ProfessionalSearch() {
                  </div>
                  <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">We couldn't find any results</h2>
                  <p className="text-slate-500 text-sm max-w-xs">Maybe try searching for something else or check your spelling</p>
-                 <Button variant="outline" onClick={handleClear} className="mt-6 rounded-xl border-rose-500 text-rose-500 hover:bg-rose-50">
+                 <Button variant="outline" onClick={handleClear} className="mt-6 rounded-xl border-brand-500 text-brand-500 hover:bg-brand-50">
                     Clear all filters
                  </Button>
               </div>
@@ -406,11 +512,11 @@ export default function ProfessionalSearch() {
         <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-white/95 dark:bg-[#0a0a0a]/95 backdrop-blur-md">
           <div className="relative flex items-center justify-center">
             {/* Animated Ripples */}
-            <div className="absolute w-40 h-40 bg-rose-500/20 rounded-full animate-ping" />
-            <div className="absolute w-32 h-32 bg-rose-500/30 rounded-full animate-pulse" />
+            <div className="absolute w-40 h-40 bg-brand-500/20 rounded-full animate-ping" />
+            <div className="absolute w-32 h-32 bg-brand-500/30 rounded-full animate-pulse" />
             
             {/* Mic Icon Container */}
-            <div className="relative bg-gradient-to-tr from-rose-600 to-rose-400 p-8 rounded-full text-white shadow-[0_0_40px_rgba(225,29,72,0.4)] border-4 border-white dark:border-zinc-800">
+            <div className="relative bg-gradient-to-tr from-brand-500 to-brand-400 p-8 rounded-full text-white shadow-[0_0_40px_rgba(235,89,14,0.4)] border-4 border-white dark:border-zinc-800">
               <Mic className="h-12 w-12" />
             </div>
 
@@ -419,7 +525,7 @@ export default function ProfessionalSearch() {
               {[1, 2, 3, 4, 5, 6, 7].map((i) => (
                 <div 
                   key={i}
-                  className="w-1.5 bg-rose-500 rounded-full animate-voice-bar"
+                  className="w-1.5 bg-brand-500 rounded-full animate-voice-bar"
                   style={{ 
                     animationDelay: `${i * 0.1}s`,
                     height: `${20 + Math.random() * 80}%`
@@ -437,7 +543,7 @@ export default function ProfessionalSearch() {
           <Button
             variant="ghost"
             onClick={() => setIsListening(false)}
-            className="mt-16 text-gray-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 rounded-full px-8"
+            className="mt-16 text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 rounded-full px-8"
           >
             Cancel
           </Button>

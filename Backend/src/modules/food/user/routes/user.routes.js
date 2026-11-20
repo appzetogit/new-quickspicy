@@ -32,9 +32,21 @@ import {
     createSupportTicketController,
     listMySupportTicketsController
 } from '../controllers/supportTicket.controller.js';
-import { syncUserCartController } from '../controllers/userCart.controller.js';
+import {
+    syncUserCartController,
+    getLatestUserCartController,
+    listUserCartsController,
+    clearUserCartsController,
+    getUserCartController,
+    replaceUserCartController,
+    deleteUserCartController,
+    addUserCartItemController,
+    updateUserCartItemController,
+    removeUserCartItemController,
+} from '../controllers/userCart.controller.js';
 import {
     orderAgainController,
+    reorderController,
     shareCartController,
     previewSharedCartController,
     importSharedCartController,
@@ -95,12 +107,26 @@ router.delete('/favorites/restaurants/:restaurantId', removeFavoriteRestaurantCo
 router.post('/favorites/foods/:foodId', addFavoriteFoodController);
 router.delete('/favorites/foods/:foodId', removeFavoriteFoodController);
 
+// Single-cart endpoints, kept for app builds from before multiple carts: they
+// act on the given restaurant's cart, else the most recently changed one.
+router.get('/cart', getLatestUserCartController);
 router.put('/cart', syncUserCartController);
+// Multiple carts: one per restaurant.
+router.get('/carts', listUserCartsController);
+router.delete('/carts', clearUserCartsController);
+router.get('/carts/:restaurantId', getUserCartController);
+router.put('/carts/:restaurantId', replaceUserCartController);
+router.delete('/carts/:restaurantId', deleteUserCartController);
+router.post('/carts/:restaurantId/items', addUserCartItemController);
+router.patch('/carts/:restaurantId/items/:itemId', updateUserCartItemController);
+router.delete('/carts/:restaurantId/items/:itemId', removeUserCartItemController);
 // Share cart: make a link, open one, copy it into your own cart.
 router.post('/cart/share', shareCartController);
 router.get('/cart/shared/:token', previewSharedCartController);
 router.post('/cart/shared/:token/import', importSharedCartController);
 // Dishes and restaurants from past delivered orders that can still be ordered.
 router.get('/order-again', orderAgainController);
+// Reorder screen: past delivered orders grouped by store, today's prices and availability.
+router.get('/reorder', reorderController);
 
 export default router;
