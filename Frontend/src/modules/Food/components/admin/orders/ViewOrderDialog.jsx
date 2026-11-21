@@ -18,6 +18,7 @@ import { RiderPicker } from "@food/pages/admin/dispatch/AssignRider"
 import RefundModal, { refundPicture } from "./RefundModal"
 import OrderLiveTrackingMap from "./OrderLiveTrackingMap"
 import AdminRunningLate from "./AdminRunningLate"
+import { foodTypeOf } from "@food/utils/foodType"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -475,11 +476,14 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                           {qty}x
                         </span>
                         <p className="text-sm font-medium text-slate-900">{item.name || "Unknown Item"}</p>
-                        {item.isVeg !== undefined && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${item.isVeg ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {item.isVeg ? 'Veg' : 'Non-Veg'}
-                          </span>
-                        )}
+                        {(item.foodType || item.isVeg !== undefined) && (() => {
+                          const diet = foodTypeOf(item)
+                          return (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${diet === 'Veg' ? 'bg-green-100 text-green-700' : diet === 'Egg' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {diet}
+                            </span>
+                          )
+                        })()}
                       </div>
                       {item.description && (
                         <p className="text-xs text-slate-500 mt-1 ml-8">{item.description}</p>

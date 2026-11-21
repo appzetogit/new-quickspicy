@@ -123,6 +123,7 @@ import exploreOffers from "@food/assets/explore more icons/offers.png";
 import exploreGourmet from "@food/assets/explore more icons/gourmet.png";
 import exploreTop10 from "@food/assets/explore more icons/top 10.png";
 import exploreCollection from "@food/assets/explore more icons/collection.png";
+import RestaurantTagPills from "@food/components/user/RestaurantTagPills";
 
 // Banner images for hero carousel - will be fetched from API
 
@@ -671,6 +672,7 @@ const RestaurantCard = React.memo(({
                             </span>
                           </div>
                         )}
+                      <RestaurantTagPills restaurant={restaurant} />
                     </div>
                   </div>
                   <div
@@ -2079,6 +2081,9 @@ export default function Home() {
                 openingTime: restaurant.openingTime || restaurant?.deliveryTimings?.openingTime || null,
                 closingTime: restaurant.closingTime || restaurant?.deliveryTimings?.closingTime || null,
                 recommendedItems: Array.isArray(restaurant.recommendedItems) ? restaurant.recommendedItems : [],
+                // Card tags (Bestseller, Popular, ...): every one, plus the old single tag.
+                highlightBadgesInfo: Array.isArray(restaurant.highlightBadgesInfo) ? restaurant.highlightBadgesInfo : [],
+                highlightBadgeInfo: restaurant.highlightBadgeInfo || null,
               };
             },
           );

@@ -51,6 +51,24 @@ Same as the user app. For a rider, `/me` also carries `payType`: `"gig"` (paid p
 
 `/me` also returns `data.serviceStatus` (next to `data.user`): `{ paused, servicePaused, message, resumeAt, scope }`. When `servicePaused` is true the admin has paused ordering in the rider's home zone (or everywhere), so few or no new offers will come; show a banner with `message` and `resumeAt` (ISO, may be null). Orders already placed carry on.
 
+A rider also serves their cohort's zones, so `serviceStatus` adds `partial`, `pausedZones` and `zones`:
+
+```json
+{ "paused": false, "servicePaused": false, "message": "", "resumeAt": null, "scope": null,
+  "partial": true, "pausedZones": ["<zoneId B>"],
+  "zones": [
+    { "zoneId": "<zoneId A>", "name": "Kukatpally", "home": true,  "paused": false, "message": "", "resumeAt": null },
+    { "zoneId": "<zoneId B>", "name": "Miyapur",    "home": false, "paused": true,  "message": "Heavy rain", "resumeAt": "2026-11-21T14:30:00.000Z" }
+  ] }
+```
+
+- `paused` / `servicePaused` / `message` / `resumeAt` / `scope` are about the **home zone**, as before. (A rider with no home zone counts as paused only when every cohort zone is paused.)
+- `zones`: every zone the rider serves (home zone first, then the active cohort's zones), each with its own pause state.
+- `partial: true`: some, but not all, of those zones are paused. Offers still come from the others. Show a lighter banner such as "Orders are paused in Miyapur. You still get orders from Kukatpally." When `paused` is true and `partial` is true, show the paused banner and list the zones still open.
+- `pausedZones`: ids of the paused zones. Empty when nothing is paused.
+
+Order payloads the rider sees (`items[]`) carry `foodType` (`"Veg"` | `"Egg"` | `"Non-Veg"`) next to `isVeg`; use `foodType` for the diet mark (Egg dishes have `isVeg: false`).
+
 ---
 
 ## 2. Registration & profile

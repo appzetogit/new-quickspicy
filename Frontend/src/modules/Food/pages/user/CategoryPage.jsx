@@ -21,6 +21,7 @@ import { useProfile } from "@food/context/ProfileContext"
 import { useDeliveryLocation } from "@food/context/DeliveryLocationContext"
 import { useDelayedLoading } from "@food/hooks/useDelayedLoading"
 import { getRestaurantAvailabilityStatus } from "@food/utils/restaurantAvailability"
+import RestaurantTagPills from "@food/components/user/RestaurantTagPills"
 
 // Filter options
 const filterOptions = [
@@ -656,6 +657,8 @@ export default function CategoryPage() {
                 closingTime: restaurant.closingTime,
                 // Zone info for strict frontend filtering
                 zoneId: restaurant.zoneId || restaurant.zone?._id || restaurant.zone || null,
+                highlightBadgesInfo: Array.isArray(restaurant.highlightBadgesInfo) ? restaurant.highlightBadgesInfo : [],
+                highlightBadgeInfo: restaurant.highlightBadgeInfo || null,
               }
             })
 
@@ -1277,6 +1280,7 @@ export default function CategoryPage() {
                                 {restaurant.name}
                               </p>
                             )}
+                            <RestaurantTagPills restaurant={restaurant} className="mt-1.5" />
                           </div>
                           <div
                             className="flex-shrink-0 text-white px-2 md:px-3 lg:px-4 py-1 lg:py-1.5 rounded-lg flex items-center gap-1"

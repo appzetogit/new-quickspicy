@@ -10,7 +10,7 @@ import RestaurantVideos from "@food/components/admin/restaurant/RestaurantVideos
 import RestaurantOpeningHours from "@food/components/admin/restaurant/RestaurantOpeningHours"
 import RestaurantBusinessEditor from "@food/components/admin/restaurant/RestaurantBusinessEditor"
 import CuisinePicker from "@food/components/admin/restaurant/CuisinePicker"
-import { HighlightBadgeSelect } from "@food/components/admin/restaurant/HighlightBadges"
+import { HighlightBadgeMultiSelect } from "@food/components/admin/restaurant/HighlightBadges"
 import LocationPinMap from "@food/components/admin/restaurant/LocationPinMap"
 import { PlaceAutocomplete } from "@food/utils/placesNew"
 
@@ -114,7 +114,12 @@ const normalizeDetailsFormFromRestaurant = (restaurant) => {
     offer: restaurant?.offer || "",
     aadhaarNumber: restaurant?.aadhaarNumber || "",
     aadhaarImage: imageUrlOf(restaurant?.aadhaarImage) || "",
-    highlightBadge: restaurant?.highlightBadge || "",
+    // Every tag, in order; rows saved before the list existed have only the one.
+    highlightBadges: Array.isArray(restaurant?.highlightBadges) && restaurant.highlightBadges.length
+      ? restaurant.highlightBadges.filter(Boolean)
+      : restaurant?.highlightBadge ? [restaurant.highlightBadge] : [],
+    packagingCharge:
+      restaurant?.packagingCharge == null || Number(restaurant.packagingCharge) === 0 ? "" : String(Number(restaurant.packagingCharge)),
     freeDeliveryAbove:
       restaurant?.freeDeliveryAbove == null ? "" : String(restaurant.freeDeliveryAbove),
     deliveryRadiusKm:
@@ -372,7 +377,9 @@ export default function EditRestaurant() {
             ? undefined
             : Number(detailsForm.estimatedDeliveryTimeMinutes),
         offer: detailsForm.offer,
-        highlightBadge: detailsForm.highlightBadge,
+        highlightBadges: detailsForm.highlightBadges,
+        // Blank = no packing charge.
+        packagingCharge: detailsForm.packagingCharge === "" ? 0 : Number(detailsForm.packagingCharge),
         // No opening/closing time here: hours are set day by day in Opening
         // Hours below. This form used to send the old pair on every save,
         // which reset every day's hours to it.
@@ -671,10 +678,25 @@ export default function EditRestaurant() {
                   <Input value={detailsForm.offer} onChange={(e) => setDetailsForm((p) => ({ ...p, offer: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Highlight Badge</Label>
-                  <HighlightBadgeSelect
-                    value={detailsForm.highlightBadge}
-                    onChange={(key) => setDetailsForm((p) => ({ ...p, highlightBadge: key }))}
+                  <Label>Packing charge per order (₹)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="500"
+                    step="0.01"
+                    placeholder="0"
+                    value={detailsForm.packagingCharge}
+                    onChange={(e) => setDetailsForm((p) => ({ ...p, packagingCharge: e.target.value }))}
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Added once to every order&apos;s bill and paid to the restaurant. Blank or 0 = no packing charge.
+                  </p>
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Highlight Tags</Label>
+                  <HighlightBadgeMultiSelect
+                    value={detailsForm.highlightBadges}
+                    onChange={(keys) => setDetailsForm((p) => ({ ...p, highlightBadges: keys }))}
                   />
                   <p className="mt-1 text-xs text-slate-500">
                     Shown on the restaurant's card in the app. Manage all tags in Restaurant Settings.

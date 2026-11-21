@@ -20,6 +20,7 @@ import { toast } from "sonner"
 import { getCompanyNameAsync } from "@food/utils/businessSettings"
 import { getCartCompareItemTotal, getLineCompareUnitPrice } from "@food/utils/foodVariants"
 import { DualMoney } from "@food/components/user/FoodPriceDisplay"
+import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -513,15 +514,7 @@ export default function UserOrderDetails() {
             return (
             <div key={idx} className="flex justify-between items-start mt-2 gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <div
-                  className={`w-3 h-3 border shrink-0 ${item.isVeg ? "border-green-600" : "border-red-600"
-                    } flex items-center justify-center p-[1px]`}
-                >
-                  <div
-                    className={`w-full h-full rounded-full ${item.isVeg ? "bg-green-600" : "bg-red-600"
-                      }`}
-                  />
-                </div>
+                <FoodTypeIcon type={item.foodType} isVeg={item.isVeg} size={12} />
                 <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">
                   {qty} x {item.name}{item.variantName ? ` (${item.variantName})` : ""}
                 </span>

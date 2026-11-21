@@ -282,7 +282,8 @@ test('delivery radius: blank follows the platform, otherwise 0 < km <= 50 (admin
     assert.throws(() => toDeliveryRadiusKm('abc'), /above 0/);
     assert.throws(() => toDeliveryRadiusKm(50.1), /more than 50 km/);
 
-    const signup = { restaurantName: 'R', ownerName: 'O', pureVegRestaurant: 'false' };
+    // Sign-up needs the map pin now (see restaurantTagsPacking.test.js).
+    const signup = { restaurantName: 'R', ownerName: 'O', pureVegRestaurant: 'false', latitude: '22.7196', longitude: '75.8577' };
     assert.equal(validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '' }).deliveryRadiusKm, null);
     assert.equal(validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '6' }).deliveryRadiusKm, 6);
     assert.throws(() => validateRestaurantRegisterDto({ ...signup, deliveryRadiusKm: '500' }), /50 km/);

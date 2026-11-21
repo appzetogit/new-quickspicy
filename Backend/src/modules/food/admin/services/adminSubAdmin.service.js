@@ -4,6 +4,7 @@ import { ValidationError } from '../../../../core/auth/errors.js';
 import { hashAdminPassword } from '../../../../core/auth/adminPassword.util.js';
 import {
     ADMIN_FULL_PERMISSIONS,
+    ADMIN_SUBMENU_CATALOG,
     isValidPermissionPayload,
     sanitizeAdminPermissions,
 } from '../../../../constants/permissions.js';
@@ -201,9 +202,13 @@ export async function deleteSubAdmin(id, actorId) {
 export function getAdminPermissionCatalog() {
     return {
         actions: ['view', 'create', 'edit', 'delete', 'export'],
+        // Each section's submenus ({key, label, path}) come from the one
+        // catalogue in constants/adminPermissionCatalog.js; the role editor
+        // lists them under the section row.
         sections: Object.keys(ADMIN_FULL_PERMISSIONS).map((section) => ({
             key: section,
             actions: ADMIN_FULL_PERMISSIONS[section],
+            submenus: (ADMIN_SUBMENU_CATALOG[section] || []).map(({ key, label, path }) => ({ key, label, path })),
         })),
     };
 }

@@ -119,6 +119,24 @@ test('an unknown section or action is rejected, not quietly dropped', async () =
     assert.deepEqual(untouched.permissions, {}, 'a rejected payload changes nothing');
 });
 
+test('submenu overrides are stored, stripped of unknown keys, and read back', async () => {
+    const admin = await makeSubAdmin();
+
+    const updated = await updateSubAdminPermissions(admin.id, {
+        report_management: ['view'],
+        submenus: { report_management: { 'order-report.eod': [], 'not-a-page': ['view'] } },
+    });
+    assert.deepEqual(updated.permissions.report_management, ['view']);
+    assert.deepEqual(updated.permissions.submenus, { report_management: { 'order-report.eod': [] } });
+
+    const reread = await getSubAdminById(admin.id);
+    assert.deepEqual(reread.permissions.submenus, { report_management: { 'order-report.eod': [] } });
+
+    // Saving section-only permissions again drops the overrides entirely.
+    const cleared = await updateSubAdminPermissions(admin.id, { report_management: ['view'] });
+    assert.equal('submenus' in cleared.permissions, false);
+});
+
 test('an invalid permissions payload is refused outright', async () => {
     const admin = await makeSubAdmin();
     await assert.rejects(

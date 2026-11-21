@@ -25,7 +25,8 @@ import {
 } from '../../shared/geo.utils.js';
 import { getRestaurantSubscriptionSettings } from '../../admin/services/admin.service.js';
 import { GST_RATE } from './subscriptionPlan.service.js';
-import { badgeInfo, loadHighlightBadges } from '../../admin/services/highlightBadge.service.js';
+import { badgeFields, loadHighlightBadges } from '../../admin/services/highlightBadge.service.js';
+import { toPackagingCharge } from '../../admin/services/adminRestaurantWrite.helpers.js';
 import {
     createRazorpayOrder,
     getRazorpayKeyId,
@@ -929,6 +930,15 @@ export const registerRestaurant = async (payload, files) => {
     const estimatedDeliveryTimeText = String(estimatedDeliveryTime || '').trim();
     const estimatedDeliveryTimeMinutes = parseEstimatedDeliveryMinutes(estimatedDeliveryTimeText);
 
+    // The zone the form picked, else the one the map pin falls in, so a pinned
+    // restaurant is never left without a zone for the admin to find it under.
+    let resolvedZoneId = isId(String(zoneId || '').trim()) ? String(zoneId).trim() : null;
+    if (!resolvedZoneId) {
+        const pinZone = await findMatchedZoneForCoordinates(toFiniteNumber(latitude), toFiniteNumber(longitude))
+            .catch(() => null);
+        resolvedZoneId = pinZone?.id ? String(pinZone.id) : null;
+    }
+
     const subscriptionSettings = await getRestaurantSubscriptionSettings();
     const requiredOnboardingFee = Math.max(0, Number(subscriptionSettings?.onboardingFee) || 0);
     const { total: requiredOnboardingFeeTotal } = computeOnboardingFeeWithGst(requiredOnboardingFee);
@@ -991,7 +1001,7 @@ export const registerRestaurant = async (payload, files) => {
                     ownerPhoneLast10,
                     primaryContactNumber,
                     pureVegRestaurant: pureVegRestaurant === true,
-                    zoneId: isId(String(zoneId || '').trim()) ? String(zoneId).trim() : null,
+                    zoneId: resolvedZoneId,
                     // The nested location subdocument is flat columns now, and
                     // the PostGIS point beside them is derived by a trigger, so
                     // the mapper is the one place that knows the translation.
@@ -1425,6 +1435,11 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
         update.estimatedDeliveryTime = estimatedDeliveryTimeText;
         update.estimatedDeliveryTimeMinutes = parseEstimatedDeliveryMinutes(estimatedDeliveryTimeText) ?? undefined;
     }
+    // The restaurant's own packing charge per order; the menu footer and the
+    // bill show it, so it applies straight away. Blank clears it.
+    if (body.packagingCharge !== undefined) {
+        update.packagingCharge = toPackagingCharge(body.packagingCharge);
+    }
 
     const openingMinutes = body.openingTime !== undefined ? timeToMinutes(update.openingTime) : null;
     const closingMinutes = body.closingTime !== undefined ? timeToMinutes(update.closingTime) : null;
@@ -1770,7 +1785,7 @@ const PUBLIC_CARD_SELECT = {
     profileImage: true, coverImages: true, menuImages: true,
     estimatedDeliveryTime: true, estimatedDeliveryTimeMinutes: true,
     offer: true, featuredDish: true, featuredPrice: true,
-    highlightBadge: true, freeDeliveryAbove: true,
+    highlightBadge: true, highlightBadges: true, freeDeliveryAbove: true,
     rating: true, totalRatings: true, isAcceptingOrders: true, status: true,
     pureVegRestaurant: true, createdAt: true,
     openingTime: true, closingTime: true, openDays: true,
@@ -1822,10 +1837,10 @@ const toPublicCard = (r) => ({
     // Decimal, so it would otherwise reach the client as a string and the
     // card's `> 0` check would compare against "149".
     freeDeliveryAbove: r.freeDeliveryAbove == null ? null : Number(r.freeDeliveryAbove),
-    highlightBadge: badgeInfo(r.highlightBadge) ? r.highlightBadge : null,
     // Label and colour travel with the key, so a tag added in the admin panel
-    // shows in the app without an app update.
-    highlightBadgeInfo: badgeInfo(r.highlightBadge),
+    // shows in the app without an app update. highlightBadges/-Info carry
+    // every tag; highlightBadge/-Info stay as the first one for older builds.
+    ...badgeFields(r),
     // What /restaurants/:idOrSlug accepts besides the id.
     slug: r.nameSlug || slugifyRestaurantName(r.restaurantName),
     // Business verticals; empty means the default one (Food).
@@ -2070,6 +2085,7 @@ const PUBLIC_RESTAURANT_SELECT = {
     galleryImages: true, menuImages: true, videos: true,
     cuisines: true, pureVegRestaurant: true, rating: true, totalRatings: true,
     featuredDish: true, featuredPrice: true, offer: true, highlightBadge: true,
+    highlightBadges: true,
     menuSections: true,
 
     // Where it is, and when it is open.
@@ -2082,6 +2098,8 @@ const PUBLIC_RESTAURANT_SELECT = {
     // What ordering from it costs and how long it takes.
     estimatedDeliveryTime: true, estimatedDeliveryTimeMinutes: true,
     deliveryRadiusKm: true, freeDeliveryAbove: true,
+    // Per-order packing charge; the menu footer states it.
+    packagingCharge: true,
 
     diningEnabled: true, diningMaxGuests: true, diningType: true,
 
@@ -2114,6 +2132,9 @@ export const toPublicRestaurantDetail = (doc) => {
         slug: nameSlug || slugifyRestaurantName(doc.restaurantName),
         gstNumber: gstRegistered ? maskGstNumber(gstNumber) : null,
         gstLegalName: gstRegistered ? String(gstLegalName || '').trim() || null : null,
+        ...badgeFields(doc),
+        // Decimal; a number so the app can do sums with it.
+        ...(doc.packagingCharge !== undefined ? { packagingCharge: Number(doc.packagingCharge) || 0 } : {}),
     };
 };
 
@@ -2146,6 +2167,7 @@ export const getApprovedRestaurantByIdOrSlug = async (idOrSlug) => {
         }
     }
     if (!doc) return null;
+    await loadHighlightBadges();
 
     const [withTimings] = await attachOutletTimingsToRestaurants([
         normalizePublicRestaurantGeo(stripPendingLocationFromPublicRestaurant(toPublicRestaurantDetail(doc))),

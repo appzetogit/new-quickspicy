@@ -11,6 +11,7 @@ import { TERMINAL_ORDER_STATUSES } from '../../orders/services/order.helpers.js'
 import { offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, normalizeRecurrence } from '../../shared/incentiveRules.js';
 import { onlineMinutesInWindow, cohortZonesFor } from '../../admin/services/adminEarningAddon.service.js';
 import { getSalariedStatus } from './salariedIncentive.service.js';
+import { getRiderCashInHand } from './deliveryFinance.service.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -527,20 +528,14 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
     const totalCashLimit = num(cashLimitSettings.deliveryCashLimit);
     const deliveryWithdrawalLimit = num(cashLimitSettings.deliveryWithdrawalLimit) || 100;
 
-    const [earningsAgg, cashAgg, bonusAgg, paymentTxList, bonusTxList] = await Promise.all([
+    const [earningsAgg, cash, bonusAgg, paymentTxList, bonusTxList] = await Promise.all([
         prisma.foodOrder.aggregate({
             where: { dispatchDeliveryPartnerId: partnerId, orderStatus: 'delivered' },
             _sum: { riderEarning: true, tipAmount: true },
         }),
-        prisma.foodOrder.aggregate({
-            where: {
-                dispatchDeliveryPartnerId: partnerId,
-                orderStatus: 'delivered',
-                paymentMethod: 'cash',
-                paymentStatus: 'paid',
-            },
-            _sum: { riderEarning: true },
-        }),
+        // COD cash collected and not yet deposited: the same figure as the
+        // wallet (getDeliveryPartnerWalletEnhanced), change kept included.
+        getRiderCashInHand(partnerId),
         prisma.deliveryBonusTransaction.aggregate({
             where: { deliveryPartnerId: partnerId },
             _sum: { amount: true },
@@ -564,7 +559,7 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
 
     const totalEarned = num(earningsAgg?._sum?.riderEarning);
     const totalTipsEarned = num(earningsAgg?._sum?.tipAmount);
-    const cashInHand = num(cashAgg?._sum?.riderEarning);
+    const cashInHand = num(cash?.cashInHand);
     const totalBonus = num(bonusAgg?._sum?.amount);
 
     const paymentTransactions = (paymentTxList || []).map((o) => {
@@ -614,6 +609,7 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
         totalBalance,
         pocketBalance: totalBalance,
         cashInHand,
+        changeKeptForCustomers: num(cash?.changeKeptForCustomers),
         totalWithdrawn: 0,
         totalEarned,
         totalCashLimit,

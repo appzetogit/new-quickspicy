@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { NotFoundError, ForbiddenError, ValidationError } from '../../../../core/auth/errors.js';
 import { isId } from '../../../../utils/helpers.js';
+import { orderItemFoodType } from '../order.mapper.js';
 
 /**
  * The bill for an order, as the customer is entitled to see it.
@@ -126,6 +127,8 @@ export const buildInvoice = ({ order, business = null } = {}) => {
             name: text(it.name),
             variant: text(it.variantName),
             isVeg: it.isVeg === true,
+            // 'Veg' | 'Egg' | 'Non-Veg' -- isVeg alone prints Egg as non-veg.
+            foodType: orderItemFoodType(it),
             quantity: qty,
             unitPrice: unit,
             addons: addons.map((a) => ({ name: text(a?.name), price: money(a?.price) })),
@@ -222,7 +225,7 @@ const ORDER_SELECT = {
     items: {
         select: {
             name: true, variantName: true, variantPrice: true, price: true,
-            quantity: true, isVeg: true, addons: true,
+            quantity: true, isVeg: true, foodType: true, addons: true,
         },
     },
     restaurant: {
@@ -284,7 +287,7 @@ export const renderInvoiceHtml = (inv) => {
       <td class="amt">${l.amount < 0 ? '-' : ''}${rupees(Math.abs(l.amount))}</td></tr>`;
 
     const item = (i) => `<tr>
-      <td><span class="dot ${i.isVeg ? 'veg' : 'nonveg'}"></span>${esc(i.name)}${
+      <td><span class="dot ${i.foodType === 'Veg' ? 'veg' : i.foodType === 'Egg' ? 'egg' : 'nonveg'}"></span>${esc(i.name)}${
     i.variant ? `<span class="note">${esc(i.variant)}</span>` : ''}${
     i.addons.length ? `<span class="note">+ ${i.addons.map((a) => esc(a.name)).join(', ')}</span>` : ''}</td>
       <td class="qty">${i.quantity}</td>
@@ -314,6 +317,7 @@ export const renderInvoiceHtml = (inv) => {
   .total{display:flex;justify-content:space-between;font-size:17px;font-weight:600;border-top:2px solid #1a1a1a;padding-top:12px}
   .dot{display:inline-block;width:9px;height:9px;border:1.5px solid;margin-right:7px;vertical-align:1px}
   .dot.veg{border-color:#0a7a34}.dot.veg::after{content:"";display:block;width:3px;height:3px;border-radius:50%;background:#0a7a34;margin:1.5px auto}
+  .dot.egg{border-color:#c77700}.dot.egg::after{content:"";display:block;width:3px;height:3px;border-radius:50%;background:#c77700;margin:1.5px auto}
   .dot.nonveg{border-color:#b3261e}.dot.nonveg::after{content:"";display:block;width:3px;height:3px;border-radius:50%;background:#b3261e;margin:1.5px auto}
   .after{margin-top:14px;padding-top:12px;border-top:1px dashed #ccc}
   .foot{margin-top:22px;font-size:11px;color:#888;text-align:center}

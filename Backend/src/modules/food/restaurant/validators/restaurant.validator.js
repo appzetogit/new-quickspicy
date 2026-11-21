@@ -53,6 +53,31 @@ const timeToMinutes = (value) => {
     return h * 60 + m;
 };
 
+/**
+ * The pin a restaurant drops at sign-up. Required: without it the restaurant
+ * has no distance to any customer, so it can never be listed or priced. Both
+ * must be real coordinates, and 0,0 (an unset map) is refused.
+ */
+export const toOnboardingPin = (latitude, longitude) => {
+    const blank = (v) => v === undefined || v === null || String(v).trim() === '';
+    // No pin at all: accepted as before, so app builds that register without
+    // coordinates keep working (the web form requires the pin itself). Half a
+    // pin, 0,0 or an out-of-range point is still refused.
+    if (blank(latitude) && blank(longitude)) return {};
+    if (blank(latitude) || blank(longitude)) {
+        throw new ValidationError("Please drop a pin on the map at the restaurant's location");
+    }
+    const lat = Number(String(latitude).trim());
+    const lng = Number(String(longitude).trim());
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        throw new ValidationError('The map pin is not a valid location. Please drop it again');
+    }
+    if (lat === 0 && lng === 0) {
+        throw new ValidationError("Please drop a pin on the map at the restaurant's location");
+    }
+    return { latitude: Math.round(lat * 1e7) / 1e7, longitude: Math.round(lng * 1e7) / 1e7 };
+};
+
 const restaurantRegisterSchema = z.object({
     restaurantName: z.string().min(1, 'Restaurant name is required'),
     ownerName: z.string().min(1, 'Owner name is required'),
@@ -178,6 +203,8 @@ export const validateRestaurantRegisterDto = (body) => {
     }
     return {
         ...data,
+        // Numbers from here on; FormData sends them as strings.
+        ...toOnboardingPin(data.latitude, data.longitude),
         gstRegistered: data.gstRegistered ?? false,
         // Same rule as the admin create/edit paths: blank = platform default,
         // otherwise above 0 and at most MAX_DELIVERY_RADIUS_KM.

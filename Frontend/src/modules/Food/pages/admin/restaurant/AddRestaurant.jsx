@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import CuisinePicker from "@food/components/admin/restaurant/CuisinePicker"
 import LocationPinMap from "@food/components/admin/restaurant/LocationPinMap"
 import { PlaceAutocomplete } from "@food/utils/placesNew"
-import { HighlightBadgeSelect } from "@food/components/admin/restaurant/HighlightBadges"
+import { HighlightBadgeMultiSelect } from "@food/components/admin/restaurant/HighlightBadges"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => { console.warn(...args) }
 const debugError = (...args) => { console.error(...args) }
@@ -196,7 +196,8 @@ export default function AddRestaurant() {
     openingTime: "",
     closingTime: "",
     openDays: [],
-    highlightBadge: "",
+    highlightBadges: [],
+    packagingCharge: "",
     deliveryRadiusKm: "",
   })
 
@@ -689,7 +690,12 @@ export default function AddRestaurant() {
         openingTime: step2.openingTime,
         closingTime: step2.closingTime,
         openDays: step2.openDays,
-        highlightBadge: step2.highlightBadge || undefined,
+        // Every tag, in order (an old draft may still hold a single one).
+        highlightBadges: Array.isArray(step2.highlightBadges)
+          ? step2.highlightBadges
+          : step2.highlightBadge ? [step2.highlightBadge] : [],
+        // Blank = no packing charge.
+        packagingCharge: String(step2.packagingCharge ?? "").trim() === "" ? 0 : Number(step2.packagingCharge),
         // Blank -> null = follow the platform radius.
         deliveryRadiusKm: String(step2.deliveryRadiusKm ?? "").trim() === "" ? null : Number(step2.deliveryRadiusKm),
         // Step 3
@@ -1336,15 +1342,33 @@ export default function AddRestaurant() {
         </div>
 
         <div>
-          <Label className="text-xs text-gray-700">Highlight tag (optional)</Label>
-          <div className="mt-2 max-w-sm">
-            <HighlightBadgeSelect
-              value={step2.highlightBadge || ""}
-              onChange={(key) => setStep2((prev) => ({ ...prev, highlightBadge: key }))}
+          <Label className="text-xs text-gray-700">Highlight tags (optional)</Label>
+          <div className="mt-2">
+            <HighlightBadgeMultiSelect
+              value={Array.isArray(step2.highlightBadges) ? step2.highlightBadges : step2.highlightBadge ? [step2.highlightBadge] : []}
+              onChange={(keys) => setStep2((prev) => ({ ...prev, highlightBadges: keys, highlightBadge: undefined }))}
             />
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            E.g. Bestseller or Popular, shown on the restaurant's card in the app. Tags are managed in Restaurant Settings.
+            E.g. Bestseller and Popular, shown on the restaurant's card in the app. Tags are managed in Restaurant Settings.
+          </p>
+        </div>
+
+        <div>
+          <Label className="text-xs text-gray-700">Packing charge per order (optional, ₹)</Label>
+          <div className="mt-2 max-w-sm">
+            <Input
+              type="number"
+              min="0"
+              max="500"
+              step="0.01"
+              placeholder="0"
+              value={step2.packagingCharge ?? ""}
+              onChange={(e) => setStep2((prev) => ({ ...prev, packagingCharge: e.target.value }))}
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Added once to every order&apos;s bill and paid to the restaurant. Blank = none.
           </p>
         </div>
 

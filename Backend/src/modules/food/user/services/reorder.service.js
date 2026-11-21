@@ -1,4 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
+import { fromFoodTypeColumn } from '../../shared/foodType.util.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { restaurantsInReach } from '../../shared/deliveryRadius.js';
@@ -83,6 +84,8 @@ export function groupHistory(orders = []) {
                     name: line.name || '',
                     image: line.image || '',
                     isVeg: line.isVeg !== false,
+                    // The diet recorded on the order line (Veg / Egg / Non-Veg), if any.
+                    foodType: line.foodType ? fromFoodTypeColumn(line.foodType) : null,
                     variantId: String(line.variantId || ''),
                     variantName: String(line.variantName || ''),
                     addons: lineAddons(line.addons),
@@ -175,7 +178,10 @@ export function buildReorderItem(history, food, store, { lang = 'en', addons = [
         }
     }
 
-    const foodType = exists ? (food.foodType === 'NonVeg' ? 'Non-Veg' : food.foodType || 'Non-Veg') : history.isVeg ? 'Veg' : 'Non-Veg';
+    // Dish gone: the receipt's diet, then its isVeg (which cannot tell Egg apart).
+    const foodType = exists
+        ? fromFoodTypeColumn(food.foodType || 'NonVeg')
+        : history.foodType || (history.isVeg ? 'Veg' : 'Non-Veg');
 
     return {
         foodId: history.foodId,
@@ -251,7 +257,7 @@ export async function getReorderStores(userId, query = {}) {
             id: true, restaurantId: true, createdAt: true,
             items: {
                 select: {
-                    itemId: true, name: true, image: true, isVeg: true, quantity: true, price: true,
+                    itemId: true, name: true, image: true, isVeg: true, foodType: true, quantity: true, price: true,
                     variantId: true, variantName: true, addons: true,
                 },
             },

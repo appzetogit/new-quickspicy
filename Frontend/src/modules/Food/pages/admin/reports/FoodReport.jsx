@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { toast } from "sonner"
 import { adminAPI } from "@food/api"
 import usePagedRows from "@food/components/admin/usePagedRows"
+import { foodTypeColor, foodTypeOf } from "@food/utils/foodType"
 import {
   DEFAULT_REPORT_FILTERS, ReportFilterBar, ReportExportMenu, SummaryCard, TH, TD,
   rangeFor, rupees, useReportFilterOptions,
@@ -210,7 +211,7 @@ export default function FoodReport() {
                     <td className={TD}>{offset + index + 1}</td>
                     <td className={TD}>
                       <span className="inline-flex items-center gap-1.5 font-medium text-slate-900">
-                        <span className={`w-2 h-2 rounded-full ${item.isVeg ? "bg-green-500" : "bg-red-500"}`} />
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: foodTypeColor(foodTypeOf(item)) }} title={foodTypeOf(item)} />
                         {item.name}
                       </span>
                     </td>

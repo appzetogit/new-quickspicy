@@ -223,6 +223,16 @@ Geo item: same fields **minus** `name` / `id` / `restaurantId` aliases, `profile
 
 Write your model to accept `profileImage` as either a string or `{ url }`, and fall back to `restaurantName` when `name` is absent. This bites on the first "near me" screen.
 
+**Card tags (several per restaurant).** Cards, `GET /food/restaurant/restaurants/:id` and the other restaurant-card responses carry:
+```json
+"highlightBadges": ["bestseller", "popular"],
+"highlightBadgesInfo": [ { "key": "bestseller", "label": "Bestseller", "color": "#E23744" },
+                         { "key": "popular",    "label": "Popular",    "color": "#F5A623" } ],
+"highlightBadge": "bestseller",                          // the first tag, for older builds
+"highlightBadgeInfo": { "key": "bestseller", "label": "Bestseller", "color": "#E23744" }
+```
+Show every entry of `highlightBadgesInfo` as a pill, in order, using its `label` and `color`. Inactive or deleted tags are already left out. Older builds that read only `highlightBadge`/`highlightBadgeInfo` keep working: those hold the first tag. Both are empty/null when the restaurant has no tag.
+
 ### `GET /food/restaurant/restaurants/:id`
 Accepts an ObjectId **or** a name slug. Approved restaurants only; `pendingLocation` is stripped from public output.
 → `data: { restaurant }` — full restaurant doc plus `outletTimings` and normalized geo. `null` → 404 path in the caller.
@@ -236,8 +246,8 @@ Accepts an ObjectId **or** a name slug. Approved restaurants only; `pendingLocat
   "address": "12 Main Rd, Ongole, AP 523001", // or null
   "fssaiNumber": "12345678901234",           // or null; show with the FSSAI logo
   "gstNumber": "37XXXXXXXXXX1ZX",            // masked, null when not GST-registered
-  "packagingCharge": 0,                      // the platform adds no packing charge today
-  "packagingNote": "No packing charges are added to your bill.",
+  "packagingCharge": 20,                     // the restaurant's packing charge per order, in rupees; 0 = none
+  "packagingNote": "A packing charge of ₹20 per order is added to your bill.",  // or "No packing charges are added to your bill."
   "tax": { "gstRate": 5, "pricesIncludeTax": false, "appliesTo": "food",
            "note": "Menu prices are exclusive of taxes. GST of 5% on food is added at checkout." },
   "nutritionNote": "An average active adult requires 2,000 kcal energy per day, however calorie needs may vary.",
@@ -348,7 +358,7 @@ Query: `restaurantId`, `subtotal`. Send the Bearer token when logged in — the 
 ### `GET /food/search/unified`
 Query: `q`, `lat`, `lng`, `radiusKm` (default 20), `categoryId`, `minRating`, `maxDeliveryTime`, `isVeg`, `foodType`, `verticalId` (or `vertical=<name>`), `page` (1), `limit` (20). `zoneId` / `strictZone` are ignored: search goes by distance. `foodType=Veg|Egg|Non-Veg` (comma list allowed) keeps restaurants serving at least one such dish.
 
-**Food type (diet).** Dishes are `Veg`, `Egg` or non-veg. Menu/search payloads send `foodType` as `"Veg"`, `"Egg"` or `"NonVeg"` (some screens `"Non-Veg"`; treat both as non-veg). Egg is **not** veg: `isVeg` is `false` for Egg dishes, `isVeg=true` filters leave Egg out, and pure-veg restaurants never have Egg dishes. Show Egg with its own amber/yellow dot and offer a Veg / Egg / Non-veg filter. The menu (`GET /food/restaurant/restaurants/:id/menu`), `GET /food/restaurant/public/foods` and `GET /food/search/dishes` accept `isVeg=true` and `foodType=Veg|Egg|Non-Veg` (comma list) too. Order line items still carry only `isVeg` (Egg = `false`).
+**Food type (diet).** Dishes are `Veg`, `Egg` or non-veg. Menu/search payloads send `foodType` as `"Veg"`, `"Egg"` or `"NonVeg"` (some screens `"Non-Veg"`; treat both as non-veg). Egg is **not** veg: `isVeg` is `false` for Egg dishes, `isVeg=true` filters leave Egg out, and pure-veg restaurants never have Egg dishes. Show Egg with its own amber/yellow dot and offer a Veg / Egg / Non-veg filter. The menu (`GET /food/restaurant/restaurants/:id/menu`), `GET /food/restaurant/public/foods` and `GET /food/search/dishes` accept `isVeg=true` and `foodType=Veg|Egg|Non-Veg` (comma list) too. Order line items (customer order list/details, tracking, invoice) carry `foodType` (`"Veg"` | `"Egg"` | `"Non-Veg"`, the dish diet at order time) next to `isVeg` (Egg = `false`); show the diet mark from `foodType`. Orders from before this was recorded are backfilled from the dish (or from `isVeg` when the dish is gone).
 
 ```json
 {
@@ -384,8 +394,8 @@ Dishes from open restaurants always come first. `minChars: 2` comes back when `q
 ### `GET /food/search/suggest`
 Type-ahead. Query: `q`, `lat`, `lng` (required; without them → `requiresLocation: true`), `lang`, and optionally the same filters as `/search/restaurants` below (`openOnly`, `isVeg`, `foodType`, `categoryId`, `verticalId`/`vertical`, `minRating`, `maxDeliveryTime`, `pureVeg`). Returns nothing until 3 characters (`minChars: 3`). Call it as the user types (debounce ~300 ms, cancel the previous request); it is cached 60 s per query + location.
 ```json
-{ "query": "Biryani", "minChars": 3, "noResults": false,
-  "seeAll": { "label": "Biryani — See all restaurants", "query": "Biryani", "restaurantCount": 7 },
+{ "query": "chicken biryani", "minChars": 3, "noResults": false,
+  "seeAll": { "label": "Chicken Biryani — See all restaurants", "query": "chicken biryani", "restaurantCount": 7 },
   "varieties": [
     { "name": "Chicken Biryani", "nameEn": "Chicken Biryani", "restaurantCount": 6, "itemCount": 9, "foodType": "Non-Veg", "image": "…" },
     { "name": "Veg Biryani",     "nameEn": "Veg Biryani",     "restaurantCount": 4, "itemCount": 4, "foodType": "Veg",     "image": "…" },
@@ -395,7 +405,7 @@ Type-ahead. Query: `q`, `lat`, `lng` (required; without them → `requiresLocati
   "categories":  [{ "id": "…", "name": "Biryani", "nameEn": "Biryani", "image": "…" }],
   "dishes":      [{ "name": "Chicken Biryani", "nameEn": "Chicken Biryani", "image": "…", "count": 9 }] }
 ```
-- **`seeAll`** — render first, prominently: `"<query> — See all restaurants"` (use `label`, or build it from `query`). `restaurantCount` = restaurants that serve at least one matching dish right now. `null` when none do — then hide the row. Tap → `GET /food/search/restaurants?q=<seeAll.query>&lat&lng` (listing screen).
+- **`seeAll`** — render first, prominently: use `label` (`"<Query> — See all restaurants"`, the query with each word capitalised for display). `query` stays exactly as typed: send it back unchanged. `restaurantCount` = restaurants that serve at least one matching dish right now. `null` when none do — then hide the row. Tap → `GET /food/search/restaurants?q=<seeAll.query>&lat&lng` (listing screen).
 - **`varieties`** — distinct dish names containing `q`, grouped case- and space-insensitively (`"chicken  biryani"` and `"Chicken Biryani"` are one entry; `nameEn` is the most used spelling, `name` is Telugu when `lang=te` and available). Only approved, in-stock dishes from approved restaurants that deliver to `lat`/`lng` **and are open now** (pass `openOnly=false` to also count closed ones). `restaurantCount` = distinct restaurants, `itemCount` = matching dishes. `foodType` is `"Veg"`, `"Egg"`, `"Non-Veg"`, or `"Mixed"` when the grouped dishes differ (show no dot). Sorted: exact match, then names starting with `q`, then most restaurants. Up to 10. Tap → the normal results screen for `q=<nameEn>` (`/search/unified` or `/search/dishes`), or `/search/restaurants?q=<nameEn>&exact=true` for restaurants serving exactly that dish.
 - **`restaurants`** — restaurants whose *name* matches (up to 5); tap → the restaurant menu.
 - **`noResults: true`** — nothing matched in the customer's area: show "No results for "<q>" in your area". It is `false` when `q` is too short, so don't show the empty state then.
@@ -794,6 +804,7 @@ Maths, so your UI can explain the bill:
 - discount is clamped to ≤ subtotal, floored to whole rupees, and percentage discounts respect `maxDiscount`
 - GST is charged on `subtotal − discount`
 - `total = subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + tax − discount`
+- `packagingFee` is the restaurant's packing charge: a flat amount **per order** (not per item), set by the restaurant or admin (`restaurant.packagingCharge` on the detail response). It is 0 for most restaurants. No GST is added on it (GST is on food only), and the coupon discount does not reduce it. Show it as a "Packing charges" bill row when it is above 0. The same figure is used by `/food/orders/calculate`, the cart and `POST /food/orders`, and it is stored on the order and printed on the invoice ("Packaging charge").
 - quick mode adds a surcharge to **both** `platformFee` and `total`, and reports it separately as `quickDeliveryFee`
 
 ### `POST /food/orders`
@@ -937,7 +948,7 @@ Returned by every order endpoint, normalized for clients:
 Show a banner while the order is live: "Running about {extraMinutes} min late · {reasonLabel} · new arrival {newEta}". Two sources: the rider or an admin sends a running-late update (reason + minutes; push `type: order_update, event: running_late`), and the server sends a one-time apology when an order is more than 10 min past its promised time (push `event: delayed`, `autoNotice: true`). Socket: `order_delay` `{ orderId, orderMongoId, orderStatus, etaMinutes, estimatedDeliveryAt, delay, message }` on `user:<id>` and the tracking room, plus `order_eta` and an `order_status_update` carrying `message` and `delay`.
 
 ### The bill — `GET /food/orders/:orderId/invoice` · `GET /food/orders/:orderId/invoice.html`
-JSON: `{ invoiceNumber, orderId, issuedAt, placedAt, currency, orderStatus, restaurant: { name, address, gstin, fssaiNumber }, platform: { name, address, email, phone }, customer: { name, phone, address, addressParts: { label, house, street, city, state, pincode }, deliveryInstructions, orderedBy? }, items: [{ name, variant, isVeg, quantity, unitPrice, addons, amount }], charges: [{ label, amount, note? }], total, payment: { method, status, paid, refundStatus, refundAmount }, paidSeparately: [...], notes: { tipTotal, reconciled } }`.
+JSON: `{ invoiceNumber, orderId, issuedAt, placedAt, currency, orderStatus, restaurant: { name, address, gstin, fssaiNumber }, platform: { name, address, email, phone }, customer: { name, phone, address, addressParts: { label, house, street, city, state, pincode }, deliveryInstructions, orderedBy? }, items: [{ name, variant, isVeg, foodType, quantity, unitPrice, addons, amount }], charges: [{ label, amount, note? }], total, payment: { method, status, paid, refundStatus, refundAmount }, paidSeparately: [...], notes: { tipTotal, reconciled } }`.
 `charges` are ready-to-print lines in order (item total, discount, packaging, GST, delivery fee, GST on delivery, platform fee, tip). `customer.address` is the full one-line address, house / flat / floor first (`addressParts.house` is what the customer typed as "House No. / Flat / Floor", `street` the area / landmark line). `invoice.html` is the same bill as a printable page (₹, share it as PDF). The web app renders exactly this.
 
 ### Remaining order endpoints

@@ -72,18 +72,91 @@ export async function resolveHighlightBadge(value) {
     return key;
 }
 
+/** Most tags one restaurant can carry; a card has room for a few pills. */
+export const MAX_HIGHLIGHT_BADGES = 5;
+
+/**
+ * A restaurant's tags, in display order. Rows written before the list existed
+ * (or by an old client that only sent highlightBadge) fall back to the single
+ * tag, so nothing tagged before the migration loses its pill.
+ */
+export const restaurantBadgeKeys = (r = {}) => {
+    const list = Array.isArray(r?.highlightBadges) ? r.highlightBadges.filter(Boolean) : [];
+    if (list.length) return list;
+    return r?.highlightBadge ? [r.highlightBadge] : [];
+};
+
+/** The active tags among `keys`, with label and colour, from the last load. */
+export const badgeInfos = (keys = []) =>
+    (Array.isArray(keys) ? keys : []).map(badgeInfo).filter(Boolean);
+
+/**
+ * The tag fields a restaurant response carries: the full list for current
+ * apps, and the first tag in the old single-tag fields for older builds.
+ * Inactive or deleted tags are left out. Needs loadHighlightBadges() first.
+ */
+export const badgeFields = (r = {}) => {
+    const infos = badgeInfos(restaurantBadgeKeys(r));
+    return {
+        highlightBadges: infos.map((b) => b.key),
+        highlightBadgesInfo: infos,
+        highlightBadge: infos[0]?.key || null,
+        highlightBadgeInfo: infos[0] || null,
+    };
+};
+
+/**
+ * The tag keys to store, from an array (or a comma-separated string, or one
+ * key). Unknown or inactive tags are refused, duplicates dropped, order kept.
+ * An empty value clears every tag.
+ */
+export async function resolveHighlightBadges(value) {
+    let raw = value;
+    if (raw == null || raw === '') return [];
+    if (typeof raw === 'string') raw = raw.split(',');
+    if (!Array.isArray(raw)) throw new ValidationError('highlightBadges must be a list of tag keys');
+    const keys = [];
+    for (const entry of raw) {
+        const key = await resolveHighlightBadge(entry);
+        if (key && !keys.includes(key)) keys.push(key);
+    }
+    if (keys.length > MAX_HIGHLIGHT_BADGES) {
+        throw new ValidationError(`A restaurant can have at most ${MAX_HIGHLIGHT_BADGES} tags`);
+    }
+    return keys;
+}
+
+/**
+ * The fields to write for a tag change, from a request body. highlightBadges
+ * (the list) wins; an older client that sends only highlightBadge sets the
+ * list to that one tag. Undefined when the body touches neither.
+ */
+export async function resolveBadgeWrite(body = {}) {
+    let keys;
+    if (body.highlightBadges !== undefined) keys = await resolveHighlightBadges(body.highlightBadges);
+    else if (body.highlightBadge !== undefined) {
+        const one = await resolveHighlightBadge(body.highlightBadge);
+        keys = one ? [one] : [];
+    } else return undefined;
+    return { highlightBadges: keys, highlightBadge: keys[0] || null };
+}
+
 export async function listHighlightBadges({ activeOnly = false } = {}) {
     const rows = await prisma.foodHighlightBadge.findMany({
         where: activeOnly ? { isActive: true } : {},
         orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
     });
-    const counts = activeOnly
+    // Restaurants carrying each tag: the list, or the legacy single column on
+    // rows that have no list.
+    const counts = activeOnly || rows.length === 0
         ? new Map()
-        : new Map((await prisma.foodRestaurant.groupBy({
-            by: ['highlightBadge'],
-            where: { highlightBadge: { in: rows.map((r) => r.key) } },
-            _count: { _all: true },
-        })).map((g) => [g.highlightBadge, g._count._all]));
+        : new Map((await prisma.$queryRaw`
+            SELECT k AS key, COUNT(DISTINCT r."id")::int AS n
+            FROM "food_restaurants" r,
+                 unnest(CASE WHEN cardinality(r."highlightBadges") > 0 THEN r."highlightBadges"
+                             ELSE ARRAY[r."highlightBadge"]::TEXT[] END) AS k
+            WHERE k IS NOT NULL
+            GROUP BY k`).map((g) => [g.key, Number(g.n) || 0]));
     return rows.map((row) => ({ ...serialize(row), restaurantCount: counts.get(row.key) || 0 }));
 }
 
@@ -136,10 +209,15 @@ export async function deleteHighlightBadge(id) {
     if (!isId(id)) throw new ValidationError('Invalid tag id');
     const existing = await prisma.foodHighlightBadge.findUnique({ where: { id: String(id) } });
     if (!existing) throw new NotFoundError('Tag not found');
+    // Out of every list, and the single column re-pointed at the new first tag.
     const [cleared] = await prisma.$transaction([
-        prisma.foodRestaurant.updateMany({ where: { highlightBadge: existing.key }, data: { highlightBadge: null } }),
+        prisma.$executeRaw`
+            UPDATE "food_restaurants"
+            SET "highlightBadges" = array_remove("highlightBadges", ${existing.key}::text),
+                "highlightBadge" = (array_remove("highlightBadges", ${existing.key}::text))[1]
+            WHERE ${existing.key}::text = ANY("highlightBadges") OR "highlightBadge" = ${existing.key}::text`,
         prisma.foodHighlightBadge.delete({ where: { id: existing.id } }),
     ]);
     await loadHighlightBadges({ fresh: true });
-    return { deleted: true, restaurantsCleared: cleared.count };
+    return { deleted: true, restaurantsCleared: Number(cleared) || 0 };
 }

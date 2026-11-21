@@ -1,14 +1,13 @@
 import { sendError } from '../../utils/response.js';
 import { prisma } from '../../config/prisma.js';
 import { isId } from '../../utils/helpers.js';
+import { hasAdminPermission, isSubmenuActionAllowed } from '../../constants/permissions.js';
 
 const isSuperAdmin = (admin) =>
     !admin?.adminType || admin?.adminType === 'super_admin' || admin?.isSuperAdmin === true;
 
-const hasAction = (permissions, section, action) => {
-    const actions = Array.isArray(permissions?.[section]) ? permissions[section] : [];
-    return actions.includes(action);
-};
+const hasAction = (permissions, section, action, submenuKey = null) =>
+    hasAdminPermission(permissions, section, action, submenuKey);
 
 const hydrateAdmin = async (req) => {
     if (req.adminAccess) return req.adminAccess;
@@ -24,7 +23,12 @@ const hydrateAdmin = async (req) => {
     return admin;
 };
 
-export const requireAdminPermission = (section, action = 'view') => async (req, res, next) => {
+/**
+ * `submenuKey` (optional) narrows the check to one submenu of the section: the
+ * section must allow the action AND the submenu must not be explicitly
+ * restricted below it (see sanitizeAdminPermissions).
+ */
+export const requireAdminPermission = (section, action = 'view', submenuKey = null) => async (req, res, next) => {
     try {
         if (!req.user?.userId || req.user?.role !== 'ADMIN') {
             return sendError(res, 401, 'Not authenticated');
@@ -39,7 +43,38 @@ export const requireAdminPermission = (section, action = 'view') => async (req, 
             return next();
         }
 
-        if (!hasAction(admin.permissions, section, action)) {
+        if (!hasAction(admin.permissions, section, action, submenuKey)) {
+            return sendError(res, 403, 'Forbidden: insufficient permissions');
+        }
+
+        return next();
+    } catch (_error) {
+        return sendError(res, 500, 'Permission check failed');
+    }
+};
+
+/**
+ * Submenu restriction only: refuses when the role has an explicit entry for
+ * this submenu that leaves the action out, and otherwise defers to whatever
+ * section-level guard the route already has (including none, for the reads
+ * every admin may make). It can only ever add a refusal, never grant access.
+ */
+export const requireAdminSubmenuAccess = (section, submenuKey, action = 'view') => async (req, res, next) => {
+    try {
+        if (!req.user?.userId || req.user?.role !== 'ADMIN') {
+            return sendError(res, 401, 'Not authenticated');
+        }
+
+        const admin = await hydrateAdmin(req);
+        if (!admin || admin.isDeleted || admin.isActive === false) {
+            return sendError(res, 403, 'Admin account is inactive');
+        }
+
+        if (isSuperAdmin(admin)) {
+            return next();
+        }
+
+        if (!isSubmenuActionAllowed(admin.permissions, section, submenuKey, action)) {
             return sendError(res, 403, 'Forbidden: insufficient permissions');
         }
 

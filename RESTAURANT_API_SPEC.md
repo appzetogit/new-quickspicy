@@ -65,6 +65,8 @@ Text fields — note several are **comma-joined strings**, not arrays, because t
 ```
 Latitude/longitude are **strings** here (FormData), unlike everywhere else in the API.
 
+**Send the map pin.** New builds should always send `latitude` and `longitude` (the web form requires them). If both are left out the request is still accepted, as before, with no published location; if only one is sent, or the point is not real (within ±90 / ±180, not `0,0`); otherwise `400` "Please drop a pin on the map at the restaurant's location". They are saved as the restaurant's published location (rounded to 7 decimals). Show a map with a draggable pin (plus "use my current location"), synced with the address search, and do not let the owner submit without it. When `zoneId` is blank the server fills it from the zone the pin falls in.
+
 → 201, `data` = the created restaurant.
 
 ### `POST /food/restaurant/onboarding-fee/order`
@@ -109,6 +111,8 @@ Body also takes `folder`. → `data` = upload result (URL). Use this to pre-uplo
   "zoneId": "…", "businessModel": "…",
   "estimatedDeliveryTime": "30", "estimatedDeliveryTimeMinutes": 30,
   "featuredDish": "…", "featuredPrice": 260, "offer": "…",
+  "packagingCharge": "20",           // packing charge per order, rupees (Decimal: may arrive as a string); "0" = none
+  "highlightBadges": ["bestseller"], "highlightBadge": "bestseller",   // card tags, set by the admin
   "rating": 4.3, "totalRatings": 88,
   "diningSettings": { "isEnabled": false, "maxGuests": 6, "diningType": "family-dining" },
   "status": "approved",              // pending | approved | rejected (gates the whole app)
@@ -131,6 +135,8 @@ Body also takes `folder`. → `data` = upload result (URL). Use this to pre-uplo
 | DELETE | *(none — deletion is `deleteCurrentRestaurantAccount`, not routed publicly)* | | |
 
 `maxGuests` is clamped to ≥ 1 (default 6); `isEnabled` accepts booleans or `"true"/"1"/"yes"` strings.
+
+**Packing charge.** `PATCH /food/restaurant/profile` with `{ "packagingCharge": 20 }` sets the restaurant's packing charge: rupees **per order** (not per item), 0–500, up to 2 decimals; `0`, `""` or `null` removes it. It applies immediately (no admin review). Customers then see it as `packagingFee` on every bill from this restaurant and in the menu footer; it is paid to the restaurant with the item value (`finance.packagingFee` on orders, included in the payout as `subtotal + packagingFee − commission`). No GST is added on it.
 
 ### Image uploads (all Bearer, all multipart)
 

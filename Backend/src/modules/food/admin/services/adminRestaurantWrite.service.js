@@ -11,9 +11,10 @@ import {
     toFiniteNumber,
     toDeliveryRadiusKm,
     toFreeDeliveryAbove,
+    toPackagingCharge,
     validateOpeningClosingTimes,
 } from './adminRestaurantWrite.helpers.js';
-import { resolveHighlightBadge } from './highlightBadge.service.js';
+import { resolveBadgeWrite } from './highlightBadge.service.js';
 
 /**
  * Creating and editing a restaurant from the admin panel, extracted from
@@ -293,7 +294,11 @@ export async function updateRestaurantById(id, body = {}) {
     }
 
     // Discovery-card merchandising.
-    if (body.highlightBadge !== undefined) data.highlightBadge = await resolveHighlightBadge(body.highlightBadge);
+    // highlightBadges (the list) wins; an old client sending one highlightBadge
+    // still works. Both columns are written so they never disagree.
+    const badgeWrite = await resolveBadgeWrite(body);
+    if (badgeWrite) Object.assign(data, badgeWrite);
+    if (body.packagingCharge !== undefined) data.packagingCharge = toPackagingCharge(body.packagingCharge);
     if (body.freeDeliveryAbove !== undefined) {
         data.freeDeliveryAbove = toFreeDeliveryAbove(body.freeDeliveryAbove);
     }
@@ -419,7 +424,7 @@ export async function createRestaurantByAdmin(body = {}) {
         : {};
 
     // Checked before the transaction: it reads the tag list.
-    const highlightBadge = await resolveHighlightBadge(body.highlightBadge);
+    const badges = (await resolveBadgeWrite(body)) || { highlightBadges: [], highlightBadge: null };
 
     const created = await prisma.$transaction(async (tx) => {
         const row = await tx.foodRestaurant.create({
@@ -476,7 +481,8 @@ export async function createRestaurantByAdmin(body = {}) {
                 featuredPrice: toFiniteNumber(body.featuredPrice),
                 offer: toStr(body.offer),
                 deliveryRadiusKm: toDeliveryRadiusKm(body.deliveryRadiusKm),
-                highlightBadge,
+                ...badges,
+                packagingCharge: toPackagingCharge(body.packagingCharge),
                 freeDeliveryAbove: toFreeDeliveryAbove(body.freeDeliveryAbove),
                 ...dining,
                 // An admin creating it is the approval.

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../../config/prisma.js';
 import { getRestaurantTimezone } from '../../../../utils/timezone.js';
 import { EARNED_ORDER } from '../../shared/restaurantPayout.sql.js';
+import { fromFoodTypeColumn } from '../../shared/foodType.util.js';
 import { num, reportFilters, zoneScopeSql, createdAtSql } from './reportFilters.helpers.js';
 
 /**
@@ -53,6 +54,9 @@ export async function getPopularItemsReport(query = {}) {
                    o."restaurantId"                            AS "restaurantId",
                    MAX(i."name")                               AS "name",
                    BOOL_AND(i."isVeg")                         AS "isVeg",
+                   -- The latest recorded diet (Veg / Egg / Non-Veg), so Egg is not shown as non-veg.
+                   (ARRAY_AGG(i."foodType"::text ORDER BY o."createdAt" DESC)
+                       FILTER (WHERE i."foodType" IS NOT NULL))[1] AS "foodType",
                    SUM(i."quantity")::int                      AS "quantity",
                    COALESCE(SUM(i."price" * i."quantity"), 0)  AS "revenue",
                    COUNT(DISTINCT o."id")::int                 AS "orders"
@@ -126,6 +130,8 @@ export async function getPopularItemsReport(query = {}) {
             itemId: r.itemId,
             name: r.name,
             isVeg: Boolean(r.isVeg),
+            // 'Veg' | 'Egg' | 'Non-Veg'
+            foodType: r.foodType ? fromFoodTypeColumn(r.foodType) : r.isVeg ? 'Veg' : 'Non-Veg',
             restaurantId: r.restaurantId,
             restaurantName: restaurantName.get(r.restaurantId) || 'Unknown restaurant',
             quantity: Number(r.quantity) || 0,

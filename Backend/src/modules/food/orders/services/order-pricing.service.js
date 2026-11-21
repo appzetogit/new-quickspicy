@@ -73,6 +73,19 @@ const applyDeliveryModePricing = (pricing, deliveryMode, quickSurcharge = 0) => 
   };
 };
 
+/**
+ * The order's packing charge: the restaurant's flat per-order amount, or 0
+ * for an empty cart. Paid to the restaurant with the item value (see
+ * foodTransaction.service.js and restaurantPayout.util.js), outside the GST
+ * base: tax is charged on the food only, like every other fee here, so the
+ * amount set is the amount billed.
+ */
+export function resolvePackagingFee(restaurant, subtotal = 0) {
+  if (!(Number(subtotal) > 0)) return 0;
+  const charge = Number(restaurant?.packagingCharge);
+  return Number.isFinite(charge) && charge > 0 ? round2(charge) : 0;
+}
+
 export async function loadRestaurantForOrdering(restaurantId) {
   if (!isId(restaurantId)) {
     throw new ValidationError('Restaurant not found');
@@ -100,6 +113,8 @@ export async function loadRestaurantForOrdering(restaurantId) {
       deliveryRadiusKm: true,
       // For the expired-FSSAI ordering block.
       fssaiExpiry: true,
+      // The restaurant's packing charge, added once per order.
+      packagingCharge: true,
     },
   });
 
@@ -677,7 +692,7 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
   const pricingZoneId = dto?.zoneId || restaurant?.zoneId || null;
   const feeSettings = await loadActiveFeeSettings(pricingZoneId);
 
-  const packagingFee = 0;
+  const packagingFee = resolvePackagingFee(restaurant, subtotal);
   const platformFee = Number(feeSettings.platformFee || 0);
 
   const straightLineKm = calculateDistanceKm(restaurant, deliveryAddress);

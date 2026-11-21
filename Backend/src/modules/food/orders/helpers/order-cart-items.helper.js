@@ -7,6 +7,7 @@ import {
   addonRuleForRestaurant,
   toAppPrice,
 } from '../../pricing/priceRules.service.js';
+import { toFoodTypeColumn } from '../../shared/foodType.util.js';
 
 const uniqueIds = (ids = []) =>
   [...new Set(ids.map((id) => String(id || '').trim()).filter(isId))];
@@ -196,6 +197,8 @@ export async function resolveOrderCartItems(restaurantId, rawItems = []) {
         addons,
         quantity,
         isVeg: String(foodDoc.foodType || '').toLowerCase() === 'veg',
+        // Veg / Egg / NonVeg (Prisma enum member) — isVeg alone shows Egg as non-veg.
+        foodType: toFoodTypeColumn(foodDoc.foodType),
         image: String(foodDoc.image || rawItem?.image || ''),
         notes: String(rawItem?.notes || ''),
       });
@@ -221,6 +224,7 @@ export async function resolveOrderCartItems(restaurantId, rawItems = []) {
         variantPrice: price,
         quantity,
         isVeg: published.foodType !== 'non-veg',
+        foodType: published.foodType !== 'non-veg' ? 'Veg' : 'NonVeg',
         image: String(published.image || rawItem?.image || ''),
         notes: String(rawItem?.notes || ''),
       });

@@ -40,6 +40,7 @@ import {
 } from "lucide-react"
 import { Button } from "@food/components/ui/button"
 import { Badge } from "@food/components/ui/badge"
+import RestaurantTagPills from "@food/components/user/RestaurantTagPills"
 import { Checkbox } from "@food/components/ui/checkbox"
 import AnimatedPage from "@food/components/user/AnimatedPage"
 import { useCart } from "@food/context/CartContext"
@@ -573,6 +574,9 @@ function RestaurantDetailsContent() {
             // FSSAI number and the end-of-menu notes (taxes, packing, nutrition) from the API.
             fssaiNumber: actualRestaurant?.fssaiNumber || apiRestaurant?.fssaiNumber || actualRestaurant?.onboarding?.step3?.fssai?.registrationNumber || null,
             menuFooter: actualRestaurant?.menuFooter || apiRestaurant?.menuFooter || null,
+            // Card tags (Bestseller, Popular, ...): every one, and the old single tag.
+            highlightBadgesInfo: actualRestaurant?.highlightBadgesInfo || apiRestaurant?.highlightBadgesInfo || [],
+            highlightBadgeInfo: actualRestaurant?.highlightBadgeInfo || apiRestaurant?.highlightBadgeInfo || null,
             // Availability fields for grayscale styling
             isActive: actualRestaurant?.isActive !== false, // Default to true if not specified
             isAcceptingOrders: actualRestaurant?.isAcceptingOrders !== false, // Default to true if not specified
@@ -2165,6 +2169,7 @@ function RestaurantDetailsContent() {
                 <h1 className="text-[17px] sm:text-xl md:text-2xl font-bold tracking-tight text-gray-950 dark:text-white leading-snug line-clamp-2">
                   {restaurant?.name || "Unknown Restaurant"}
                 </h1>
+                <RestaurantTagPills restaurant={restaurant} className="mt-1.5" />
                 <div className="mt-1.5 flex items-center gap-2 text-[13px] sm:text-sm text-gray-700 dark:text-gray-300">
                   <Utensils className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                   <span>{restaurant?.topCategory || restaurant?.cuisine || "Multi-cuisine"}</span>

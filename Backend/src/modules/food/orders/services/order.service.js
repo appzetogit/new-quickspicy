@@ -929,6 +929,7 @@ export async function createOrder(userId, rawDto) {
           priceRuleId: item.priceRuleId || null,
           quantity: Number(item.quantity) || 1,
           isVeg: Boolean(item.isVeg),
+          foodType: item.foodType || (item.isVeg ? 'Veg' : 'NonVeg'),
           image: item.image || '',
           notes: item.notes || '',
           addons: item.addons || [],

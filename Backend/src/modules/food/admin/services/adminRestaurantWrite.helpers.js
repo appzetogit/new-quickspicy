@@ -139,3 +139,20 @@ export const toDeliveryRadiusKm = (value) => {
     }
     return km;
 };
+
+/**
+ * Packing charge per order, in rupees. Blank or zero means none. The cap
+ * catches a typo (2000 for 20.00) that would put a silent ₹2,000 on every bill.
+ */
+export const MAX_PACKAGING_CHARGE = 500;
+
+export const toPackagingCharge = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return 0;
+    const amount = toFiniteNumber(value);
+    if (amount === null) throw new ValidationError('Packing charge must be a number');
+    if (amount < 0) throw new ValidationError('Packing charge cannot be negative');
+    if (amount > MAX_PACKAGING_CHARGE) {
+        throw new ValidationError(`Packing charge cannot be more than ₹${MAX_PACKAGING_CHARGE} per order`);
+    }
+    return Math.round(amount * 100) / 100;
+};

@@ -32,7 +32,8 @@ import * as profileChangeController from '../controllers/profileChange.controlle
 import { sendError } from '../../../../utils/response.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
-import { requireAdminPermission, requireAnyAdminPermission } from '../../../../core/roles/adminPermission.middleware.js';
+import { requireAdminPermission, requireAnyAdminPermission, requireAdminSubmenuAccess } from '../../../../core/roles/adminPermission.middleware.js';
+import { resolveSubmenuFromRequest } from '../../../../constants/adminPermissionCatalog.js';
 import * as driverRegField from '../../delivery/controllers/driverRegistrationField.controller.js';
 import * as cashbackSettings from '../controllers/cashbackSettings.controller.js';
 import * as restaurantAppBanner from '../controllers/restaurantAppBanner.controller.js';
@@ -197,6 +198,16 @@ router.use((req, res, next) => {
     if (!section) return next();
     const action = resolveActionByMethod(req.method);
     return requireAdminPermission(section, action)(req, res, next);
+});
+
+// Submenu-level restriction, on top of the section check above (never instead
+// of it): an API that belongs to exactly one sidebar submenu is refused when
+// the role narrows that submenu below its section. Shared APIs resolve to no
+// submenu and keep the section check only -- see ADMIN_SUBMENU_API_RULES.
+router.use((req, res, next) => {
+    const submenu = resolveSubmenuFromRequest(req.path, req.method, req.query);
+    if (!submenu) return next();
+    return requireAdminSubmenuAccess(submenu.section, submenu.key, resolveActionByMethod(req.method))(req, res, next);
 });
 
 router.use('/sub-admins', requireAdminPermission('sub_admin_management', 'view'));

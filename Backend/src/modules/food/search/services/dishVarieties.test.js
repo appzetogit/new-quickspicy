@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { prisma } from '../../../../config/prisma.js';
 import { uniquePhone } from '../../../../utils/testIds.js';
 import { deriveRestaurantFields, fromRestaurantLocation } from '../../restaurant/restaurant.mapper.js';
-import { suggest, searchDishRestaurants, normalizeDishName } from './dishSearch.service.js';
+import { suggest, searchDishRestaurants, normalizeDishName, titleCaseQuery } from './dishSearch.service.js';
 
 /**
  * Search suggestions (client spec C2): "<q> — See all restaurants", dish
@@ -81,6 +81,13 @@ const seed = async () => {
     return seeded;
 };
 
+test('titleCaseQuery capitalises each word for the see-all label', () => {
+    assert.equal(titleCaseQuery('biryani'), 'Biryani');
+    assert.equal(titleCaseQuery('  chicken   biryani '), 'Chicken Biryani');
+    assert.equal(titleCaseQuery('KFC wings'), 'KFC Wings');
+    assert.equal(titleCaseQuery(''), '');
+});
+
 test('normalizeDishName folds case and spaces', () => {
     assert.equal(normalizeDishName('  Chicken   BIRYANI '), 'chicken biryani');
     assert.equal(normalizeDishName(null), '');
@@ -92,7 +99,10 @@ test('suggest: see-all row and varieties grouped, with restaurant counts', async
 
     assert.ok(res.seeAll, 'see-all row present');
     assert.equal(res.seeAll.query, WORD);
-    assert.match(res.seeAll.label, /See all restaurants/);
+    assert.equal(res.seeAll.label, `${titleCaseQuery(WORD)} — See all restaurants`);
+    const lower = await suggest({ q: WORD.toLowerCase(), ...at });
+    assert.equal(lower.seeAll.query, WORD.toLowerCase(), 'query stays raw');
+    assert.match(lower.seeAll.label, /^Qv\S+ — See all restaurants$/, 'label title-cased');
     assert.equal(res.seeAll.restaurantCount, 2, 'only open, approved, in-reach restaurants with an available match');
 
     const names = res.varieties.map((v) => normalizeDishName(v.nameEn));

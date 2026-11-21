@@ -1,4 +1,15 @@
 import { buildDelayView } from './services/orderDelay.view.js';
+import { fromFoodTypeColumn } from '../shared/foodType.util.js';
+
+/**
+ * An order line's diet as the apps read it: 'Veg' | 'Egg' | 'Non-Veg'.
+ * Lines without a recorded foodType (none after the backfill, but a select
+ * may leave it out) fall back to isVeg.
+ */
+export const orderItemFoodType = (item) => {
+    if (item?.foodType) return fromFoodTypeColumn(item.foodType);
+    return item?.isVeg === false ? 'Non-Veg' : 'Veg';
+};
 
 /**
  * Translates between the flat `food_orders` row and the nested order shape the
@@ -87,6 +98,8 @@ export function toOrder(row) {
             basePrice: item.basePrice == null ? null : money(item.basePrice),
             baseVariantPrice: item.baseVariantPrice == null ? null : money(item.baseVariantPrice),
             markupPercent: money(item.markupPercent),
+            // 'Veg' | 'Egg' | 'Non-Veg' (the dish's diet at order time).
+            foodType: orderItemFoodType(item),
             addons: item.addons || []
         })),
 

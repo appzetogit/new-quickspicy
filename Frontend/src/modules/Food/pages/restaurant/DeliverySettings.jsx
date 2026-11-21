@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import useRestaurantBackNavigation from "@food/hooks/useRestaurantBackNavigation"
 import { motion, AnimatePresence } from "framer-motion"
 import Lenis from "lenis"
-import { ArrowLeft, Truck, X, CheckCircle, AlertCircle } from "lucide-react"
+import { ArrowLeft, Truck, X, CheckCircle, AlertCircle, Package } from "lucide-react"
 import { Switch } from "@food/components/ui/switch"
 import { Card, CardContent } from "@food/components/ui/card"
 import { restaurantAPI } from "@food/api"
@@ -29,6 +29,11 @@ export default function DeliverySettings() {
   const [showSuccessToast, setShowSuccessToast] = useState(false)
   const [toastMessage, setToastMessage] = useState("")
   const [savingStatus, setSavingStatus] = useState(false)
+  // Packing charge per order, in rupees ("" = none).
+  const [packagingCharge, setPackagingCharge] = useState("")
+  const [savedPackagingCharge, setSavedPackagingCharge] = useState("")
+  const [savingPackaging, setSavingPackaging] = useState(false)
+  const [packagingError, setPackagingError] = useState("")
 
   // Lenis smooth scrolling
   useEffect(() => {
@@ -89,6 +94,9 @@ export default function DeliverySettings() {
         if (!cancelled) {
           setDeliveryStatus(operational.isEffectivelyOnline === true)
           syncStatusLocally(operational)
+          const charge = Number(restaurant?.packagingCharge) || 0
+          setPackagingCharge(charge > 0 ? String(charge) : "")
+          setSavedPackagingCharge(charge > 0 ? String(charge) : "")
         }
       } catch (error) {
         try {
@@ -180,6 +188,32 @@ export default function DeliverySettings() {
       return
     } finally {
       setSavingStatus(false)
+    }
+  }
+
+  const savePackagingCharge = async () => {
+    const raw = String(packagingCharge ?? "").trim()
+    const amount = raw === "" ? 0 : Number(raw)
+    if (!Number.isFinite(amount) || amount < 0) {
+      setPackagingError("Enter an amount of 0 or more")
+      return
+    }
+    if (amount > 500) {
+      setPackagingError("Packing charge cannot be more than ₹500 per order")
+      return
+    }
+    setPackagingError("")
+    try {
+      setSavingPackaging(true)
+      const res = await restaurantAPI.updateProfile({ packagingCharge: amount })
+      const saved = Number(res?.data?.data?.restaurant?.packagingCharge ?? amount) || 0
+      setPackagingCharge(saved > 0 ? String(saved) : "")
+      setSavedPackagingCharge(saved > 0 ? String(saved) : "")
+      showToast(saved > 0 ? `Packing charge set to ₹${saved} per order` : "Packing charge removed")
+    } catch (error) {
+      setPackagingError(error?.response?.data?.message || "Could not save the packing charge")
+    } finally {
+      setSavingPackaging(false)
     }
   }
 
@@ -283,6 +317,58 @@ export default function DeliverySettings() {
                   className="ml-4 data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-gray-300"
                 />
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Packing charge */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.05 }}
+          className="mt-4"
+        >
+          <Card className="bg-white border-gray-200 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <Package className="w-5 h-5 text-gray-900" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Packing charge</h2>
+                  <p className="text-sm text-gray-500">Added once to every order&apos;s bill and paid to you with the food amount</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="500"
+                    step="0.01"
+                    placeholder="0"
+                    value={packagingCharge}
+                    onChange={(e) => { setPackagingCharge(e.target.value); setPackagingError("") }}
+                    className="w-full h-11 pl-7 pr-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    aria-label="Packing charge per order in rupees"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={savePackagingCharge}
+                  disabled={savingPackaging || String(packagingCharge) === String(savedPackagingCharge)}
+                  className="h-11 px-4 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {savingPackaging ? "Saving..." : "Save"}
+                </button>
+              </div>
+              {packagingError ? (
+                <p className="text-xs text-red-600 mt-2">{packagingError}</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-2">Per order, not per item. Leave blank or 0 for no packing charge. Customers see it on your menu and in the bill.</p>
+              )}
             </CardContent>
           </Card>
         </motion.div>

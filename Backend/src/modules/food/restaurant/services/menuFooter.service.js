@@ -9,9 +9,9 @@ import { loadActiveFeeSettings } from '../../orders/services/order-pricing.servi
  *  - Taxes: GST is charged on the food only, at the zone's fee-settings
  *    `gstRate`, on top of the menu price (order-pricing.service.js). So menu
  *    prices are exclusive of GST whenever that rate is above 0.
- *  - Packing: the platform adds no packing charge (`packagingFee` is always 0
- *    at checkout and restaurants have no packaging-charge field). Reported as 0
- *    rather than left out, so the app can say so plainly.
+ *  - Packing: the restaurant's own `packagingCharge`, added once per order
+ *    as the bill's packagingFee (resolvePackagingFee in order-pricing). 0 is
+ *    reported rather than left out, so the app can say so plainly.
  *  - FSSAI number, legal name (GST legal name, else the store name) and the
  *    store address are the restaurant's own public fields.
  */
@@ -53,8 +53,11 @@ export function buildMenuFooter(restaurant = {}, { gstRate = null } = {}) {
             ? 'Menu prices are final. No GST is added at checkout.'
             : `Menu prices are exclusive of taxes. GST of ${formatRate(safeRate)}% on food is added at checkout.`;
 
-    const packagingCharge = 0;
-    const packagingNote = 'No packing charges are added to your bill.';
+    const rawPacking = Number(restaurant.packagingCharge);
+    const packagingCharge = Number.isFinite(rawPacking) && rawPacking > 0 ? Math.round(rawPacking * 100) / 100 : 0;
+    const packagingNote = packagingCharge > 0
+        ? `A packing charge of ₹${Number.isInteger(packagingCharge) ? packagingCharge : packagingCharge.toFixed(2)} per order is added to your bill.`
+        : 'No packing charges are added to your bill.';
 
     const fssaiNumber = String(restaurant.fssaiNumber || '').trim() || null;
     const legalName = String(restaurant.gstLegalName || '').trim() || String(restaurant.restaurantName || restaurant.name || '').trim() || null;

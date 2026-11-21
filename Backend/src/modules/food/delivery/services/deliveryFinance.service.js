@@ -21,6 +21,54 @@ const walletKey = (deliveryPartnerId) => ({
 });
 
 /**
+ * Cash the rider holds for the company: cash collected on delivered COD
+ * orders (less any wallet / online part of a split order), plus change kept
+ * for customers on approved change-to-wallet requests, less completed cash
+ * deposits. Floored at 0 and at the ledger's own cashInHand so a manual
+ * wallet adjustment is not lost. The one source for the wallet and the
+ * pocket screens.
+ *
+ * Pass `wallet` (the rider's wallet row, or null) when it is already loaded.
+ */
+export const getRiderCashInHand = async (deliveryPartnerId, { wallet } = {}) => {
+    const partnerId = String(deliveryPartnerId);
+    const [cashCollectedAgg, cashDepositsAgg, walletDoc, changeByRider] = await Promise.all([
+        // Gross cash collected (COD orders). The wallet part of a wallet + cash
+        // order was never in the rider's hand, so it is taken off.
+        prisma.foodOrder.aggregate({
+            where: {
+                dispatchDeliveryPartnerId: partnerId,
+                orderStatus: 'delivered',
+                paymentMethod: 'cash',
+            },
+            _sum: { total: true, walletAmount: true, onlineAmount: true },
+        }),
+        // Cash deposits (deduct from cash-in-hand)
+        prisma.foodDeliveryCashDeposit.aggregate({
+            where: { deliveryPartnerId: partnerId, status: 'Completed' },
+            _sum: { amount: true },
+        }),
+        wallet !== undefined ? wallet : prisma.wallet.findUnique({ where: walletKey(partnerId) }),
+        approvedChangeByRider([partnerId]),
+    ]);
+    // Change the rider kept for a customer (credited to the customer's wallet
+    // once approved) is cash they hold for the company too.
+    const changeKeptForCustomers = num(changeByRider?.get?.(partnerId));
+    const collected = Math.max(0,
+        num(cashCollectedAgg?._sum?.total)
+        - num(cashCollectedAgg?._sum?.walletAmount)
+        - num(cashCollectedAgg?._sum?.onlineAmount)) + changeKeptForCustomers;
+    const deposited = num(cashDepositsAgg?._sum?.amount);
+    const computed = Math.max(0, collected - deposited);
+    return {
+        cashInHand: Math.max(computed, num(walletDoc?.cashInHand)),
+        collected,
+        deposited,
+        changeKeptForCustomers,
+    };
+};
+
+/**
  * Enhanced wallet fetch for delivery partners. Integrates:
  * 1. Historical orders (earnings)
  * 2. Admin bonuses
@@ -37,8 +85,6 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
     const [
         cashLimitSettings,
         earningsAgg,
-        cashCollectedAgg,
-        cashDepositsAgg,
         bonusAgg,
         withdrawalsByStatus,
         withdrawalsList,
@@ -52,21 +98,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
             where: { dispatchDeliveryPartnerId: partnerId, orderStatus: 'delivered' },
             _sum: { riderEarning: true },
         }),
-        // 2. Gross cash collected (COD orders). The wallet part of a wallet + cash
-        //    order was never in the rider's hand, so it is taken off.
-        prisma.foodOrder.aggregate({
-            where: {
-                dispatchDeliveryPartnerId: partnerId,
-                orderStatus: 'delivered',
-                paymentMethod: 'cash',
-            },
-            _sum: { total: true, walletAmount: true, onlineAmount: true },
-        }),
-        // 3. Cash deposits (deduct from cash-in-hand)
-        prisma.foodDeliveryCashDeposit.aggregate({
-            where: { deliveryPartnerId: partnerId, status: 'Completed' },
-            _sum: { amount: true },
-        }),
+        // 2-3. Cash collected and deposited: getRiderCashInHand below.
         // 4. Admin bonuses
         prisma.deliveryBonusTransaction.aggregate({
             where: { deliveryPartnerId: partnerId },
@@ -105,15 +137,8 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         num(withdrawalsByStatus.find((r) => r.status === status)?._sum?.amount);
 
     const aggTotalEarned = num(earningsAgg?._sum?.riderEarning);
-    // Change the rider kept for a customer (credited to the customer's wallet
-    // once approved) is cash they hold for the company too.
-    const changeKept = num((await approvedChangeByRider([partnerId])).get(partnerId));
-    const grossCashCollected = Math.max(0,
-        num(cashCollectedAgg?._sum?.total)
-        - num(cashCollectedAgg?._sum?.walletAmount)
-        - num(cashCollectedAgg?._sum?.onlineAmount)) + changeKept;
-    const totalDepositedCash = num(cashDepositsAgg?._sum?.amount);
-    const computedCashInHand = Math.max(0, grossCashCollected - totalDepositedCash);
+    const cash = await getRiderCashInHand(partnerId, { wallet: walletDoc ?? null });
+    const changeKept = cash.changeKeptForCustomers;
     const aggTotalBonus = num(bonusAgg?._sum?.amount);
     const aggTotalWithdrawn = byStatus('approved');
     const pendingWithdrawals = byStatus('pending');
@@ -122,7 +147,6 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
     // wallet adjustments are not lost behind stale pocket totals.
     const walletBalance = num(walletDoc?.balance);
     const walletLockedAmount = num(walletDoc?.lockedAmount);
-    const walletCashInHand = num(walletDoc?.cashInHand);
     const walletTotalEarnings = num(walletDoc?.totalEarnings);
     const walletTotalBonus = num(walletDoc?.totalBonus);
     const walletTotalSettled = num(walletDoc?.totalSettled);
@@ -130,7 +154,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
     const totalEarned = Math.max(aggTotalEarned, walletTotalEarnings);
     const totalBonus = Math.max(aggTotalBonus, walletTotalBonus);
     const totalWithdrawn = Math.max(aggTotalWithdrawn, walletTotalSettled);
-    const cashInHand = Math.max(computedCashInHand, walletCashInHand);
+    const cashInHand = cash.cashInHand;
 
     const totalCashLimit = num(cashLimitSettings.deliveryCashLimit);
     const deliveryWithdrawalLimit = num(cashLimitSettings.deliveryWithdrawalLimit) || 100;

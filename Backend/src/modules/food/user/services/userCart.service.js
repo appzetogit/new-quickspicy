@@ -148,13 +148,18 @@ async function enrichStoredCartPricing(cart, storedPricing) {
         );
         const tax = toNonNegativeNumber(storedPricing.tax, toNonNegativeNumber(recalc.tax, 0));
         const discount = toNonNegativeNumber(storedPricing.discount, 0);
-        const total = Math.max(0, subtotal + recalcDelivery + recalcDeliveryGst + platformFee + tax - discount);
+        const packagingFee = toNonNegativeNumber(
+            storedPricing.packagingFee,
+            toNonNegativeNumber(recalc.packagingFee, 0),
+        );
+        const total = Math.max(0, subtotal + packagingFee + recalcDelivery + recalcDeliveryGst + platformFee + tax - discount);
 
         return {
             ...storedPricing,
             deliveryFee: recalcDelivery,
             deliveryFeeGst: recalcDeliveryGst,
             deliveryFeeBreakdown: recalc.deliveryFeeBreakdown || storedPricing.deliveryFeeBreakdown || null,
+            packagingFee,
             total,
         };
     } catch {

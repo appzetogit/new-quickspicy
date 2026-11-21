@@ -57,7 +57,7 @@ import { adminSidebarMenu } from "@food/utils/adminSidebarMenu"
 import { adminAPI } from "@food/api"
 import { getCachedSettings, loadBusinessSettings } from "@food/utils/businessSettings"
 import { canAccessFeatureSettings, canAccessSuperPowers } from "@food/utils/adminPermissions"
-import { canAdminAccess, isSuperAdmin, resolvePermissionSectionByPath } from "@food/utils/adminRbac"
+import { canAdminAccessPath, isSuperAdmin, resolvePermissionSectionByPath } from "@food/utils/adminRbac"
 // The sidebar is brand orange, so the white logo variants are the ones that read on it.
 const BRAND_LOGO_WHITE = "/brand/logo-horizontal-white.svg"
 const BRAND_MARK_WHITE = "/brand/logo-mark-white.svg"
@@ -301,7 +301,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
         if (!permissionSection && !isSuperAdmin(adminUser)) {
           return null
         }
-        if (permissionSection && !canAdminAccess(adminUser, permissionSection, "view")) {
+        if (permissionSection && !canAdminAccessPath(adminUser, section.path, "view")) {
           return null
         }
         return section
@@ -324,7 +324,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
             if (item.type === "link") {
               const permissionSection = resolvePermissionSectionByPath(item.path)
               if (!permissionSection && !isSuperAdmin(adminUser)) return null
-              if (permissionSection && !canAdminAccess(adminUser, permissionSection, "view")) return null
+              if (permissionSection && !canAdminAccessPath(adminUser, item.path, "view")) return null
             }
             if (item.type === "link" && !codControlEnabled && (item.path === deliveryCashLimitPath || item.path === cashLimitSettlementPath)) {
               return null
@@ -338,7 +338,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
                   if (sub.path === "/admin/food/restaurants/unregistered" && !rootLandingAndUnregisteredControlEnabled) return false
                   const permissionSection = resolvePermissionSectionByPath(sub.path)
                   if (!permissionSection && !isSuperAdmin(adminUser)) return false
-                  if (permissionSection && !canAdminAccess(adminUser, permissionSection, "view")) return false
+                  if (permissionSection && !canAdminAccessPath(adminUser, sub.path, "view")) return false
                   return true
                 })
                 .map((sub) => ({

@@ -22,6 +22,7 @@ import { determineStepToShow } from "@food/utils/onboardingUtils"
 import { toast } from "sonner"
 import { useCompanyName } from "@food/hooks/useCompanyName"
 import { getGoogleMapsApiKey } from "@food/utils/googleMapsApiKey"
+import LocationPinMap from "@food/components/shared/LocationPinMap"
 import { clearModuleAuth } from "@food/utils/auth"
 import { logoutRestaurantSession } from "@food/utils/restaurantLogout"
 import { ImageSourcePicker } from "@food/components/ImageSourcePicker"
@@ -790,6 +791,54 @@ function RestaurantOnboardingForm() {
   })
   const normalizeLocationQuery = (value) => String(value || "").replace(/\s+/g, " ").trim()
 
+
+  /** A real pin: both coordinates set, and not the 0,0 of an empty map. */
+  const hasPinnedLocation = (loc) => {
+    const raw = [loc?.latitude, loc?.longitude]
+    if (raw.some((v) => v === "" || v === null || v === undefined)) return false
+    const [la, lo] = raw.map(Number)
+    return Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 && !(la === 0 && lo === 0)
+  }
+
+  /**
+   * The map pin moved (drag, tap, or "use my location"). The map calls this
+   * once with the point, then again with the reverse-geocoded address: the
+   * point re-detects the zone, and the address fills the fields and the
+   * search box so the two never disagree.
+   */
+  const handlePinChange = (pin = {}) => {
+    const la = Number(pin.latitude)
+    const lo = Number(pin.longitude)
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return
+    const hasAddress = Boolean(pin.formattedAddress)
+    setStep1((prev) => ({
+      ...prev,
+      location: {
+        ...prev.location,
+        latitude: la,
+        longitude: lo,
+        ...(hasAddress
+          ? {
+              formattedAddress: pin.formattedAddress,
+              addressLine1: pin.formattedAddress,
+              area: pin.area || prev.location?.area || "",
+              city: pin.city || prev.location?.city || "",
+              state: pin.state || prev.location?.state || "",
+              pincode: pin.pincode || prev.location?.pincode || "",
+            }
+          : {}),
+      },
+    }))
+    if (hasAddress) {
+      setIsAutoFilledLocationLocked(true)
+      suppressSuggestionFetchRef.current = true
+      setLocationSearchValue(pin.formattedAddress)
+      setLocationSuggestions([])
+    } else {
+      void detectAndSetZoneForLocation(la, lo)
+    }
+  }
+
   const detectAndSetZoneForLocation = async (lat, lng) => {
     const latitude = Number(lat)
     const longitude = Number(lng)
@@ -1500,6 +1549,9 @@ function RestaurantOnboardingForm() {
     if (!step1.location?.city?.trim()) {
       errors.push("City is required")
     }
+    if (!hasPinnedLocation(step1.location)) {
+      errors.push("Please drop a pin on the map at your restaurant's exact location")
+    }
 
     return errors
   }
@@ -2200,6 +2252,24 @@ function RestaurantOnboardingForm() {
             {zoneDetectionState.status === "failed" && (
               <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
                 {zoneDetectionState.message}
+              </p>
+            )}
+          </div>
+          {/* The exact pick-up point. Search lands on the area's centre; delivery
+              fees, reach and rider dispatch all measure from this pin. */}
+          <div className="space-y-1.5">
+            <Label className={ONBOARDING_LABEL}>Pin your restaurant on the map*</Label>
+            <LocationPinMap
+              latitude={step1.location?.latitude}
+              longitude={step1.location?.longitude}
+              height={280}
+              showMyLocation
+              hint="Drag the pin or tap the map to your restaurant's entrance, or use your current location if you are at the restaurant."
+              onChange={handlePinChange}
+            />
+            {!hasPinnedLocation(step1.location) && (
+              <p className="text-[11px] font-medium text-amber-700">
+                Required: search your address above, or drop the pin yourself.
               </p>
             )}
           </div>

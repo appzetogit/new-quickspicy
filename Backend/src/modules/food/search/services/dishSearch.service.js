@@ -351,11 +351,21 @@ function groupVarieties(foods, eligible, needle, lang) {
 }
 
 /**
+ * The typed query for display: first letter of each word in capitals, the rest
+ * as typed ("chicken biryani" -> "Chicken Biryani"), spaces collapsed.
+ */
+export const titleCaseQuery = (value) =>
+    String(value ?? '').trim().split(/\s+/).filter(Boolean)
+        .map((w) => w.charAt(0).toLocaleUpperCase('en-IN') + w.slice(1))
+        .join(' ');
+
+/**
  * GET /food/search/suggest
  *
  * Type-ahead. Nothing until the customer has typed SUGGEST_MIN_CHARS
  * characters; then:
- *  - seeAll: "<q> — See all restaurants", with how many restaurants serve a
+ *  - seeAll: "<Q> — See all restaurants" (q title-cased for display; seeAll.query
+ *    stays as typed), with how many restaurants serve a
  *    matching dish right now (null when none do);
  *  - varieties: distinct matching dish names (grouped case/space-insensitively)
  *    with restaurant and item counts, from open restaurants in reach;
@@ -418,7 +428,7 @@ export async function suggest(query = {}) {
         .map(({ relevance, ...v }) => v);
     const serving = new Set(foods.filter((f) => eligible.has(f.restaurantId)).map((f) => f.restaurantId));
     const seeAll = serving.size
-        ? { label: `${q} — See all restaurants`, query: q, restaurantCount: serving.size }
+        ? { label: `${titleCaseQuery(q)} — See all restaurants`, query: q, restaurantCount: serving.size }
         : null;
 
     const out = {

@@ -242,7 +242,7 @@ const buildEffectiveCartPricing = ({
       total: serverTotal,
       savings: Number.isFinite(Number(pricing.savings))
         ? Number(pricing.savings)
-        : Math.max(0, subtotal + (Number.isFinite(serverDeliveryFee) ? serverDeliveryFee : 0) + (Number.isFinite(serverDeliveryFeeGst) ? serverDeliveryFeeGst : 0) + (Number.isFinite(serverPlatformFee) ? serverPlatformFee : 0) + (Number.isFinite(serverTax) ? serverTax : 0) - serverTotal),
+        : Math.max(0, subtotal + (Number(pricing.packagingFee) || 0) + (Number.isFinite(serverDeliveryFee) ? serverDeliveryFee : 0) + (Number.isFinite(serverDeliveryFeeGst) ? serverDeliveryFeeGst : 0) + (Number.isFinite(serverPlatformFee) ? serverPlatformFee : 0) + (Number.isFinite(serverTax) ? serverTax : 0) - serverTotal),
       couponCode: pricing?.couponCode || pricing?.appliedCoupon?.code || appliedCoupon?.code || "",
       deliveryFeeBreakdown: pricing?.deliveryFeeBreakdown || null,
       appliedCoupon: pricing?.appliedCoupon || appliedCoupon || null,
@@ -260,14 +260,16 @@ const buildEffectiveCartPricing = ({
     ? Math.max(0, Math.min(Math.floor(Number(appliedCoupon.discount) || 0), subtotal))
     : 0
   const gstCharges = Math.round(Math.max(0, subtotal - discount) * (Number(feeSettings.gstRate || 0) / 100))
-  const totalBeforeDiscount = subtotal + deliveryFee + deliveryFeeGst + platformFee + gstCharges
-  const total = Math.max(0, subtotal + deliveryFee + deliveryFeeGst + platformFee + gstCharges - discount)
+  // The restaurant's flat packing charge per order (no GST on it, as on the server).
+  const fallbackPackaging = subtotal > 0 ? Math.max(0, Number(restaurantData?.packagingCharge) || 0) : 0
+  const totalBeforeDiscount = subtotal + fallbackPackaging + deliveryFee + deliveryFeeGst + platformFee + gstCharges
+  const total = Math.max(0, subtotal + fallbackPackaging + deliveryFee + deliveryFeeGst + platformFee + gstCharges - discount)
   const savings = Math.max(0, totalBeforeDiscount - total)
 
   return {
     subtotal,
     tax: gstCharges,
-    packagingFee: 0,
+    packagingFee: fallbackPackaging,
     deliveryFee,
     deliveryFeeGst,
     platformFee,
@@ -1510,9 +1512,10 @@ export default function Cart() {
     ? deliveryFeeBreakdown?.message || `Distance: ${displayDistanceKm.toFixed(1)} km`
     : null
   const platformFee = effectivePricing.platformFee
+  const packagingFee = Number(effectivePricing.packagingFee) || 0
   const gstCharges = effectivePricing.tax
   const discount = effectivePricing.discount
-  const totalBeforeDiscount = subtotal + deliveryFee + deliveryFeeGst + platformFee + gstCharges
+  const totalBeforeDiscount = subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + gstCharges
   const total = effectivePricing.total
   const savings = effectivePricing.savings
   const itemDiscountAmount = appliedCoupon && discount > 0 ? discount : 0
@@ -3196,6 +3199,12 @@ export default function Cart() {
                       <div className="flex justify-between text-sm font-semibold">
                         <span className="text-[#EB590E] border-b border-dotted border-pink-300">Quick Mode</span>
                         <span className="text-[#EB590E]">{RUPEE_SYMBOL}{quickDeliveryFee.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {packagingFee > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-400 border-b border-dotted border-gray-300">Packing Charges</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-medium">{RUPEE_SYMBOL}{packagingFee.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm">

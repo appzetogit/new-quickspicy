@@ -199,16 +199,91 @@ export const getServiceStatus = async (zoneIds = []) => {
     };
 };
 
-/** The service status for a signed-in restaurant or rider, by their zone. */
+/**
+ * Per-zone pause detail for the zones an account serves, home zone first:
+ * [{ zoneId, name, home, paused, message, resumeAt }].
+ */
+const zonePauseDetail = async (zoneIds, homeZoneId, pause) => {
+    if (!zoneIds.length) return [];
+    const rows = await prisma.foodZone.findMany({
+        where: { id: { in: zoneIds } },
+        select: { id: true, name: true, zoneName: true },
+    });
+    const nameOf = new Map(rows.map((z) => [z.id, z.zoneName || z.name || '']));
+    return zoneIds.map((zoneId) => {
+        const hit = pause.active && (!pause.zoneIds.length || pause.zoneIds.includes(zoneId));
+        return {
+            zoneId,
+            name: nameOf.get(zoneId) || '',
+            home: zoneId === homeZoneId,
+            paused: hit,
+            message: hit ? (pause.message || DEFAULT_PAUSE_MESSAGE) : '',
+            resumeAt: hit && pause.until ? pause.until.toISOString() : null,
+        };
+    });
+};
+
+/**
+ * The service status for a signed-in restaurant or rider, by their zone(s).
+ *
+ * Existing fields ({ paused, servicePaused, message, resumeAt, scope }) are
+ * about the home zone, as before. Riders also serve their active cohort's
+ * zones, so the status adds:
+ *  - zones: [{ zoneId, name, home, paused, message, resumeAt }] for every
+ *    zone served (home first);
+ *  - pausedZones: ids of the paused ones;
+ *  - partial: true when some, but not all, of those zones are paused (the
+ *    rider still gets orders from the others).
+ * A rider with no home zone counts as paused only when every zone they
+ * serve is (or on an all-zones pause).
+ */
 export const getServiceStatusForAccount = async (role, id) => {
-    if (!id) return getServiceStatus([]);
-    let zoneId = null;
+    const empty = { partial: false, pausedZones: [], zones: [] };
+    if (!id) return { ...(await getServiceStatus([])), ...empty };
+    let homeZoneId = null;
+    let extraZoneIds = [];
     if (role === 'RESTAURANT') {
-        zoneId = (await prisma.foodRestaurant.findUnique({ where: { id: String(id) }, select: { zoneId: true } }))?.zoneId;
+        homeZoneId = (await prisma.foodRestaurant.findUnique({ where: { id: String(id) }, select: { zoneId: true } }))?.zoneId || null;
     } else if (role === 'DELIVERY_PARTNER') {
-        zoneId = (await prisma.foodDeliveryPartner.findUnique({ where: { id: String(id) }, select: { zoneId: true } }))?.zoneId;
+        const rider = await prisma.foodDeliveryPartner.findUnique({
+            where: { id: String(id) },
+            select: { zoneId: true, cohortId: true },
+        });
+        homeZoneId = rider?.zoneId || null;
+        if (rider?.cohortId) {
+            const cohort = await prisma.foodRiderCohort.findUnique({
+                where: { id: rider.cohortId },
+                select: { zoneIds: true, isActive: true },
+            });
+            if (cohort?.isActive) extraZoneIds = cohort.zoneIds || [];
+        }
     }
-    return getServiceStatus(zoneId ? [zoneId] : []);
+    const zoneIds = [...new Set([homeZoneId, ...extraZoneIds].filter((z) => z && ID_RE.test(String(z))).map(String))];
+
+    const base = await getServiceStatus(homeZoneId ? [homeZoneId] : []);
+    const pause = pausePayload(await prisma.foodBusinessSettings.findFirst({
+        select: { ordersPaused: true, ordersPausedZoneIds: true, ordersPausedMessage: true, ordersPausedUntil: true },
+    }));
+    const zones = await zonePauseDetail(zoneIds, homeZoneId, pause);
+    const pausedZones = zones.filter((z) => z.paused).map((z) => z.zoneId);
+    const allPaused = zones.length > 0 && pausedZones.length === zones.length;
+    const partial = pausedZones.length > 0 && !allPaused;
+
+    if (!homeZoneId && allPaused && !base.paused) {
+        const first = zones[0];
+        return {
+            ...base,
+            paused: true,
+            servicePaused: true,
+            message: first.message,
+            resumeAt: first.resumeAt,
+            scope: 'zone',
+            partial,
+            pausedZones,
+            zones,
+        };
+    }
+    return { ...base, partial, pausedZones, zones };
 };
 
 /**

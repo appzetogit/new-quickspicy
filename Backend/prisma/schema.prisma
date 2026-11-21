@@ -872,6 +872,14 @@ model FoodRestaurant {
   /// that will grow ("new", "trending"); the whitelist lives in
   /// adminRestaurantWrite.helpers.js. Promote to an enum if it stops changing.
   highlightBadge String? @db.VarChar(20)
+  /// Every tag on the card, in display order (keys of FoodHighlightBadge).
+  /// highlightBadge above mirrors the first one for app builds that read a
+  /// single tag; writes keep the two in step.
+  highlightBadges String[] @default([])
+
+  /// Packing charge added to every order from this restaurant, in rupees
+  /// (per order, not per item). Paid to the restaurant with the item value.
+  packagingCharge Decimal @default(0) @db.Decimal(10, 2)
 
   /// How far this restaurant delivers, in km. Null follows the platform's
   /// discoveryRadiusKm; a value here wins for this restaurant alone.
@@ -1690,6 +1698,9 @@ model OrderItem {
   priceRuleId      String?  @db.VarChar(24)
   quantity         Int
   isVeg            Boolean  @default(true)
+  /// The dish's diet at order time (Veg / Egg / Non-Veg). isVeg alone cannot
+  /// tell Egg from Non-Veg. Null only on lines no migration could resolve.
+  foodType         FoodType?
   image            String   @default("")
   notes            String   @default("")
 

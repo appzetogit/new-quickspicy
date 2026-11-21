@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import BottomNavigation from "./BottomNavigation"
 import { getUnreadDeliveryNotificationCount } from "@food/utils/deliveryNotifications"
 import { deliveryAPI } from "@food/api"
-import ServicePausedBanner, { isServicePaused } from "../../../shared/components/ServicePausedBanner.jsx"
+import ServicePausedBanner, { isPartlyPaused, isServicePaused } from "../../../shared/components/ServicePausedBanner.jsx"
 
 export default function DeliveryLayout({
   children,
@@ -87,12 +87,13 @@ export default function DeliveryLayout({
   return (
     <>
       <main>
-        {isServicePaused(serviceStatus) ? (
+        {isServicePaused(serviceStatus) || isPartlyPaused(serviceStatus) ? (
           <div className="sticky top-0 z-[60] px-3 pt-2 bg-transparent">
             <ServicePausedBanner
               status={serviceStatus}
               title="Orders are paused in your zone. Few or no new orders until it resumes."
               className="shadow-sm"
+              showPartial
             />
           </div>
         ) : null}

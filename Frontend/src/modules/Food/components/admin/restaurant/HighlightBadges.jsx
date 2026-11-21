@@ -121,6 +121,126 @@ export function HighlightBadgeSelect({ value, onChange }) {
   )
 }
 
+/** Most tags on one restaurant; the backend enforces the same limit. */
+export const MAX_HIGHLIGHT_BADGES = 5
+
+/**
+ * Several tags on one restaurant. `value` is the list of tag keys in display
+ * order (the first is what older app builds show); click a tag to add or
+ * remove it.
+ */
+export function HighlightBadgeMultiSelect({ value, onChange }) {
+  const { badges, loading, reload } = useHighlightBadges()
+  const [adding, setAdding] = useState(false)
+  const [label, setLabel] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const selected = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : []
+  const active = badges.filter((b) => b.isActive)
+  const byKey = new Map(badges.map((b) => [b.key, b]))
+  // A tag that was switched off or deleted still shows on a restaurant that has
+  // it, so the admin can see and remove it; the server would refuse to save it.
+  const stale = selected.filter((k) => !active.some((b) => b.key === k))
+  const full = selected.length >= MAX_HIGHLIGHT_BADGES
+
+  const toggle = (key) => {
+    if (selected.includes(key)) onChange(selected.filter((k) => k !== key))
+    else if (!full) onChange([...selected, key])
+    else toast.error(`At most ${MAX_HIGHLIGHT_BADGES} tags per restaurant`)
+  }
+
+  const add = async () => {
+    if (!label.trim()) return
+    try {
+      setSaving(true)
+      const res = await adminAPI.createHighlightBadge({ label: label.trim() })
+      const badge = res?.data?.data?.badge
+      await reload()
+      if (badge?.key && !selected.includes(badge.key) && !full) onChange([...selected, badge.key])
+      setLabel("")
+      setAdding(false)
+      toast.success(`Tag "${badge?.label || label}" added`)
+    } catch (err) {
+      toast.error(errorText(err, "Couldn't add the tag"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+        {!loading && active.length === 0 && (
+          <span className="text-xs text-slate-500">No tags yet. Add one, or manage them in Restaurant settings.</span>
+        )}
+        {active.map((b) => {
+          const on = selected.includes(b.key)
+          return (
+            <button
+              key={b.key}
+              type="button"
+              onClick={() => toggle(b.key)}
+              aria-pressed={on}
+              className={`h-8 px-3 rounded-full border text-xs font-semibold transition-colors ${
+                on ? "text-white border-transparent" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+              style={on ? { backgroundColor: b.color || "#E23744" } : undefined}
+            >
+              {on ? `${selected.indexOf(b.key) + 1}. ` : ""}{b.label}
+            </button>
+          )
+        })}
+        {stale.map((k) => (
+          <button
+            key={`stale-${k}`}
+            type="button"
+            onClick={() => onChange(selected.filter((x) => x !== k))}
+            className="h-8 px-3 rounded-full border border-dashed border-amber-300 bg-amber-50 text-amber-800 text-xs"
+            title="This tag is off or deleted. Click to remove it."
+          >
+            {byKey.get(k)?.label || k} (removed) ×
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="h-8 px-3 rounded-full border border-slate-200 bg-white text-xs hover:bg-slate-50 flex items-center gap-1"
+          title="Add a new tag"
+        >
+          <Plus className="w-3.5 h-3.5" /> New
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        {selected.length
+          ? `${selected.length} selected. The numbers are the order the card shows them in; older app versions show only the first.`
+          : "No tags: the card shows none."}
+      </p>
+      {adding && (
+        <div className="flex gap-2">
+          <input
+            autoFocus
+            value={label}
+            maxLength={40}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+            placeholder="e.g. New, Trending, Pure Veg"
+            className="w-full h-9 px-3 rounded-md border border-slate-200 text-sm"
+          />
+          <button
+            type="button"
+            onClick={add}
+            disabled={saving || !label.trim()}
+            className="shrink-0 h-9 px-3 rounded-md bg-slate-900 text-white text-sm disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Full list: rename, recolour, hide, delete. */
 export function HighlightBadgeManager() {
   const { badges, loading, reload } = useHighlightBadges()
