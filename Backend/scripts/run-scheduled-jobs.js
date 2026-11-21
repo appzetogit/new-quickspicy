@@ -14,6 +14,7 @@ let subscriptionBillingInterval = null;
 let orderWatchdogInterval = null;
 let incentiveSweepInterval = null;
 let payoutStatementInterval = null;
+let funnelCleanupInterval = null;
 
 const shutdown = async (signal) => {
     logger.info(`${signal} received, stopping scheduled jobs`);
@@ -23,6 +24,7 @@ const shutdown = async (signal) => {
     if (orderWatchdogInterval) clearInterval(orderWatchdogInterval);
     if (incentiveSweepInterval) clearInterval(incentiveSweepInterval);
     if (payoutStatementInterval) clearInterval(payoutStatementInterval);
+    if (funnelCleanupInterval) clearInterval(funnelCleanupInterval);
 
     try {
         await disconnectDB();
@@ -140,6 +142,17 @@ const start = async () => {
             }
         };
 
+        // Funnel events are kept 180 days (Customer Funnel report).
+        const runFunnelCleanup = async () => {
+            try {
+                const { cleanupOldFunnelEvents } = await import('../src/modules/food/funnel/funnelEvents.service.js');
+                const removed = await cleanupOldFunnelEvents();
+                if (removed) logger.info(`Funnel cleanup: ${removed} events older than 180 days removed`);
+            } catch (err) {
+                logger.error(`Funnel cleanup error: ${err.message}`);
+            }
+        };
+
         await runExpire();
         await runFssaiExpirySync();
         await runSubscriptionBilling();
@@ -152,6 +165,8 @@ const start = async () => {
         incentiveSweepInterval = setInterval(runIncentiveSweep, 60 * 60 * 1000);
         payoutStatementInterval = setInterval(runPayoutStatements, 6 * 60 * 60 * 1000);
         void runPayoutStatements();
+        funnelCleanupInterval = setInterval(runFunnelCleanup, 24 * 60 * 60 * 1000);
+        void runFunnelCleanup();
 
         logger.info('Scheduled jobs runner started');
     } catch (err) {

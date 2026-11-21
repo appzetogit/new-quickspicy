@@ -64,6 +64,7 @@ import {
 import fssaiLogo from "@food/assets/fssai.png"
 import { RestaurantDetailSkeleton } from "@food/components/ui/loading-skeletons"
 import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
+import { trackFunnel } from "@food/utils/funnelTracker"
 import { FOOD_TYPE_COLORS } from "@food/utils/foodType"
 
 const debugLog = (...args) => {}
@@ -1118,6 +1119,14 @@ function RestaurantDetailsContent() {
     const id = restaurant?.restaurantId || restaurant?._id || restaurant?.id
     if (id && typeof selectCart === "function") selectCart(String(id))
   }, [restaurant?.restaurantId, restaurant?._id, restaurant?.id, selectCart])
+
+  // Customer funnel: restaurant browsing (once per restaurant per 30s).
+  useEffect(() => {
+    const id = [restaurant?._id, restaurant?.id, restaurant?.restaurantId]
+      .map((v) => String(v || ""))
+      .find((v) => /^[a-f0-9]{24}$/i.test(v))
+    if (id) trackFunnel("restaurant_view", { restaurantId: id })
+  }, [restaurant?.restaurantId, restaurant?._id, restaurant?.id])
 
   useEffect(() => {
     if (!selectedItem) {

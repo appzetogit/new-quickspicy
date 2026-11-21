@@ -24,7 +24,9 @@ import chatRoutes from '../modules/food/chat/routes/chat.routes.js';
 import { requireAdminPermission } from '../core/roles/adminPermission.middleware.js';
 import { getCashbackSettingsPublicController } from '../modules/food/user/controllers/cashback.controller.js';
 import { config } from '../config/env.js';
-import { getRateLimitSummary } from '../middleware/rateLimit.js';
+import { getRateLimitSummary, funnelEventsRateLimiter } from '../middleware/rateLimit.js';
+import { optionalAuth } from '../core/auth/auth.middleware.js';
+import { ingestFunnelEventsController } from '../modules/food/funnel/funnel.controller.js';
 import { getPublicPlatformSettings } from '../modules/food/admin/controllers/adminFoundations.controller.js';
 
 const router = express.Router();
@@ -71,6 +73,9 @@ router.get('/v1/food/admin/cashback-settings/public', getCashbackSettingsPublicC
 // Admin settings pages marked public (app & web, login setup, theme, withdraw
 // methods, wallet bonus ...), secrets removed. For the apps and the website.
 router.get('/v1/food/platform-settings/public', getPublicPlatformSettings);
+// Customer funnel events from the apps and the website. Public (works signed
+// out with a session id); a customer token, when sent, attaches the user.
+router.post('/v1/food/events', funnelEventsRateLimiter, optionalAuth, ingestFunnelEventsController);
 
 router.use('/v1/food/admin', authMiddleware, requireRoles('ADMIN'), restaurantAdminRoutes);
 router.use('/v1/food/user', authMiddleware, requireRoles('USER'), userRoutes);

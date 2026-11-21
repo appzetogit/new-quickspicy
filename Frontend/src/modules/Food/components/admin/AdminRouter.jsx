@@ -108,6 +108,7 @@ const FeedbackExperienceReport = lazy(() => import("@food/pages/admin/reports/Fe
 const TaxReport = lazy(() => import("@food/pages/admin/reports/TaxReport"));
 const PopularItemsReport = lazy(() => import("@food/pages/admin/reports/FoodReport"));
 const CancellationReport = lazy(() => import("@food/pages/admin/reports/CancellationReport"));
+const CustomerFunnelReport = lazy(() => import("@food/pages/admin/reports/CustomerFunnelReport"));
 const InventoryReport = lazy(() => import("@food/pages/admin/reports/InventoryReport"));
 // Transaction Management
 const RestaurantWithdraws = lazy(() => import("@food/pages/admin/transactions/RestaurantWithdraws"));
@@ -375,6 +376,7 @@ export default function AdminRouter() {
             <Route path="order-report/promo-usage" element={<PromoUsageReport />} />
             <Route path="restaurant-report" element={<RestaurantReport />} />
             <Route path="customer-report/feedback-experience" element={<FeedbackExperienceReport />} />
+            <Route path="customer-report/funnel" element={<CustomerFunnelReport />} />
             <Route path="tax-report" element={<TaxReport />} />
             <Route path="popular-items-report" element={<PopularItemsReport />} />
             <Route path="cancellation-report" element={<CancellationReport />} />

@@ -15,6 +15,7 @@ import BottomNavigation from "./BottomNavigation"
 import DesktopNavbar from "./DesktopNavbar"
 import { useUserNotifications } from "../../hooks/useUserNotifications"
 import { shouldSkipScrollResetForHome } from "@food/utils/homeScrollRestore"
+import { trackAppOpen } from "@food/utils/funnelTracker"
 
 // Create SearchOverlay context with default value
 const SearchOverlayContext = createContext({
@@ -169,6 +170,11 @@ function LocationSelectorProvider({ children }) {
 
 export default function UserLayout() {
   const location = useLocation()
+
+  // Customer funnel: one app_open per browser tab session.
+  useEffect(() => {
+    trackAppOpen()
+  }, [])
 
   useEffect(() => {
     // Reset scroll to top whenever location changes (pathname, search, or hash).

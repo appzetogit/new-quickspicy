@@ -6,6 +6,7 @@ import { BRAND_IMAGE_URL } from '../../../../config/brand.js';
 import { toOrder, toOrders, fromOrder, orderInclude } from '../order.mapper.js';
 import { reconcileOrderPayment } from './payment-reconcile.service.js';
 import { logger } from '../../../../utils/logger.js';
+import { trackOrderPayment } from '../../funnel/funnelEvents.service.js';
 import { ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../../core/auth/errors.js';
 import { buildPaginationOptions, buildPaginatedResult, isId } from '../../../../utils/helpers.js';
 import {
@@ -1078,6 +1079,8 @@ export async function createOrder(userId, rawDto) {
 
     if (!isAwaitingOnlinePayment) {
       await incrementCouponUsageForOrder(order, userId);
+      // Funnel: a cash or wallet order is as good as paid once placed.
+      trackOrderPayment(order.id);
     }
 
     return { order: normalizeOrderForClient(order), razorpay: razorpayPayload };
@@ -1139,6 +1142,7 @@ export async function verifyPayment(userId, dto) {
     paidPaise !== expectedPaise
   ) {
     await prisma.foodOrder.update({ where: { id: order.id }, data: { paymentStatus: 'failed' } });
+    trackOrderPayment(order.id, { event: 'payment_failed' });
     await pushStatusHistory(order.id, {
       byRole: "SYSTEM",
       from: order.orderStatus,
@@ -1197,6 +1201,9 @@ export async function finalizeOrderPayment(orderId, { source = "SYSTEM", userId 
     data: { orderStatus: 'created', acceptanceWindowSeconds, acceptanceDeadlineAt },
   });
   if (!count) return null;
+
+  // Funnel: payment confirmed (verify, webhook or reconcile -- whichever won).
+  trackOrderPayment(orderId);
 
   const updated = toOrder(await prisma.foodOrder.findFirst({ where: { id: orderId }, include: orderInclude }));
 
@@ -1281,6 +1288,11 @@ export async function abandonOnlinePaymentOrder(userId, orderId) {
 
   const deleted = await deletePendingPaymentOrder(order);
   if (!deleted) throw new ValidationError("Could not abandon payment");
+  // Funnel: the customer closed the payment sheet without paying.
+  trackOrderPayment(
+    { id: row.id, userId: row.userId, zoneId: row.zoneId, restaurantId: row.restaurantId, paymentMethod: row.paymentMethod, total: row.total },
+    { event: "payment_failed" },
+  );
 
   return { deleted: true, orderId: order.id };
 }

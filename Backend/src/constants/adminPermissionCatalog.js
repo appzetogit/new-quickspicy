@@ -115,6 +115,7 @@ export const ADMIN_SUBMENU_CATALOG = Object.freeze({
         entry(P('order-report/delivery-performance'), 'Delivery Performance'),
         entry(P('restaurant-report'), 'Restaurant Report'),
         entry(P('customer-report/feedback-experience'), 'Feedback Experience'),
+        entry(P('customer-report/funnel'), 'Customer Funnel'),
     ],
     transaction_management: [
         entry(P('balance-sheet'), 'Balance Sheet'),
@@ -184,6 +185,7 @@ export const ADMIN_SUBMENU_API_RULES = Object.freeze([
     rule('/reports/delivery-performance', 'report_management', 'order-report/delivery-performance'),
     rule('/reports/restaurants', 'report_management', 'restaurant-report'),
     rule('/feedback-experiences', 'report_management', 'customer-report/feedback-experience'),
+    rule('/reports/funnel', 'report_management', 'customer-report/funnel'),
 
     // Orders (the status-filtered list is resolved separately below).
     rule('/orders/user-carts', 'order_management', 'orders/user-carts'),

@@ -44,6 +44,7 @@ import * as foundations from '../controllers/adminFoundations.controller.js';
 import * as moneyReports from '../controllers/adminMoneyReports.controller.js';
 import * as reportPerformance from '../controllers/reportPerformance.controller.js';
 import * as reportInsights from '../controllers/reportInsights.controller.js';
+import { funnelReportController } from '../../funnel/funnel.controller.js';
 import * as adminReferrals from '../controllers/adminReferrals.controller.js';
 import * as adminCompliance from '../controllers/adminCompliance.controller.js';
 import opsMoneyRoutes from './opsMoney.routes.js';
@@ -316,6 +317,8 @@ router.get('/reports/tax/:id', adminController.getTaxReportDetail);
 router.get('/reports/popular-items', reportInsights.popularItemsReport);
 router.get('/reports/cancellations', reportInsights.cancellationReport);
 router.get('/reports/inventory', reportInsights.inventoryReport);
+// Customer funnel: app open -> restaurant -> cart -> checkout -> paid.
+router.get('/reports/funnel', funnelReportController);
 router.get('/restaurants/pending', adminController.getPendingRestaurants);
 router.get('/restaurants/unregistered', adminController.getUnregisteredRestaurants);
 router.delete('/restaurants/unregistered/:id', adminController.deleteUnregisteredRestaurant);

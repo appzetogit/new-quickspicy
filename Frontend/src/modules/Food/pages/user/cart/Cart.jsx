@@ -46,6 +46,7 @@ import {
 import CartAutoCouponBanner from "@food/components/user/CartAutoCouponBanner"
 import zoopSound from "@food/assets/audio/zomato_sms.mp3"
 import { FOOD_TYPE_COLORS, foodTypeOf } from "@food/utils/foodType"
+import { trackFunnel } from "@food/utils/funnelTracker"
 const debugLog = (...args) => { }
 const debugWarn = (...args) => { }
 const debugError = (...args) => { }
@@ -1969,6 +1970,9 @@ export default function Cart() {
 
 
   const handlePlaceOrder = async () => {
+    // Customer funnel: the customer tapped place order (cart -> checkout).
+    trackFunnel("checkout_start", { restaurantId, props: { method: selectedPaymentMethod } })
+
     if (!hasSavedAddress) {
       toast.error("Please choose a delivery location to continue")
       setShowAddressSheet(true)

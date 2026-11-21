@@ -4,6 +4,7 @@ import { ArrowLeft, Star, Clock, Search, Loader2, MapPin, Store } from "lucide-r
 import { Button } from "@food/components/ui/button"
 import { searchAPI } from "@/services/api"
 import { useDeliveryLocation } from "@food/context/DeliveryLocationContext"
+import { useLocationSelector } from "@food/components/user/UserLayout"
 
 /**
  * "Biryani — See all restaurants": restaurants that currently serve at least
@@ -32,6 +33,7 @@ const formatPrice = (value) => `₹${Math.round(Number(value) || 0)}`
 export default function DishRestaurants() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { openLocationSelector } = useLocationSelector()
   const q = String(searchParams.get("q") || "").trim()
   const exact = searchParams.get("exact") === "true"
   const sortBy = searchParams.get("sort") || ""
@@ -196,6 +198,9 @@ export default function DishRestaurants() {
             <MapPin className="w-10 h-10 text-slate-300 mb-3" />
             <p className="font-semibold text-slate-700 dark:text-zinc-300">Set your delivery location</p>
             <p className="text-sm text-slate-500 mt-1">We show restaurants that deliver to you.</p>
+            <Button className="mt-4 bg-brand-500 hover:bg-brand-600 text-white" onClick={openLocationSelector}>
+              Set location
+            </Button>
           </div>
         )}
 

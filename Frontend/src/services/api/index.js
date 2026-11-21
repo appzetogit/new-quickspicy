@@ -1044,6 +1044,9 @@ export const adminAPI = {
   // Dishes in and out of stock per restaurant.
   getInventoryReport: (params = {}) =>
     apiClient.get("/food/admin/reports/inventory", { params, contextModule: "admin" }),
+  // Customer funnel: app open -> restaurant -> cart -> checkout -> paid.
+  getCustomerFunnelReport: (params = {}) =>
+    apiClient.get("/food/admin/reports/funnel", { params, contextModule: "admin" }),
   /** Get single zone by id */
   getZoneById: (id) =>
     apiClient.get(`/food/admin/zones/${id}`, { contextModule: "admin" }),

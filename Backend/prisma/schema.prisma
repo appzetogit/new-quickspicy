@@ -4354,3 +4354,39 @@ model FoodUpiCollection {
   @@index([status, createdAt])
   @@map("food_upi_collections")
 }
+
+/// One step of the ordering journey, for the Customer Funnel report: app
+/// open -> restaurant view -> add to cart -> checkout -> payment. Sent by the
+/// apps and the website (POST /food/events); payment_success is also written
+/// by the server when an order is paid, deduped by orderId through dedupeKey.
+/// Kept 180 days (scheduler cleanup).
+model FoodFunnelEvent {
+  id           String   @id @default(dbgenerated("encode(gen_random_bytes(12), 'hex')")) @db.VarChar(24)
+  /// app_open | restaurant_view | menu_item_view | add_to_cart | checkout_start
+  /// | payment_success | payment_failed
+  event        String   @db.VarChar(32)
+  /// One app session (a fresh id per launch / browser tab).
+  sessionId    String   @db.VarChar(64)
+  /// The install / browser, kept across sessions. Optional.
+  deviceId     String?  @db.VarChar(64)
+  userId       String?  @db.VarChar(24)
+  /// android | ios | web
+  platform     String   @db.VarChar(10)
+  appVersion   String?  @db.VarChar(32)
+  zoneId       String?  @db.VarChar(24)
+  restaurantId String?  @db.VarChar(24)
+  orderId      String?  @db.VarChar(24)
+  /// Small extras (isFirstOpen, method, itemId ...), at most ~2KB.
+  props        Json     @default("{}")
+  /// app | server: who wrote the row.
+  source       String   @default("app") @db.VarChar(10)
+  /// "payment_success:<orderId>", so an order is counted paid once.
+  dedupeKey    String?  @unique @db.VarChar(64)
+  createdAt    DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([sessionId])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@map("food_funnel_events")
+}

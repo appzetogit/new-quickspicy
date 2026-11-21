@@ -269,6 +269,7 @@ export const adminSidebarMenu = [
         icon: "FileText",
         subItems: [
           { label: "Feedback Experience", path: "/admin/food/customer-report/feedback-experience" },
+          { label: "Customer Funnel", path: "/admin/food/customer-report/funnel" },
           { label: "Customer Rewards", path: "/admin/food/loyalty-point/report" },
         ],
       },

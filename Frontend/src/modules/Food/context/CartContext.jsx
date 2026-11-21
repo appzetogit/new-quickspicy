@@ -9,6 +9,7 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { buildCartLineId } from "@food/utils/foodVariants"
 import { userAPI } from "@/services/api"
+import { trackFunnel } from "@food/utils/funnelTracker"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -539,6 +540,10 @@ export function CartProvider({ children }) {
     })
     flashAddEvent(item, sourcePosition)
     touchCart(key)
+    trackFunnel("add_to_cart", {
+      restaurantId: item.restaurantId?._id || item.restaurantId,
+      props: { itemId: String(item.itemId || item.id || "").slice(0, 60), quantity: addQuantity },
+    })
 
     return { ok: true, restaurantId: item.restaurantId || null }
   }

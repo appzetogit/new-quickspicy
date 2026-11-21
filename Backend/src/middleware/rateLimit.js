@@ -249,6 +249,20 @@ export const uploadRateLimiter = createLimiter({
     keyGenerator: userOrIpRateLimitKey,
 });
 
+/**
+ * Funnel events (POST /food/events). Public, so keyed by IP. The apps send a
+ * batch every few seconds at most; 120 batches a minute leaves room for a
+ * shared NAT while stopping anyone flooding the table.
+ */
+export const funnelEventsRateLimiter = createLimiter({
+    name: 'funnel-events',
+    prefix: 'rl:events',
+    windowMs: 60 * 1000,
+    max: resolveMax(120, 600),
+    message: 'Too many events, please slow down.',
+    keyGenerator: ipRateLimitKey,
+});
+
 export const getRateLimitSummary = () => ({
     enabled: config.rateLimitEnabled,
     environment: config.nodeEnv,

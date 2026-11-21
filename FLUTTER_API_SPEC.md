@@ -1223,6 +1223,54 @@ Sockets are an optimization. The tracking screen must still work by polling `GET
 
 ---
 
+## 11b. Funnel events — `POST /food/events` (no auth needed; Bearer optional)
+
+Feeds the admin's **Customer Funnel** report (app open → restaurant browsing → cart → checkout → payment). Fire and forget: never block a screen on it, never show an error for it, don't retry a failed batch more than once.
+
+- **Auth:** optional. Send the customer's `Authorization: Bearer <accessToken>` when signed in so the events carry the user; an expired/invalid token is ignored (not refused).
+- **Rate limit:** 120 requests a minute per IP (429 with `Retry-After` past that). Batch: queue events in memory, send every ~5 s, when 20+ are queued, and when the app goes to background.
+- **Batch size:** at most **50 events**; anything after the 50th is dropped.
+
+```json
+POST /food/events
+{
+  "sessionId": "3f9a2c1e-7b4d-4c1a-9e2f-0a1b2c3d4e5f",   // required, 8-64 chars [A-Za-z0-9_.:-]; new id per app launch (cold start, or back after 30 min in background)
+  "deviceId":  "9b1c...e2",                                // optional, same charset; one per install, kept across launches
+  "platform":  "android",                                  // required: android | ios | web
+  "appVersion": "2.4.0 (57)",                              // optional, ≤32 chars [A-Za-z0-9_.+- ()]
+  "zoneId": "6650c0ffee0123456789abcd",                    // optional default for every event (from /food/zones/detect)
+  "events": [
+    { "event": "app_open", "isFirstOpen": true, "at": "2026-11-21T10:15:00.000Z" },
+    { "event": "restaurant_view", "restaurantId": "6650c0ffee0123456789abce" },
+    { "event": "menu_item_view", "restaurantId": "…", "props": { "itemId": "…" } },
+    { "event": "add_to_cart", "restaurantId": "…", "props": { "itemId": "…", "quantity": 1 } },
+    { "event": "checkout_start", "restaurantId": "…", "props": { "method": "razorpay" } },
+    { "event": "payment_success", "orderId": "6650c0ffee0123456789abcf" },
+    { "event": "payment_failed", "orderId": "…", "props": { "reason": "cancelled" } }
+  ]
+}
+```
+
+→ `202 { success: true, data: { received, accepted, dropped } }`. `400` only when the body has no `events` array. Bad events inside a batch are silently dropped, never an error.
+
+**Events (fixed list; anything else is ignored):**
+
+| event | send when | fields |
+|---|---|---|
+| `app_open` | once per session, at launch | `isFirstOpen: true` on the very first launch after install (this is the "install" count) |
+| `restaurant_view` | restaurant page opened | `restaurantId` |
+| `menu_item_view` | optional: dish detail / variant sheet opened | `restaurantId`, `props.itemId` |
+| `add_to_cart` | a dish is added to the cart | `restaurantId`, `props.itemId`, `props.quantity` |
+| `checkout_start` | user taps Place order / Pay on the cart screen | `restaurantId`, `props.method` (`cash`/`razorpay`/`wallet`) |
+| `payment_success` | order placed (cash/wallet) or payment verified (online) | `orderId` **required** (the order's `_id`); must be the signed-in user's order, else dropped |
+| `payment_failed` | Razorpay error / sheet closed without paying | `orderId` if known, `props.reason` |
+
+**Per-event fields** (each may also come from the batch level): `event` (required), `sessionId`, `platform`, `appVersion`, `zoneId`, `restaurantId`, `orderId` (24-hex ids only; anything else becomes null), `at` (ISO time or epoch ms when it happened — honoured if within the last 24 h and not more than 5 min ahead, else server time), `props` (flat object: ≤20 keys `[A-Za-z0-9_]`, values string ≤200 chars / number / boolean / null; props over ~2 KB are dropped, the event kept).
+
+**Server side:** `payment_success` is also written by the server when an order is paid (online payment verified / webhook, or a cash / wallet order placed), and `payment_failed` when an online payment is rejected or abandoned. One row per order — the app's copy with the same `orderId` and the server's collapse into one, so sending it is safe. The server attaches its row to the customer's latest app session (last 12 h), so keep sending the Bearer token on funnel calls once signed in.
+
+Events are kept 180 days.
+
 ## Client implementation notes
 
 1. **One Dio instance + interceptor.** Base URL from env, attach the Bearer token, on 401 try `refresh-token` once, then force logout.
