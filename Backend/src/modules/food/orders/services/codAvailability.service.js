@@ -103,9 +103,9 @@ export const effectiveCod = (zone, platformEnabled) => {
 };
 
 /**
- * Read a zone's COD patch off an admin request body.
+ * Read a zone's COD (and online payment) patch off an admin request body.
  *
- * codEnabled is tri-state, so an absent key ("leave it alone") and an explicit
+ * codEnabled and onlinePaymentEnabled are tri-state, so an absent key ("leave it alone") and an explicit
  * null ("follow the platform") are two different instructions and are told
  * apart by the key being there at all, never by the value being falsy.
  *
@@ -134,8 +134,18 @@ export const parseZoneCodSettings = (body = {}) => {
         data.codMinDeliveredOrders = numeric;
     }
 
+    // Online payment rides on the same per-zone patch: it is set on the same
+    // screen, and is tri-state the same way (null = follow the platform = on).
+    if (has('onlinePaymentEnabled')) {
+        const raw = payload.onlinePaymentEnabled;
+        if (raw === true || raw === 'true') data.onlinePaymentEnabled = true;
+        else if (raw === false || raw === 'false') data.onlinePaymentEnabled = false;
+        else if (raw === null || raw === 'null' || raw === '') data.onlinePaymentEnabled = null;
+        else return { data: {}, error: 'onlinePaymentEnabled must be true, false, or null' };
+    }
+
     if (!Object.keys(data).length) {
-        return { data: {}, error: 'Nothing to update: send codEnabled or codMinDeliveredOrders' };
+        return { data: {}, error: 'Nothing to update: send codEnabled, codMinDeliveredOrders or onlinePaymentEnabled' };
     }
     return { data, error: null };
 };

@@ -571,6 +571,29 @@ export async function calculateOrder(userId, dto) {
       logger.warn(`Wallet preview failed for user ${userId}: ${err?.message || err}`);
     }
   }
+
+  // Which ways to pay are open here, from the same checks createOrder runs, so
+  // checkout can hide what would be refused. Same zone as createOrder: the
+  // restaurant's, else the one sent.
+  try {
+    let zoneId = null;
+    if (isId(dto.restaurantId)) {
+      const r = await prisma.foodRestaurant.findUnique({
+        where: { id: String(dto.restaurantId) },
+        select: { zoneId: true },
+      });
+      zoneId = r?.zoneId || null;
+    }
+    if (!zoneId) zoneId = dto.zoneId || null;
+    const { resolvePaymentAvailability } = await import("./onlinePaymentAvailability.service.js");
+    result.paymentAvailability = await resolvePaymentAvailability({
+      userId,
+      zoneId,
+      walletCoversAll: Boolean(result.wallet?.coversAll || result.wallet?.withCash?.coversAll),
+    });
+  } catch (err) {
+    logger.warn(`Payment availability preview failed: ${err?.message || err}`);
+  }
   return result;
 }
 
@@ -712,7 +735,7 @@ export async function createOrder(userId, rawDto) {
       const { isCodAvailable } = await import("./codAvailability.service.js");
       const cod = await isCodAvailable({
         userId,
-        zoneId: dto.zoneId || restaurant.zoneId || null,
+        zoneId: restaurant.zoneId || dto.zoneId || null, // the restaurant's zone decides; a client-sent zone is only a fallback
       });
       if (!cod.allowed) throw new ValidationError(cod.message);
     }
@@ -813,6 +836,23 @@ export async function createOrder(userId, rawDto) {
     }
     const totalPaise = Math.round(normalizedPricing.total * 100);
     const onlinePaise = paymentMethod === "razorpay" ? totalPaise - walletPaise : 0;
+
+    // A zone can turn online payment off, as it can COD. Checked here, after the
+    // wallet split, because a wallet that covers the whole order has already
+    // made this a wallet order and needs no gateway. Same zone as the COD check.
+    // Only new orders: verifying or reconciling a payment already started never
+    // comes through here.
+    if (paymentMethod === "razorpay" && onlinePaise > 0) {
+      const onlineZoneId = restaurant.zoneId || dto.zoneId || null; // never let a client-sent zone override the restaurant's
+      const { isOnlinePaymentAvailable, NO_PAYMENT_METHOD_MESSAGE } = await import("./onlinePaymentAvailability.service.js");
+      const online = await isOnlinePaymentAvailable({ zoneId: onlineZoneId });
+      if (!online.allowed) {
+        // Telling them to pay cash is no help where cash is off too.
+        const { isCodAvailable } = await import("./codAvailability.service.js");
+        const cod = await isCodAvailable({ userId, zoneId: onlineZoneId });
+        throw new ValidationError(cod.allowed ? online.message : NO_PAYMENT_METHOD_MESSAGE);
+      }
+    }
     const isSplit = paymentMethod === "razorpay" && walletPaise > 0;
     const isCashSplit = isCash && walletPaise > 0;
 

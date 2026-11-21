@@ -2371,6 +2371,13 @@ model FoodZone {
   /// good customer ordering in a new area is not a stranger.
   codMinDeliveredOrders Int @default(0)
 
+  /// Whether customers may pay online (Razorpay checkout) for orders here.
+  ///
+  /// Null means "follow the platform", which is on: there is no platform-wide
+  /// online switch, so only an explicit false turns it off for this zone.
+  /// Wallet-only orders and the rider's cash-collection QR are not affected.
+  onlinePaymentEnabled Boolean?
+
   /// 'auto' | 'manual' rider assignment for this zone; null = the global default.
   dispatchMode String? @db.VarChar(8)
 

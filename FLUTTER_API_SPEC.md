@@ -796,6 +796,25 @@ Always call before showing the bill. Never compute totals client-side.
 }
 ```
 
+The response also carries `wallet` (see "Paying part from the wallet" below) and **`paymentAvailability`** (new, 2026-11-21) — which ways to pay the server will accept for this cart, from the same checks `POST /food/orders` runs:
+
+```json
+"paymentAvailability": {
+  "codAvailable": true,
+  "codMessage": "",
+  "onlinePaymentAvailable": false,
+  "onlinePaymentMessage": "Online payment is not available in this area right now. Please choose cash on delivery.",
+  "noPaymentMethodAvailable": false,
+  "noPaymentMethodMessage": ""
+}
+```
+
+- The zone is the `zoneId` you send, else the restaurant's zone — send the same `zoneId` here as you will on `POST /food/orders`.
+- `onlinePaymentAvailable: false` → disable / hide Razorpay (and "card") and show `onlinePaymentMessage`; preselect COD, or wallet when it covers the total. Admins switch this per zone.
+- `codAvailable: false` → disable COD and show `codMessage` (zone off, platform off, or too few delivered orders). The COD maximum order value is not part of this flag; that is still refused at placement.
+- `noPaymentMethodAvailable: true` → COD and online are both off and the wallet does not cover the total: disable "Place order" and show `noPaymentMethodMessage`.
+- Missing `paymentAvailability` (older server, or the check failed): treat every method as available.
+
 **`priceChanges` is non-empty when the menu changed under the user.** Show a "prices updated" confirmation before letting them place the order — it's the whole reason the field exists.
 
 Coupon behaviour: `couponCode` is echoed back even when rejected, but `appliedCoupon` is `null` and `discount` is 0. Check `appliedCoupon`, not `couponCode`. A coupon can fail on status, dates, restaurant scope, min order value, global usage limit, per-user limit, or first-order-only.
@@ -836,6 +855,8 @@ Maths, so your UI can explain the bill:
 ```
 
 **Cash on delivery** (`"paymentMethod": "cash"`) is accepted where the zone allows it; otherwise the error message says why (COD off for the zone, too few delivered orders yet, or the order is above the COD maximum). `razorpay_qr` is the pay-at-door flow where the rider generates a Razorpay QR.
+
+**Online payment** (`razorpay` / `card`) can be switched off per zone (the restaurant's zone, or the `zoneId` sent). Then a new online order — including `useWallet: true` where the wallet does not cover everything — is refused with 400 *"Online payment is not available in this area right now. Please choose cash on delivery."*, or, when COD is not available to this customer either, *"No payment method is available for this order in this area right now. Please try again later or contact support."* Nothing is created. On that error, mark online unavailable and move the selection to COD / wallet. Wallet-only orders (and `useWallet` with a wallet that covers the total), `cash` and `razorpay_qr` are unaffected, and `verify-payment` / webhooks for an order already created are never refused. Wallet top-ups are not zone-bound and are unaffected.
 
 **Paying part from the wallet** (`"useWallet": true`):
 - With `razorpay`: the wallet pays what it can and Razorpay charges the rest (never less than ₹1). Pay the `razorpay.amount` returned, not the total.

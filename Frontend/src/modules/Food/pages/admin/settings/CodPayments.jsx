@@ -35,6 +35,13 @@ const codEnabledOf = (mode) => {
   return null
 }
 
+// Online payment has no platform-wide switch: "Platform default" (null) is on.
+const ONLINE_MODES = [
+  { value: FOLLOW, label: "Platform default" },
+  { value: ON, label: "On" },
+  { value: OFF, label: "Off" },
+]
+
 const zoneIdOf = (zone) => String(zone?.id || zone?._id || "")
 
 const REASON_TEXT = {
@@ -114,6 +121,7 @@ export default function CodPayments() {
       drafts[id] || {
         mode: modeOf(zone?.codEnabled),
         minDeliveredOrders: String(Number(zone?.codMinDeliveredOrders) || 0),
+        onlineMode: modeOf(zone?.onlinePaymentEnabled),
       }
     )
   }
@@ -128,8 +136,16 @@ export default function CodPayments() {
     const draft = draftFor(zone)
     return (
       draft.mode !== modeOf(zone?.codEnabled) ||
-      (Number(draft.minDeliveredOrders) || 0) !== (Number(zone?.codMinDeliveredOrders) || 0)
+      (Number(draft.minDeliveredOrders) || 0) !== (Number(zone?.codMinDeliveredOrders) || 0) ||
+      (draft.onlineMode || FOLLOW) !== modeOf(zone?.onlinePaymentEnabled)
     )
+  }
+
+  // Both off is allowed (an admin may mean it, briefly) but leaves customers in
+  // this zone with no way to pay unless their wallet covers the whole order.
+  const draftLeavesNoMethod = (draft) => {
+    const codOff = draft.mode === OFF || (draft.mode === FOLLOW && !platformEnabled)
+    return codOff && draft.onlineMode === OFF
   }
 
   const handlePlatformToggle = async () => {
@@ -164,13 +180,18 @@ export default function CodPayments() {
       await adminAPI.updateZoneCod(id, {
         codEnabled: codEnabledOf(draft.mode),
         codMinDeliveredOrders: minDeliveredOrders,
+        // Same tri-state as COD: null follows the platform, which is on.
+        onlinePaymentEnabled: codEnabledOf(draft.onlineMode || FOLLOW),
       })
       setDrafts((prev) => {
         const next = { ...prev }
         delete next[id]
         return next
       })
-      toast.success(`Saved COD settings for ${zone?.name || "this zone"}`)
+      toast.success(`Saved payment settings for ${zone?.name || "this zone"}`)
+      if (draftLeavesNoMethod(draft)) {
+        toast.warning("Cash and online payment are both off here. Customers can only pay with a wallet that covers the whole order.")
+      }
       await fetchSettings({ showSpinner: false })
     } catch (e) {
       debugError("Error updating zone COD settings:", e)
@@ -199,7 +220,8 @@ export default function CodPayments() {
         </div>
         <p className="text-sm text-slate-600">
           Decide where customers may pay cash on delivery, and how many delivered orders they need
-          before it is offered to them.
+          before it is offered to them. Online payment (Razorpay at checkout) can also be switched
+          off for a zone; wallet payments and the rider&apos;s cash-collection QR are not affected.
         </p>
       </div>
 
@@ -350,6 +372,31 @@ export default function CodPayments() {
                           </p>
                         </div>
 
+                        <div className="xl:w-72">
+                          <Label className="text-xs font-semibold text-slate-700">Online payment</Label>
+                          <div className="mt-1.5 inline-flex rounded-lg border border-slate-300 overflow-hidden">
+                            {ONLINE_MODES.map((mode) => (
+                              <button
+                                key={mode.value}
+                                type="button"
+                                disabled={saving}
+                                onClick={() => patchDraft(zone, { onlineMode: mode.value })}
+                                className={`px-3 py-2 text-xs font-semibold transition-colors border-r border-slate-300 last:border-r-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  (draft.onlineMode || FOLLOW) === mode.value
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {mode.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Platform default is on. Off hides Razorpay at checkout for orders from
+                            restaurants in this zone.
+                          </p>
+                        </div>
+
                         <div className="flex-1">
                           <p className="text-xs font-semibold text-slate-700">What this means now</p>
                           <div className="mt-1.5 space-y-1">
@@ -370,7 +417,30 @@ export default function CodPayments() {
                                   : ""}
                               </p>
                             ))}
+                            <p className="text-xs text-slate-600">
+                              <span className="text-slate-500">Online payment:</span>{" "}
+                              <span
+                                className={
+                                  zone?.effectiveOnlinePayment?.allowed === false ||
+                                  (!zone?.effectiveOnlinePayment && zone?.onlinePaymentEnabled === false)
+                                    ? "font-semibold text-red-600"
+                                    : "font-semibold text-emerald-600"
+                                }
+                              >
+                                {zone?.effectiveOnlinePayment?.allowed === false ||
+                                (!zone?.effectiveOnlinePayment && zone?.onlinePaymentEnabled === false)
+                                  ? "off"
+                                  : "on"}
+                              </span>
+                            </p>
                           </div>
+                          {zone?.effectiveOnlinePayment?.bothOff || draftLeavesNoMethod(draft) ? (
+                            <p className="mt-1.5 text-xs text-red-600 flex items-start gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              Cash and online payment are both off here. Customers can only pay with
+                              a wallet that covers the whole order.
+                            </p>
+                          ) : null}
                           {dirty ? (
                             <p className="mt-1.5 text-xs text-amber-600">
                               Unsaved changes — this still shows the saved settings.

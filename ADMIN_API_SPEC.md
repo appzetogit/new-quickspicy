@@ -177,3 +177,16 @@ All under `/food/admin`.
 **Company UPI.** Orders collected this way carry `payment.qr.provider = "company_upi"` and `payment.qr.needsReconciliation` (true until reconciled). The online payments report labels them `Company UPI` with status `Rider confirmed – reconcile` / `UPI mismatch`, and `companyUpi` / `needsReconciliation` flags per row; the admin orders list shows "Company UPI (verify)". Admin page: Transactions → Change to Wallet & UPI (`/admin/food/change-to-wallet`). Settings: 3rd Party page, "Company UPI collection".
 
 **Late-order watchdog.** The scheduler (`run-scheduled-jobs.js`, every 5 min) sends a one-time "Sorry, your order is delayed" push for live, unscheduled orders more than 10 min past `promisedDeliveryAt` (the first ETA, or the time last announced in a running-late update). `order.delay.autoNotice` turns true.
+
+## Online payment per zone (2026-11-21) — `system_settings`
+All under `/food/admin`. Same screen and endpoints as the per-zone COD settings (Settings → COD & User Payments).
+
+| Method | Path | Body / query → data |
+|---|---|---|
+| GET | `/cod-settings` | → `{ platformCodEnabled, platformOnlinePaymentEnabled: true, zones: [{ id, name, city, codEnabled, codMinDeliveredOrders, onlinePaymentEnabled, effective: { newCustomer, returningCustomer }, effectiveOnlinePayment: { allowed, reason, bothOff } }] }` |
+| PATCH | `/zones/:id/cod` | any of `{ codEnabled: true\|false\|null, codMinDeliveredOrders: int ≥ 0, onlinePaymentEnabled: true\|false\|null }` → `{ zone: <same row shape> }`. 400 on a bad value or an empty body. |
+
+- `onlinePaymentEnabled`: `null` = platform default, which is **on** (there is no platform-wide online switch); `false` turns Razorpay checkout off for orders from restaurants in that zone; `true` pins it on. An absent key leaves it unchanged.
+- "Online payment" means the customer's Razorpay checkout for a new order, including the online part of a wallet + online split. Not affected: wallet-only orders, wallet top-ups (not zone-bound), the rider's COD collection QR (`collect/qr`, Razorpay link or company UPI), and verifying / webhooks for payments already started.
+- Both COD and online off is allowed but `effectiveOnlinePayment.bothOff` is `true` and the screen shows a warning: customers there can only pay with a wallet that covers the whole order, and checkout tells everyone else no method is available.
+- `PATCH /cod-settings` (the platform COD switch) is unchanged.

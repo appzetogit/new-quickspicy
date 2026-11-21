@@ -19,6 +19,7 @@ import {
     resolvePlatformCodEnabled,
     setPlatformCodEnabled,
 } from '../../orders/services/codAvailability.service.js';
+import { effectiveOnlinePayment } from '../../orders/services/onlinePaymentAvailability.service.js';
 import {
     deassignAndResendEmergencyOrder,
     deassignAndResendOrderAdmin,
@@ -1815,6 +1816,23 @@ export async function deleteZone(req, res, next) {
 }
 
 // ----- COD & User Payments -----
+const ZONE_PAYMENT_SELECT = {
+    id: true, name: true, city: true,
+    codEnabled: true, codMinDeliveredOrders: true, onlinePaymentEnabled: true,
+};
+
+// One zone as the screen shows it: the stored settings and what they mean.
+// effective keeps its COD shape; online payment sits beside it so an older
+// screen reading effective.newCustomer is unaffected.
+const zonePaymentView = (zone, platformCodEnabled) => {
+    const effective = effectiveCod(zone, platformCodEnabled);
+    return {
+        ...zone,
+        effective,
+        effectiveOnlinePayment: effectiveOnlinePayment(zone, effective),
+    };
+};
+
 // The screen shows the platform switch and every zone's own setting side by
 // side, because "why can this customer not pay cash" is a question about all
 // three inputs at once.
@@ -1824,7 +1842,7 @@ export async function getCodSettings(req, res, next) {
         // Every zone, inactive ones included: a zone that is off today still
         // carries the COD setting it will come back with.
         const zones = await prisma.foodZone.findMany({
-            select: { id: true, name: true, city: true, codEnabled: true, codMinDeliveredOrders: true },
+            select: ZONE_PAYMENT_SELECT,
             orderBy: [{ city: 'asc' }, { name: 'asc' }],
         });
 
@@ -1833,10 +1851,10 @@ export async function getCodSettings(req, res, next) {
             message: 'COD settings fetched successfully',
             data: {
                 platformCodEnabled: platformEnabled,
-                zones: zones.map((zone) => ({
-                    ...zone,
-                    effective: effectiveCod(zone, platformEnabled),
-                })),
+                // No platform-wide online switch: a zone that says nothing takes
+                // online payments. Sent so the screen does not have to assume it.
+                platformOnlinePaymentEnabled: true,
+                zones: zones.map((zone) => zonePaymentView(zone, platformEnabled)),
             },
         });
     } catch (error) {
@@ -1881,14 +1899,14 @@ export async function updateZoneCodSettings(req, res, next) {
         const zone = await prisma.foodZone.update({
             where: { id },
             data,
-            select: { id: true, name: true, city: true, codEnabled: true, codMinDeliveredOrders: true },
+            select: ZONE_PAYMENT_SELECT,
         });
 
         const platformEnabled = await resolvePlatformCodEnabled();
         res.status(200).json({
             success: true,
             message: 'Zone COD settings updated successfully',
-            data: { zone: { ...zone, effective: effectiveCod(zone, platformEnabled) } },
+            data: { zone: zonePaymentView(zone, platformEnabled) },
         });
     } catch (error) {
         next(error);

@@ -402,6 +402,9 @@ export default function Cart() {
   const [restaurantData, setRestaurantData] = useState(null)
   const [loadingRestaurant, setLoadingRestaurant] = useState(false)
   const [pricing, setPricing] = useState(null)
+  // Which ways to pay the server will accept here (per-zone COD / online
+  // switches), from /calculate. Null until known: then nothing is hidden.
+  const [paymentAvailability, setPaymentAvailability] = useState(null)
   const [loadingPricing, setLoadingPricing] = useState(false)
   // Same Google road Rest→User distance as Home / delivery (overrides Haversine 6.9).
   const [roadDistanceKm, setRoadDistanceKm] = useState(null)
@@ -1229,6 +1232,9 @@ export default function Cart() {
           deliveryAddress: pricingAddress,
           couponCode: resolvedCouponCode,
           deliveryMode,
+          // Same zone the order is placed with, so the payment options shown
+          // match what createOrder will accept.
+          zoneId: zoneId || undefined,
         }
 
         if (scheduledOrderAt) {
@@ -1239,6 +1245,7 @@ export default function Cart() {
 
         if (response?.data?.success && response?.data?.data?.pricing) {
           setPricing(response.data.data.pricing)
+          setPaymentAvailability(response.data.data.paymentAvailability || null)
 
           const resolvedItems = Array.isArray(response.data.data.items)
             ? response.data.data.items
@@ -1313,7 +1320,7 @@ export default function Cart() {
     }
 
     calculatePricing()
-  }, [cart, pricingAddress, appliedCoupon, couponCode, restaurantId, restaurantData, scheduledOrderAt, replaceCart, deliveryMode])
+  }, [cart, pricingAddress, appliedCoupon, couponCode, restaurantId, restaurantData, scheduledOrderAt, replaceCart, deliveryMode, zoneId])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -1518,6 +1525,22 @@ export default function Cart() {
   const discount = effectivePricing.discount
   const totalBeforeDiscount = subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + gstCharges
   const total = effectivePricing.total
+  // Only an explicit false hides a method: an older server sends nothing.
+  const onlinePaymentOff = paymentAvailability?.onlinePaymentAvailable === false
+  const codOff = paymentAvailability?.codAvailable === false
+  const walletCoversTotal = walletBalance >= total && total > 0
+  const noPaymentMethod = onlinePaymentOff && codOff && !walletCoversTotal
+
+  // Move off a method this zone does not take, to one it does.
+  useEffect(() => {
+    const unavailable =
+      (selectedPaymentMethod === "razorpay" && onlinePaymentOff) ||
+      (selectedPaymentMethod === "cash" && codOff)
+    if (!unavailable) return
+    if (selectedPaymentMethod !== "cash" && !codOff) setSelectedPaymentMethod("cash")
+    else if (walletCoversTotal) setSelectedPaymentMethod("wallet")
+    else if (selectedPaymentMethod !== "razorpay" && !onlinePaymentOff) setSelectedPaymentMethod("razorpay")
+  }, [selectedPaymentMethod, onlinePaymentOff, codOff, walletCoversTotal])
   const savings = effectivePricing.savings
   const itemDiscountAmount = appliedCoupon && discount > 0 ? discount : 0
   const otherSavings = Math.max(0, savings - itemDiscountAmount)
@@ -2494,6 +2517,22 @@ export default function Cart() {
         errorMessage = error.message
       }
 
+      // The zone switched a method off after the cart loaded: say so, mark it
+      // unavailable (which moves the selection to one that works) and let the
+      // customer place again, rather than a blocking alert.
+      if (error.response?.status === 400 && /online payment is not available|no payment method is available/i.test(errorMessage)) {
+        const noneLeft = /no payment method is available/i.test(errorMessage)
+        setPaymentAvailability((prev) => ({
+          ...(prev || {}),
+          onlinePaymentAvailable: false,
+          onlinePaymentMessage: noneLeft ? (prev?.onlinePaymentMessage || "") : errorMessage,
+          ...(noneLeft ? { codAvailable: false, noPaymentMethodAvailable: true, noPaymentMethodMessage: errorMessage } : {}),
+        }))
+        toast.error(errorMessage)
+        setIsPlacingOrder(false)
+        return
+      }
+
       alert(errorMessage)
       setIsPlacingOrder(false)
     }
@@ -3280,6 +3319,7 @@ export default function Cart() {
                 loadingRestaurant ||
                 !canPlaceOrder ||
                 servicePaused ||
+                noPaymentMethod ||
                 (selectedPaymentMethod === "wallet" && walletBalance < total)
               }
               className="shrink-0 min-w-[132px] px-5 rounded-full text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
@@ -3873,6 +3913,22 @@ export default function Cart() {
                     </div>
 
                     <div className="space-y-3 overflow-y-auto pr-1 custom-scrollbar pb-4 flex-1 min-h-0">
+                      {noPaymentMethod ? (
+                        <p className="text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl px-3 py-2">
+                          {paymentAvailability?.noPaymentMethodMessage ||
+                            "No payment method is available for this order in this area right now."}
+                        </p>
+                      ) : null}
+                      {!noPaymentMethod && onlinePaymentOff && paymentAvailability?.onlinePaymentMessage ? (
+                        <p className="text-xs font-semibold text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 rounded-xl px-3 py-2">
+                          {paymentAvailability.onlinePaymentMessage}
+                        </p>
+                      ) : null}
+                      {!noPaymentMethod && codOff && paymentAvailability?.codMessage ? (
+                        <p className="text-xs font-semibold text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 rounded-xl px-3 py-2">
+                          {paymentAvailability.codMessage}
+                        </p>
+                      ) : null}
                       {[
                         {
                           id: 'razorpay',
@@ -3881,7 +3937,9 @@ export default function Cart() {
                           icon: <Zap className="w-5 h-5" />,
                           color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400',
                           selectedColor: 'bg-emerald-500 text-white',
-                          badge: 'SECURE'
+                          badge: 'SECURE',
+                          disabled: onlinePaymentOff,
+                          disabledText: 'Not available in this area'
                         },
                         {
                           id: 'cash',
@@ -3890,6 +3948,8 @@ export default function Cart() {
                           icon: <Banknote className="w-5 h-5" />,
                           color: 'bg-amber-50 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400',
                           selectedColor: 'bg-amber-500 text-white',
+                          disabled: codOff,
+                          disabledText: 'Not available'
                         },
                         {
                           id: 'wallet',
