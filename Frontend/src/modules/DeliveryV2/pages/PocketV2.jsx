@@ -395,9 +395,9 @@ export const PocketV2 = () => {
                    <div
                      className="w-12 h-12 rounded-2xl flex items-center justify-center border"
                      style={{
-                       backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                       color: "var(--module-theme-color, #00B761)",
-                       borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                       backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                       color: "var(--module-theme-color, #E64100)",
+                       borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                      }}
                    >
                       <Wallet className="w-6 h-6" />
@@ -422,9 +422,9 @@ export const PocketV2 = () => {
                      <div
                        className="w-12 h-12 rounded-2xl flex items-center justify-center border"
                        style={{
-                         backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                         color: "var(--module-theme-color, #00B761)",
-                         borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                         backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                         color: "var(--module-theme-color, #E64100)",
+                         borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                        }}
                      >
                         <ShieldCheck className="w-6 h-6" />
@@ -447,8 +447,8 @@ export const PocketV2 = () => {
                      onClick={() => setShowDepositPopup(true)}
                      className="w-full py-4 text-white rounded-[24px] font-black text-sm uppercase tracking-widest active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
                      style={{
-                       background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 0,183,97), 0.9), var(--module-theme-color, #00B761))",
-                       boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 0,183,97), 0.32)",
+                       background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.9), var(--module-theme-color, #E64100))",
+                       boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 230,65,0), 0.32)",
                      }}
                   >
                      <IndianRupee className="w-4 h-4" /> Deposit Cash
@@ -463,9 +463,9 @@ export const PocketV2 = () => {
                 <div
                   className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 border group-active:scale-95 transition-transform"
                   style={{
-                    backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                    color: "var(--module-theme-color, #00B761)",
-                    borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                    backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                    color: "var(--module-theme-color, #E64100)",
+                    borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                   }}
                 >
                    <IndianRupee className="w-5 h-5" />
@@ -480,9 +480,9 @@ export const PocketV2 = () => {
                   <div
                     className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 border group-active:scale-95 transition-transform"
                     style={{
-                      backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                      color: "var(--module-theme-color, #00B761)",
-                      borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                      color: "var(--module-theme-color, #E64100)",
+                      borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                     }}
                   >
                      <Receipt className="w-5 h-5" />
@@ -495,9 +495,9 @@ export const PocketV2 = () => {
                 <div
                   className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 border group-active:scale-95 transition-transform"
                   style={{
-                    backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                    color: "var(--module-theme-color, #00B761)",
-                    borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                    backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                    color: "var(--module-theme-color, #E64100)",
+                    borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                   }}
                 >
                    <FileText className="w-5 h-5" />
@@ -509,9 +509,9 @@ export const PocketV2 = () => {
                 <div
                   className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 border group-active:scale-95 transition-transform"
                   style={{
-                    backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                    color: "var(--module-theme-color, #00B761)",
-                    borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
+                    backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                    color: "var(--module-theme-color, #E64100)",
+                    borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
                   }}
                 >
                    <LayoutGrid className="w-5 h-5" />

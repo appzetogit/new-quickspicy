@@ -492,9 +492,9 @@ export default function Feedback() {
                 style={
                   activeTab === tab.id
                     ? {
-                        backgroundColor: "rgba(var(--module-theme-rgb,37,99,235),0.16)",
-                        color: "var(--module-theme-color,#2563EB)",
-                        border: "1px solid rgba(var(--module-theme-rgb,37,99,235),0.35)",
+                        backgroundColor: "rgba(var(--module-theme-rgb,230,65,0),0.16)",
+                        color: "var(--module-theme-color,#E64100)",
+                        border: "1px solid rgba(var(--module-theme-rgb,230,65,0),0.35)",
                       }
                     : undefined
                 }
@@ -592,7 +592,7 @@ export default function Feedback() {
                 <div className="flex items-center gap-3">
                   <div
                     className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold text-white"
-                    style={{ backgroundColor: "var(--module-theme-color,#2563EB)" }}
+                    style={{ backgroundColor: "var(--module-theme-color,#E64100)" }}
                   >
                     {ratingSummary.averageRating}
                   </div>
@@ -649,7 +649,7 @@ export default function Feedback() {
                       <p className="font-bold text-gray-900 text-sm">{review.userName}</p>
                       <div
                         className="ml-auto flex items-center gap-1 text-white px-1.5 py-0.5 rounded text-[10px] font-bold"
-                        style={{ backgroundColor: "var(--module-theme-color,#2563EB)" }}
+                        style={{ backgroundColor: "var(--module-theme-color,#E64100)" }}
                       >
                         {review.rating} <Star className="w-2 h-2 fill-current" />
                       </div>
@@ -687,7 +687,7 @@ export default function Feedback() {
                     key={opt.id}
                     onClick={() => setFilterValues((prev) => ({ ...prev, sortBy: opt.id }))}
                     className={`w-full text-left px-3 py-2 rounded-lg border ${filterValues.sortBy === opt.id ? "bg-gray-50" : "border-gray-200"}`}
-                    style={filterValues.sortBy === opt.id ? { borderColor: "var(--module-theme-color,#2563EB)" } : undefined}
+                    style={filterValues.sortBy === opt.id ? { borderColor: "var(--module-theme-color,#E64100)" } : undefined}
                   >
                     <span className="text-sm font-medium text-gray-900">{opt.label}</span>
                   </button>
@@ -712,7 +712,7 @@ export default function Feedback() {
                         }))
                       }
                       className={`w-full text-left px-3 py-2 rounded-lg border ${selected ? "bg-gray-50" : "border-gray-200"}`}
-                      style={selected ? { borderColor: "var(--module-theme-color,#2563EB)" } : undefined}
+                      style={selected ? { borderColor: "var(--module-theme-color,#E64100)" } : undefined}
                     >
                       <span className="text-sm font-medium text-gray-900">{opt.label}</span>
                     </button>
@@ -725,7 +725,7 @@ export default function Feedback() {
                 <button
                   onClick={handleFilterApply}
                   className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium"
-                  style={{ backgroundColor: "var(--module-theme-color,#2563EB)" }}
+                  style={{ backgroundColor: "var(--module-theme-color,#E64100)" }}
                 >
                   Apply
                 </button>
@@ -754,7 +754,7 @@ export default function Feedback() {
                       key={option.value}
                       onClick={() => setComplaintsFilterValues((prev) => ({ ...prev, issueType: active ? [] : [option.value] }))}
                       className={`w-full text-left px-3 py-2 rounded-lg border ${active ? "bg-gray-50" : "border-gray-200"}`}
-                      style={active ? { borderColor: "var(--module-theme-color,#2563EB)" } : undefined}
+                      style={active ? { borderColor: "var(--module-theme-color,#E64100)" } : undefined}
                     >
                       <span className="text-sm font-medium text-gray-900">{option.label}</span>
                     </button>
@@ -781,7 +781,7 @@ export default function Feedback() {
                 <button
                   onClick={handleComplaintsFilterApply}
                   className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium"
-                  style={{ backgroundColor: "var(--module-theme-color,#2563EB)" }}
+                  style={{ backgroundColor: "var(--module-theme-color,#E64100)" }}
                 >
                   Apply
                 </button>
@@ -823,7 +823,7 @@ export default function Feedback() {
                       key={opt.id}
                       onClick={() => handleDateRangeSelect(opt.id)}
                       className={`w-full text-left px-3 py-2.5 rounded-lg border ${active ? "bg-gray-50" : "border-gray-200"}`}
-                      style={active ? { borderColor: "var(--module-theme-color,#2563EB)" } : undefined}
+                      style={active ? { borderColor: "var(--module-theme-color,#E64100)" } : undefined}
                     >
                       <span className="text-sm font-medium text-gray-900">{opt.label}</span>
                     </button>

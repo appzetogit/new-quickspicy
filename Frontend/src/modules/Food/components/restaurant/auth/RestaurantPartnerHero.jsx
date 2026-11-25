@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from "framer-motion"
 import { ShieldCheck, UtensilsCrossed, TrendingUp, Clock } from "lucide-react"
 import { useCompanyName } from "@food/hooks/useCompanyName"
 
-const DEFAULT_THEME = "#EB590E"
+const DEFAULT_THEME = "#E64100"
 
 const HIGHLIGHTS = [
   { icon: UtensilsCrossed, text: "Manage menus, orders & outlet timings" },

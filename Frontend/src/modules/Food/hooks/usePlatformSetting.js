@@ -6,7 +6,7 @@ import { adminAPI } from "@food/api"
  * Load and save one admin settings page, stored on the server as one JSON
  * object under `key` (see Backend platformSettings.service.js for the keys).
  *
- *   const { value, setValue, save, loading, saving } = usePlatformSetting("theme", { primaryColor: "#EB590E" })
+ *   const { value, setValue, save, loading, saving } = usePlatformSetting("theme", { primaryColor: "#E64100" })
  *
  * `defaults` fills anything the server has not stored yet, so a page opened for
  * the first time shows its usual starting form. Secrets come back masked

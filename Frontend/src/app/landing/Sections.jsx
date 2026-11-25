@@ -11,7 +11,7 @@ import { Reveal, SectionHeading, SpeedLines, StoreButton } from "./ui";
 export function DishMarquee() {
   const items = [...MARQUEE, ...MARQUEE];
   return (
-    <div className="relative -rotate-1 overflow-hidden bg-brand-500 py-4 text-white shadow-[0_12px_30px_-18px_rgba(235,89,14,0.9)]" aria-hidden="true">
+    <div className="relative -rotate-1 overflow-hidden bg-brand-500 py-4 text-white shadow-[0_12px_30px_-18px_rgba(230,65,0,0.9)]" aria-hidden="true">
       <div className="flex w-max animate-scroll gap-8 whitespace-nowrap [animation-duration:38s] motion-reduce:animate-none">
         {items.map((d, i) => (
           <span key={i} className="flex items-center gap-8 font-brand text-xl font-semibold tracking-wide sm:text-2xl">
@@ -95,7 +95,7 @@ export function HowItWorks() {
           {STEPS.map(({ icon: Icon, title, body }, i) => (
             <Reveal as="li" key={title} delay={i * 0.1} className="relative rounded-3xl bg-white p-7 shadow-[0_20px_40px_-28px_rgba(31,26,23,0.35)] ring-1 ring-ink/5">
               <div className="flex items-center justify-between">
-                <span className="relative grid h-14 w-14 place-items-center rounded-2xl bg-brand-500 text-white shadow-[0_10px_24px_-10px_rgba(235,89,14,0.8)]">
+                <span className="relative grid h-14 w-14 place-items-center rounded-2xl bg-brand-500 text-white shadow-[0_10px_24px_-10px_rgba(230,65,0,0.8)]">
                   <Icon className="h-6 w-6" aria-hidden="true" />
                 </span>
                 <span className="font-brand text-5xl font-bold text-brand-100">0{i + 1}</span>

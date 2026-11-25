@@ -231,8 +231,8 @@ export default function OutletTimings() {
                 className="px-4 py-2 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 shrink-0"
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-                  boxShadow: "0 8px 20px rgba(var(--module-theme-rgb,37,99,235),0.28)",
+                    "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+                  boxShadow: "0 8px 20px rgba(var(--module-theme-rgb,230,65,0),0.28)",
                 }}
               >
                 {isSaving ? (
@@ -254,7 +254,7 @@ export default function OutletTimings() {
             <div className="text-center mb-2 md:text-left">
               <h2
                 className="text-base font-semibold md:text-lg"
-                style={{ color: "var(--module-theme-color, #2563EB)" }}
+                style={{ color: "var(--module-theme-color, #E64100)" }}
               >
                 {companyName} delivery
               </h2>
@@ -264,7 +264,7 @@ export default function OutletTimings() {
             </div>
             <div
               className="h-0.5 md:max-w-xs"
-              style={{ backgroundColor: "var(--module-theme-color, #2563EB)" }}
+              style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
             />
           </div>
 

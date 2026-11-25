@@ -150,8 +150,8 @@ export const NewOrderModal = ({ order, onAccept, onReject, onMinimize, swapGuard
           <div
             className="px-6 py-5 flex justify-between items-center text-white"
             style={{
-              backgroundColor: "var(--module-theme-color, #00B761)",
-              borderBottom: "1px solid rgba(var(--module-theme-rgb, 0,183,97), 0.25)",
+              backgroundColor: "var(--module-theme-color, #E64100)",
+              borderBottom: "1px solid rgba(var(--module-theme-rgb, 230,65,0), 0.25)",
             }}
           >
             <div>
@@ -237,7 +237,7 @@ export const NewOrderModal = ({ order, onAccept, onReject, onMinimize, swapGuard
             label="Slide to Accept"
             disabled={swapGuard}
             onConfirm={() => onAccept?.(lockedOrder)}
-            color="var(--module-theme-color, #00B761)"
+            color="var(--module-theme-color, #E64100)"
           />
           <button
             onClick={onReject}

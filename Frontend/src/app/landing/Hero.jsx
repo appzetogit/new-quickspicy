@@ -24,7 +24,7 @@ export default function Hero({ onPartner }) {
       <div aria-hidden="true" className="pointer-events-none absolute -right-40 -top-40 h-[42rem] w-[42rem] rounded-full bg-brand-200/40 blur-3xl" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(rgba(235,89,14,0.18)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:linear-gradient(to_bottom,black,transparent_75%)]"
+        className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(rgba(230,65,0,0.18)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:linear-gradient(to_bottom,black,transparent_75%)]"
       />
 
       <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-8 lg:px-8">
@@ -49,7 +49,7 @@ export default function Hero({ onPartner }) {
           <motion.div {...rise(0.24)} className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
               to={ROUTES.order}
-              className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-7 py-4 text-base font-semibold text-white shadow-[0_14px_30px_-12px_rgba(235,89,14,0.8)] transition-all hover:bg-brand-600 active:scale-[0.98]"
+              className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-7 py-4 text-base font-semibold text-white shadow-[0_14px_30px_-12px_rgba(230,65,0,0.8)] transition-all hover:bg-brand-600 active:scale-[0.98]"
             >
               Order food now
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" aria-hidden="true" />
@@ -81,7 +81,7 @@ export default function Hero({ onPartner }) {
             initial={{ opacity: 0, scale: 0.92, rotate: -6 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
             transition={{ duration: 1.1, ease: EASE, delay: 0.1 }}
-            className="absolute inset-[8%] rounded-full bg-brand-500 p-3 shadow-[0_40px_80px_-30px_rgba(235,89,14,0.65)] sm:p-4"
+            className="absolute inset-[8%] rounded-full bg-brand-500 p-3 shadow-[0_40px_80px_-30px_rgba(230,65,0,0.65)] sm:p-4"
           >
             <div className="h-full w-full overflow-hidden rounded-full ring-8 ring-white/25">
               <img src="/landing/biryani.webp" alt="Chicken biryani in a clay pot" className="h-full w-full object-cover" width="640" height="640" fetchPriority="high" />

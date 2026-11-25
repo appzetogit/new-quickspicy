@@ -31,8 +31,8 @@ function StepCircle({ stepId, currentStep, compact = false, variant = "default" 
           ? ""
           : isActive
             ? isSidebar
-              ? "border-white bg-white text-[#EB590E] shadow-lg shadow-black/20"
-              : "border-[#EB590E] bg-[#EB590E] text-white shadow-lg shadow-[#EB590E]/25 motion-safe:scale-105"
+              ? "border-white bg-white text-[#E64100] shadow-lg shadow-black/20"
+              : "border-[#E64100] bg-[#E64100] text-white shadow-lg shadow-[#E64100]/25 motion-safe:scale-105"
             : isSidebar
               ? "border-white/35 bg-white/10 text-white/60"
               : "border-slate-200 bg-white text-slate-400"
@@ -90,7 +90,7 @@ export function OnboardingProgressBarHorizontal({ currentStep }) {
           </p>
           <p className="truncate text-sm font-bold text-slate-900">{activeStep?.title}</p>
         </div>
-        <div className="shrink-0 rounded-full bg-[#EB590E]/10 px-3 py-1">
+        <div className="shrink-0 rounded-full bg-[#E64100]/10 px-3 py-1">
           <span className="text-xs font-bold" style={{ color: RESTAURANT_BRAND }}>
             {Math.round((currentStep / ONBOARDING_STEPS.length) * 100)}%
           </span>

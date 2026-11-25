@@ -222,7 +222,7 @@ export default function DesktopNavbar({ showLogo = true }) {
                         <div className="flex-1 max-w-3xl mx-4 flex items-center gap-4">
                             {/* Search Bar */}
                             <div className="relative flex-1">
-                                <div className="relative bg-gray-100 dark:bg-[#2a2a2a] rounded-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-[#EB590E] focus-within:bg-white dark:focus-within:bg-[#1a1a1a] border border-transparent focus-within:border-[#EB590E]/20">
+                                <div className="relative bg-gray-100 dark:bg-[#2a2a2a] rounded-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-[#E64100] focus-within:bg-white dark:focus-within:bg-[#1a1a1a] border border-transparent focus-within:border-[#E64100]/20">
                                     <div className="flex items-center px-3 py-2">
                                         <Search className="h-4 w-4 text-gray-500 flex-shrink-0 mr-3" />
                                         <Input

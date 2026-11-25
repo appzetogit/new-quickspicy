@@ -139,7 +139,7 @@ export const ProfileV2 = () => {
               <h2 className="text-3xl font-black tracking-tight text-gray-900">{profile?.name || "Partner"}</h2>
               <ChevronRight className="w-5 h-5 text-gray-300 group-active:translate-x-1 transition-transform" />
             </div>
-            <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: "var(--module-theme-color, #00B761)" }}>{profile?.deliveryId || "ID NOT FOUND"}</p>
+            <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: "var(--module-theme-color, #E64100)" }}>{profile?.deliveryId || "ID NOT FOUND"}</p>
           </div>
           <div className="relative shrink-0">
             {profile?.profileImage?.url ? (
@@ -167,9 +167,9 @@ export const ProfileV2 = () => {
             <div
               className="w-14 h-14 rounded-[20px] flex items-center justify-center border transition-colors"
               style={{
-                backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
-                color: "var(--module-theme-color, #00B761)",
+                backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
+                color: "var(--module-theme-color, #E64100)",
               }}
             >
               <History className="w-6 h-6" />
@@ -186,7 +186,7 @@ export const ProfileV2 = () => {
         <div className="bg-white rounded-[28px] p-6 border border-gray-100 shadow-[0_8px_30px_rgba(0,0,0,0.03)] flex flex-col gap-5 relative overflow-hidden">
           <div
             className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"
-            style={{ backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.12)" }}
+            style={{ backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.12)" }}
           />
           <div className="relative z-10 flex items-start justify-between gap-4">
              <div>
@@ -200,9 +200,9 @@ export const ProfileV2 = () => {
              <div
                className="w-12 h-12 rounded-[20px] flex items-center justify-center border shrink-0"
                style={{
-                 backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                 borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
-                 color: "var(--module-theme-color, #00B761)",
+                 backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                 borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
+                 color: "var(--module-theme-color, #E64100)",
                }}
              >
                 <Share2 className="w-5 h-5" />
@@ -212,8 +212,8 @@ export const ProfileV2 = () => {
             onClick={handleShareReferral}
             className="relative z-10 w-full text-white py-4 rounded-[20px] text-[11px] font-black uppercase tracking-widest active:scale-[0.98] transition-transform"
             style={{
-              background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 0,183,97), 0.88), var(--module-theme-color, #00B761))",
-              boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 0,183,97), 0.30)",
+              background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.88), var(--module-theme-color, #E64100))",
+              boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 230,65,0), 0.30)",
             }}
           >
             Share Link
@@ -232,9 +232,9 @@ export const ProfileV2 = () => {
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center border"
                 style={{
-                  backgroundColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.10)",
-                  borderColor: "rgba(var(--module-theme-rgb, 0,183,97), 0.22)",
-                  color: "var(--module-theme-color, #00B761)",
+                  backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                  borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
+                  color: "var(--module-theme-color, #E64100)",
                 }}
               >
                  <HelpCircle className="w-5 h-5" />

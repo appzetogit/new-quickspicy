@@ -18,7 +18,7 @@ import FoodTypeIcon from "@food/components/shared/FoodTypeIcon"
  */
 
 const RUPEE = "₹"
-const ACCENT = "#EB590E"
+const ACCENT = "#E64100"
 
 const readStoredPoint = () => {
   try {
@@ -61,7 +61,7 @@ function ItemCard({ item, store, inCartQty, onOpen, onQuickAdd }) {
           </div>
         )}
         {inCartQty > 0 && (
-          <span className="absolute right-1.5 top-1.5 rounded-full bg-[#EB590E] px-2 py-0.5 text-[10px] font-bold text-white">
+          <span className="absolute right-1.5 top-1.5 rounded-full bg-[#E64100] px-2 py-0.5 text-[10px] font-bold text-white">
             {inCartQty} in cart
           </span>
         )}
@@ -88,7 +88,7 @@ function ItemCard({ item, store, inCartQty, onOpen, onQuickAdd }) {
           onClick={(e) => { e.stopPropagation(); onQuickAdd(item, e) }}
           className={`flex items-center gap-0.5 rounded-lg border px-2.5 py-1 text-xs font-bold ${disabled
             ? "cursor-not-allowed border-gray-300 text-gray-400"
-            : "border-[#EB590E] text-[#EB590E] hover:bg-orange-50 dark:hover:bg-[#EB590E]/10"}`}
+            : "border-[#E64100] text-[#E64100] hover:bg-orange-50 dark:hover:bg-[#E64100]/10"}`}
         >
           ADD <Plus className="h-3 w-3" strokeWidth={3} />
         </button>
@@ -373,17 +373,17 @@ export default function Reorder() {
 
       <main className="mx-auto max-w-3xl space-y-4 px-4 pt-4">
         {onlyRestaurantId && !loading && (
-          <Link to="/food/user/reorder" className="inline-block text-xs font-semibold text-[#EB590E]">
+          <Link to="/food/user/reorder" className="inline-block text-xs font-semibold text-[#E64100]">
             Show all stores
           </Link>
         )}
 
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#EB590E]" /></div>
+          <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#E64100]" /></div>
         ) : error ? (
           <div className="py-16 text-center">
             <p className="text-sm text-gray-500">{error}</p>
-            <button type="button" onClick={() => load()} className="mt-3 text-sm font-semibold text-[#EB590E]">Try again</button>
+            <button type="button" onClick={() => load()} className="mt-3 text-sm font-semibold text-[#E64100]">Try again</button>
           </div>
         ) : stores.length === 0 ? (
           <div className="py-16 text-center">
@@ -391,7 +391,7 @@ export default function Reorder() {
             <p className="mt-3 text-sm text-gray-500">
               {onlyRestaurantId ? "Nothing to reorder from this store yet." : "Your delivered orders will show up here."}
             </p>
-            <Link to="/food/user" className="mt-3 inline-block text-sm font-semibold text-[#EB590E]">Browse restaurants</Link>
+            <Link to="/food/user" className="mt-3 inline-block text-sm font-semibold text-[#E64100]">Browse restaurants</Link>
           </div>
         ) : (
           stores.map((entry) => (

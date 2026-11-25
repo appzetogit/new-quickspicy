@@ -59,8 +59,8 @@ export const SupportTicketsV2 = () => {
           onClick={() => navigate("/food/delivery/help/tickets/create")}
           className="w-full text-white p-5 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all"
           style={{
-            background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 0,183,97), 0.88), var(--module-theme-color, #00B761))",
-            boxShadow: "0 12px 24px rgba(var(--module-theme-rgb, 0,183,97), 0.30)",
+            background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.88), var(--module-theme-color, #E64100))",
+            boxShadow: "0 12px 24px rgba(var(--module-theme-rgb, 230,65,0), 0.30)",
           }}
         >
           <Plus className="w-5 h-5" />

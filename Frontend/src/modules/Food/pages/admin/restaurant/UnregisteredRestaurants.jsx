@@ -446,7 +446,7 @@ export default function UnregisteredRestaurants() {
                 </div>
 
                 <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-xl border border-slate-100/50">
-                  <div className="w-9 h-9 rounded-lg bg-pink-50 flex items-center justify-center text-[#EB590E] shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-pink-50 flex items-center justify-center text-[#E64100] shrink-0">
                     <MapPin className="w-4 h-4" />
                   </div>
                   <div>

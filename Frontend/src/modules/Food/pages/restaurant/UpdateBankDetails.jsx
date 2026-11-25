@@ -370,8 +370,8 @@ export default function UpdateBankDetails() {
               style={{
                 background: saving || uploadingQr
                   ? "rgb(96 165 250)"
-                  : "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-                boxShadow: saving || uploadingQr ? "none" : "0 10px 22px rgba(var(--module-theme-rgb,37,99,235),0.28)",
+                  : "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+                boxShadow: saving || uploadingQr ? "none" : "0 10px 22px rgba(var(--module-theme-rgb,230,65,0),0.28)",
               }}
             >
               {saving ? "Saving..." : "Submit"}

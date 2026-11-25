@@ -234,8 +234,8 @@ export const PocketBalanceV2 = () => {
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
                      } flex items-center justify-center gap-2`}
                      style={walletState.canWithdraw ? {
-                       background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 0,183,97), 0.88), var(--module-theme-color, #00B761))",
-                       boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 0,183,97), 0.30)",
+                       background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.88), var(--module-theme-color, #E64100))",
+                       boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 230,65,0), 0.30)",
                      } : undefined}
                    >
                       {withdrawSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -332,8 +332,8 @@ export const PocketBalanceV2 = () => {
                  disabled={withdrawSubmitting}
                  className="py-4 rounded-[20px] text-sm font-black text-white tracking-widest uppercase flex items-center justify-center gap-2 disabled:opacity-70"
                  style={{
-                   background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 0,183,97), 0.88), var(--module-theme-color, #00B761))",
-                   boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 0,183,97), 0.30)",
+                   background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.88), var(--module-theme-color, #E64100))",
+                   boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 230,65,0), 0.30)",
                  }}
                >
                  {withdrawSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}

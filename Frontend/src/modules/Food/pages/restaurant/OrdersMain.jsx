@@ -2014,15 +2014,15 @@ export default function OrdersMain() {
                 }}
                 className={`shrink-0 px-4 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-full font-semibold md:font-medium text-[13px] whitespace-nowrap relative transition-all duration-300 ${isActive ? "text-white md:text-white" : "text-gray-500 hover:text-gray-900 bg-gray-50 md:bg-white md:border md:border-gray-100/50 md:hover:bg-gray-50"
                   }`}
-                style={isActive ? { color: "var(--module-theme-color, #2563EB)" } : undefined}
+                style={isActive ? { color: "var(--module-theme-color, #E64100)" } : undefined}
                 whileTap={{ scale: 0.96 }}>
                 {isActive && (
                   <motion.div
                     layoutId="activeFilterBackground"
                     className="absolute inset-0 rounded-xl md:rounded-full -z-10"
                     style={{
-                      backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)",
-                      boxShadow: "0 2px 8px rgba(var(--module-theme-rgb, 37,99,235), 0.10)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)",
+                      boxShadow: "0 2px 8px rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
                     }}
                     initial={false}
                     transition={{
@@ -2829,9 +2829,9 @@ function OrderCard({
               className="h-8 px-3 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.96), var(--module-theme-color,#2563EB))",
+                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.96), var(--module-theme-color,#E64100))",
                 boxShadow:
-                  "0 8px 16px -10px rgba(var(--module-theme-rgb,37,99,235),0.85)",
+                  "0 8px 16px -10px rgba(var(--module-theme-rgb,230,65,0),0.85)",
               }}>
               {isMarkingReady ? "Marking…" : "Mark Ready"}
             </button>

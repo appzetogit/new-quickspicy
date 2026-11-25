@@ -22,9 +22,9 @@ export default function BottomNavigation() {
         !pathname.includes("/under-250") &&
         !pathname.includes("/profile")))
 
-  const activeColor = "var(--module-theme-color, #EB590E)"
-  const activeBg = "rgba(var(--module-theme-rgb, 235, 89, 14), 0.12)"
-  const activeFill = "rgba(var(--module-theme-rgb, 235, 89, 14), 0.2)"
+  const activeColor = "var(--module-theme-color, #E64100)"
+  const activeBg = "rgba(var(--module-theme-rgb, 230, 65, 0), 0.12)"
+  const activeFill = "rgba(var(--module-theme-rgb, 230, 65, 0), 0.2)"
 
   const handleHomeNavClick = () => {
     // Explicit Home tab should start at top, not restore a prior restaurant leave position.

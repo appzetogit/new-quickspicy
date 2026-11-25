@@ -516,7 +516,7 @@ export default function ProfessionalSearch() {
             <div className="absolute w-32 h-32 bg-brand-500/30 rounded-full animate-pulse" />
             
             {/* Mic Icon Container */}
-            <div className="relative bg-gradient-to-tr from-brand-500 to-brand-400 p-8 rounded-full text-white shadow-[0_0_40px_rgba(235,89,14,0.4)] border-4 border-white dark:border-zinc-800">
+            <div className="relative bg-gradient-to-tr from-brand-500 to-brand-400 p-8 rounded-full text-white shadow-[0_0_40px_rgba(230,65,0,0.4)] border-4 border-white dark:border-zinc-800">
               <Mic className="h-12 w-12" />
             </div>
 

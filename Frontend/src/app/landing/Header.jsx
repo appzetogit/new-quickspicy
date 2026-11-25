@@ -45,7 +45,7 @@ export default function Header({ onRestaurant, onDelivery }) {
           </button>
           <Link
             to={ROUTES.order}
-            className="group ml-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-brand-500 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgba(235,89,14,0.7)] transition-all hover:bg-brand-600 active:scale-[0.98] sm:px-5"
+            className="group ml-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-brand-500 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgba(230,65,0,0.7)] transition-all hover:bg-brand-600 active:scale-[0.98] sm:px-5"
           >
             Order<span className="hidden sm:inline"> now</span>
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />

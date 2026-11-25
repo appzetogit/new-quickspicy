@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Fredoka:wght@500;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Rubik:wght@400;500;700&family=Ubuntu:wght@400;500;700&family=Work+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Fredoka:wght@500;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600;700;800;900&family=Raleway:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Rubik:wght@400;500;700&family=Ubuntu:wght@400;500;700&family=Work+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 /* The CMS pages (terms, privacy, refund and the rest) are written against
    prose-* classes, and without this plugin every one of them is a no-op:
@@ -9,26 +9,39 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Quick Spicy brand. #EB590E is the logo orange; everything else is derived. */
+/* Quick Spicy brand. #E64100 is the Quick Spicy Deep Orange shared with the mobile apps; everything else is derived. */
 :root {
-  font-family: 'Outfit', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Poppins', system-ui, Avenir, Helvetica, Arial, sans-serif;
   --font-poppins: 'Poppins', sans-serif;
-  --font-outfit: 'Outfit', sans-serif;
-  --font-brand: 'Fredoka', 'Outfit', sans-serif;
+  --font-outfit: 'Poppins', sans-serif;
+  --font-brand: 'Fredoka', 'Poppins', sans-serif;
 
-  --brand-50: #FFF2EB;
-  --brand-100: #FFE3D3;
-  --brand-200: #FFC4A3;
-  --brand-300: #FB9A66;
-  --brand-400: #F47835;
-  --brand-500: #EB590E;
-  --brand-600: #D94F0C;
-  --brand-700: #B23F09;
-  --brand-800: #8A320B;
-  --brand-900: #5E230A;
+  --brand-50: #FFF4EF;
+  --brand-100: #FBE9E7;
+  --brand-200: #FFCCBC;
+  --brand-300: #FFAB91;
+  --brand-400: #FF7A45;
+  --brand-500: #E64100;
+  --brand-600: #CC3900;
+  --brand-700: #B83400;
+  --brand-800: #8A2700;
+  --brand-900: #5C1A00;
   --ink: #1F1A17;
   --ink-muted: #6B5E57;
   --cream: #FFF8F3;
+
+  /* Screens written with Tailwind's blue as their accent (buttons, links,
+     focus rings) take the brand ramp instead, in every app. */
+  --color-blue-50: var(--brand-50);
+  --color-blue-100: var(--brand-100);
+  --color-blue-200: var(--brand-200);
+  --color-blue-300: var(--brand-300);
+  --color-blue-400: var(--brand-400);
+  --color-blue-500: var(--brand-500);
+  --color-blue-600: var(--brand-600);
+  --color-blue-700: var(--brand-700);
+  --color-blue-800: var(--brand-800);
+  --color-blue-900: var(--brand-900);
   line-height: 1.5;
   font-weight: 400;
 

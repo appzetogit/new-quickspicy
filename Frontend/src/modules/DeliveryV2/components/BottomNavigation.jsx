@@ -33,7 +33,7 @@ export default function BottomNavigation() {
   }
 
   const iconClass = "w-6 h-6"
-  const activeColor = "var(--module-theme-color, #00B761)"
+  const activeColor = "var(--module-theme-color, #E64100)"
 
   const TabIcon = (active, Outline, Solid) => {
     const Icon = active ? Solid : Outline

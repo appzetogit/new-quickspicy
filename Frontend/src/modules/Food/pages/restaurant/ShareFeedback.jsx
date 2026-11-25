@@ -149,8 +149,8 @@ export default function ShareFeedback() {
                 rating !== null && !isSubmitting
                   ? {
                       background:
-                        "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,37,99,235),0.25)",
+                        "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+                      boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,230,65,0),0.25)",
                     }
                   : undefined
               }
@@ -196,7 +196,7 @@ export default function ShareFeedback() {
                   className="w-full py-2.5 rounded-full text-white text-sm font-medium"
                   style={{
                     background:
-                      "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
+                      "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
                   }}
                   onClick={() => {
                     setShowThanks(false)

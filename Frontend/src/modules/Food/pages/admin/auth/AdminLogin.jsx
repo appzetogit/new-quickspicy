@@ -20,8 +20,8 @@ const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
 
-const THEME = "#EB590E"
-const THEME_RGB = "235, 89, 14"
+const THEME = "#E64100"
+const THEME_RGB = "230, 65, 0"
 
 export default function AdminLogin() {
   const navigate = useNavigate()

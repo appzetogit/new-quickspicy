@@ -42,7 +42,7 @@ test('the row is created on first read, with usable defaults', async () => {
     assert.equal(first.orderAcceptanceTimeMinutes, 4);
     // Every app has a theme from the start. The Mongo version stored this as a
     // sub-document and had to repair rows that predated it.
-    assert.equal(first.powerScanning.user.themeColor, '#EB590E');
+    assert.equal(first.powerScanning.user.themeColor, '#E64100');
     assert.equal(first.powerScanning.delivery.fontFamily, 'Poppins');
     // The flat columns are rebuilt into the shape the panel reads.
     assert.deepEqual(first.phone, { countryCode: '+91', number: '' });

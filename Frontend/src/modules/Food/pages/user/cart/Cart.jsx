@@ -2570,8 +2570,8 @@ export default function Cart() {
             <Button
               className="text-white border-0"
               style={{
-                background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.9), var(--module-theme-color,#EB590E))",
-                boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,235, 89, 14),0.25)",
+                background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,230, 65, 0),0.9), var(--module-theme-color,#E64100))",
+                boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,230, 65, 0),0.25)",
               }}
             >
               Browse Restaurants
@@ -2586,7 +2586,7 @@ export default function Cart() {
     <div className="relative min-h-screen bg-slate-50 dark:bg-[#0a0a0a]">
       {/* Header */}
       <div className="sticky top-0 z-20 flex-shrink-0 text-white">
-        <div style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}>
+        <div style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}>
           <div className="max-w-7xl mx-auto px-3 md:px-6 pt-4 pb-4 md:pt-5 md:pb-5">
             <div className="flex items-start gap-2.5">
               <Button
@@ -2653,7 +2653,7 @@ export default function Cart() {
         {/* Transition curve: Downward green corners effect */}
         <div 
           className="h-5 md:h-6 w-full relative"
-          style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+          style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
         >
           <div 
             className="absolute top-0 left-0 w-full bg-slate-50 dark:bg-[#0a0a0a] rounded-t-[1.75rem] md:rounded-t-[2rem]" 
@@ -2750,7 +2750,7 @@ export default function Cart() {
                                 )}
                               </span>
                               <div className="flex items-center gap-1 justify-end">
-                                <span className="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-xs font-bold text-[#EB590E] tabular-nums">
+                                <span className="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-xs font-bold text-[#E64100] tabular-nums">
                                   {RUPEE_SYMBOL}
                                   {((item.price || 0) * (item.quantity || 1)).toFixed(0)}
                                 </span>
@@ -2782,7 +2782,7 @@ export default function Cart() {
                     onClick={() => setShowCookingSheet(true)}
                     className={`flex items-center gap-1.5 shrink-0 rounded-full border px-3 py-2 text-[12px] font-semibold ${
                       note.trim()
-                        ? "border-[#EB590E]/40 bg-[#FFF1E8] text-[#EB590E]"
+                        ? "border-[#E64100]/40 bg-[#FFF1E8] text-[#E64100]"
                         : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#141414] text-gray-700 dark:text-gray-300"
                     }`}
                   >
@@ -2795,7 +2795,7 @@ export default function Cart() {
                     className={`flex items-center gap-1.5 shrink-0 rounded-full border px-3 py-2 text-[12px] font-semibold ${
                       sendCutlery
                         ? "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#141414] text-gray-700 dark:text-gray-300"
-                        : "border-[#EB590E]/40 bg-[#FFF1E8] text-[#EB590E]"
+                        : "border-[#E64100]/40 bg-[#FFF1E8] text-[#E64100]"
                     }`}
                   >
                     <Square className={`h-3.5 w-3.5 ${sendCutlery ? "" : "fill-current"}`} />
@@ -2880,9 +2880,9 @@ export default function Cart() {
                                   restaurantId: cartRestaurantId
                                 });
                               }}
-                              className="absolute top-1 right-1 h-6 w-6 rounded-full bg-white border border-[#EB590E] flex items-center justify-center shadow-sm hover:bg-orange-50 transition-colors"
+                              className="absolute top-1 right-1 h-6 w-6 rounded-full bg-white border border-[#E64100] flex items-center justify-center shadow-sm hover:bg-orange-50 transition-colors"
                             >
-                              <Plus className="h-3 w-3 text-[#EB590E]" />
+                              <Plus className="h-3 w-3 text-[#E64100]" />
                             </button>
                           </div>
                           <p className="text-[11px] md:text-xs font-medium text-gray-800 dark:text-gray-200 mt-1 line-clamp-2 leading-tight">{addon.name}</p>
@@ -2903,7 +2903,7 @@ export default function Cart() {
                 onClick={() => setShowOffersView(true)}
                 className={`w-full bg-white dark:bg-[#1a1a1a] rounded-2xl border shadow-sm px-4 py-3.5 flex items-center gap-3 text-left ${
                   appliedCoupon
-                    ? "border-[#EB590E]/30 dark:border-[#EB590E]/40"
+                    ? "border-[#E64100]/30 dark:border-[#E64100]/40"
                     : "border-slate-100 dark:border-gray-800"
                 }`}
               >
@@ -2912,15 +2912,15 @@ export default function Cart() {
                     ? "bg-pink-50 dark:bg-pink-950/40"
                     : "bg-emerald-50 dark:bg-emerald-950/40"
                 }`}>
-                  <Tag className={`h-4 w-4 ${appliedCoupon ? "text-[#EB590E]" : "text-emerald-600"}`} />
+                  <Tag className={`h-4 w-4 ${appliedCoupon ? "text-[#E64100]" : "text-emerald-600"}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold ${appliedCoupon ? "text-[#EB590E]" : "text-gray-900 dark:text-white"}`}>
+                  <p className={`text-sm font-semibold ${appliedCoupon ? "text-[#E64100]" : "text-gray-900 dark:text-white"}`}>
                     {appliedCoupon
                       ? `'${appliedCoupon.code}' applied`
                       : "Payment offers & more"}
                   </p>
-                  <p className={`text-xs mt-0.5 truncate ${appliedCoupon ? "text-[#EB590E]/80 font-medium" : "text-gray-500 dark:text-gray-400"}`}>
+                  <p className={`text-xs mt-0.5 truncate ${appliedCoupon ? "text-[#E64100]/80 font-medium" : "text-gray-500 dark:text-gray-400"}`}>
                     {appliedCoupon
                       ? `You saved ${RUPEE_SYMBOL}${discount.toFixed(0)} on this order`
                       : loadingCoupons
@@ -2949,7 +2949,7 @@ export default function Cart() {
                       <span className="whitespace-nowrap">Delivery Modes</span>
                       <span
                         className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wide px-1 sm:px-1.5 py-0.5 rounded-full text-white shrink-0"
-                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
                       >
                         New
                       </span>
@@ -2959,7 +2959,7 @@ export default function Cart() {
                       onClick={() => setDeliverySectionTab("instructions")}
                       className={`flex-1 rounded-full px-2 sm:px-3 py-2 text-[11px] sm:text-[12px] font-semibold whitespace-nowrap transition-colors ${
                         deliverySectionTab === "instructions"
-                          ? "bg-white dark:bg-[#1a1a1a] text-[#EB590E] shadow-sm"
+                          ? "bg-white dark:bg-[#1a1a1a] text-[#E64100] shadow-sm"
                           : "text-gray-500 dark:text-gray-400"
                       }`}
                     >
@@ -2976,16 +2976,16 @@ export default function Cart() {
                       className="w-full flex items-start gap-3 text-left pb-3 border-b border-gray-100 dark:border-gray-800"
                     >
                       <div className={`mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                        deliveryMode === "quick" ? "border-[#EB590E]" : "border-gray-300 dark:border-gray-600"
+                        deliveryMode === "quick" ? "border-[#E64100]" : "border-gray-300 dark:border-gray-600"
                       }`}>
-                        {deliveryMode === "quick" ? <div className="h-2.5 w-2.5 rounded-full bg-[#EB590E]" /> : null}
+                        {deliveryMode === "quick" ? <div className="h-2.5 w-2.5 rounded-full bg-[#E64100]" /> : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                            Quick <Zap className="inline h-3.5 w-3.5 text-[#EB590E] mb-0.5" /> {quickDeliveryTime}
+                            Quick <Zap className="inline h-3.5 w-3.5 text-[#E64100] mb-0.5" /> {quickDeliveryTime}
                           </p>
-                          <p className={`text-xs font-semibold shrink-0 ${deliveryMode === "quick" ? "text-[#EB590E]" : "text-gray-500"}`}>
+                          <p className={`text-xs font-semibold shrink-0 ${deliveryMode === "quick" ? "text-[#E64100]" : "text-gray-500"}`}>
                             +{RUPEE_SYMBOL}{configuredQuickDeliveryFee}
                           </p>
                         </div>
@@ -3001,9 +3001,9 @@ export default function Cart() {
                       className="w-full flex items-start gap-3 text-left pt-3"
                     >
                       <div className={`mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                        deliveryMode === "basic" ? "border-[#EB590E]" : "border-gray-300 dark:border-gray-600"
+                        deliveryMode === "basic" ? "border-[#E64100]" : "border-gray-300 dark:border-gray-600"
                       }`}>
-                        {deliveryMode === "basic" ? <div className="h-2.5 w-2.5 rounded-full bg-[#EB590E]" /> : null}
+                        {deliveryMode === "basic" ? <div className="h-2.5 w-2.5 rounded-full bg-[#E64100]" /> : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -3019,7 +3019,7 @@ export default function Cart() {
                       <button
                         type="button"
                         onClick={() => setShowAddressSheet(true)}
-                        className="w-full text-left text-sm font-medium text-[#EB590E] pt-1"
+                        className="w-full text-left text-sm font-medium text-[#E64100] pt-1"
                       >
                         Select a delivery location to continue
                       </button>
@@ -3115,7 +3115,7 @@ export default function Cart() {
                     type="button"
                     onClick={handleRecipientEditToggle}
                     className="text-xs font-bold uppercase tracking-wide shrink-0"
-                    style={{ color: "var(--module-theme-color, #EB590E)" }}
+                    style={{ color: "var(--module-theme-color, #E64100)" }}
                   >
                     {isEditingRecipient ? "Save" : "Change"}
                   </button>
@@ -3144,14 +3144,14 @@ export default function Cart() {
                           }))
                         }
                         placeholder="Enter recipient name"
-                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#EB590E]"
+                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#E64100]"
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
                         Phone number
                       </label>
-                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] overflow-hidden focus-within:border-[#EB590E]">
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111111] overflow-hidden focus-within:border-[#E64100]">
                         <span className="px-3 text-sm text-gray-500 border-r border-gray-200 dark:border-gray-700">+91</span>
                         <input
                           type="tel"
@@ -3203,13 +3203,13 @@ export default function Cart() {
                         decimals={2}
                         showDiscountTag={false}
                         plainClassName="text-gray-800 dark:text-gray-200 font-medium tabular-nums"
-                        saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                        saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
                       />
                     </div>
                     {itemDiscountAmount > 0 && (
                       <div className="flex justify-between text-sm font-medium">
-                        <span className="text-[#EB590E] border-b border-dotted border-pink-300">Coupon Discount</span>
-                        <span className="text-[#EB590E]">-{RUPEE_SYMBOL}{itemDiscountAmount.toFixed(2)}</span>
+                        <span className="text-[#E64100] border-b border-dotted border-pink-300">Coupon Discount</span>
+                        <span className="text-[#E64100]">-{RUPEE_SYMBOL}{itemDiscountAmount.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex items-start justify-between gap-3 text-sm">
@@ -3240,8 +3240,8 @@ export default function Cart() {
                     </div>
                     {quickDeliveryFee > 0 && (
                       <div className="flex justify-between text-sm font-semibold">
-                        <span className="text-[#EB590E] border-b border-dotted border-pink-300">Quick Mode</span>
-                        <span className="text-[#EB590E]">{RUPEE_SYMBOL}{quickDeliveryFee.toFixed(2)}</span>
+                        <span className="text-[#E64100] border-b border-dotted border-pink-300">Quick Mode</span>
+                        <span className="text-[#E64100]">{RUPEE_SYMBOL}{quickDeliveryFee.toFixed(2)}</span>
                       </div>
                     )}
                     {packagingFee > 0 && (
@@ -3324,8 +3324,8 @@ export default function Cart() {
               }
               className="shrink-0 min-w-[132px] px-5 rounded-full text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               style={{
-                backgroundColor: "var(--module-theme-color, #EB590E)",
-                boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 235, 89, 14), 0.28)",
+                backgroundColor: "var(--module-theme-color, #E64100)",
+                boxShadow: "0 8px 20px rgba(var(--module-theme-rgb, 230, 65, 0), 0.28)",
               }}
             >
               {isPlacingOrder
@@ -3398,10 +3398,10 @@ export default function Cart() {
                   <div className="relative mb-6">
                     <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-gradient-to-r from-[#EB590E] to-[#D94F0C] rounded-full transition-all duration-100 ease-linear"
+                        className="h-full bg-gradient-to-r from-[#E64100] to-[#D94F0C] rounded-full transition-all duration-100 ease-linear"
                         style={{
                           width: `${orderProgress}%`,
-                          boxShadow: '0 0 10px rgba(235,89,14, 0.5)'
+                          boxShadow: '0 0 10px rgba(230,65,0, 0.5)'
                         }}
                       />
                     </div>
@@ -3424,7 +3424,7 @@ export default function Cart() {
                     }}
                     className="w-full text-right"
                   >
-                    <span className="text-[#EB590E] font-semibold text-base hover:text-[#D94F0C] transition-colors">
+                    <span className="text-[#E64100] font-semibold text-base hover:text-[#D94F0C] transition-colors">
                       CANCEL
                     </span>
                   </button>
@@ -3449,7 +3449,7 @@ export default function Cart() {
                     style={{
                       left: `${Math.random() * 100}%`,
                       top: `-10%`,
-                      backgroundColor: ['#EB590E', '#3b82f6', '#f59e0b', '#ef4444', '#D94F0C', '#ec4899'][Math.floor(Math.random() * 6)],
+                      backgroundColor: ['#E64100', '#3b82f6', '#f59e0b', '#ef4444', '#D94F0C', '#ec4899'][Math.floor(Math.random() * 6)],
                       animation: `confettiFall ${2 + Math.random() * 2}s linear ${Math.random() * 2}s infinite`,
                       transform: `rotate(${Math.random() * 360}deg)`,
                     }}
@@ -3527,14 +3527,14 @@ export default function Cart() {
                   className="mt-12 text-center"
                   style={{ animation: 'slideUp 0.5s ease-out 0.8s both' }}
                 >
-                  <h3 className="text-3xl font-bold text-[#EB590E] dark:text-orange-400 mb-2">Order Placed!</h3>
+                  <h3 className="text-3xl font-bold text-[#E64100] dark:text-orange-400 mb-2">Order Placed!</h3>
                   <p className="text-gray-600 dark:text-gray-300">Your delicious food is on its way</p>
                 </div>
 
                 {/* Action Button */}
                 <button
                   onClick={handleGoToOrders}
-                  className="mt-10 bg-[#EB590E] hover:bg-[#D94F0C] text-white font-semibold py-4 px-12 rounded-xl shadow-lg shadow-orange-200/70 dark:shadow-orange-950/40 transition-all hover:shadow-xl hover:scale-105"
+                  className="mt-10 bg-[#E64100] hover:bg-[#D94F0C] text-white font-semibold py-4 px-12 rounded-xl shadow-lg shadow-orange-200/70 dark:shadow-orange-950/40 transition-all hover:shadow-xl hover:scale-105"
                   style={{ animation: 'slideUp 0.5s ease-out 1s both' }}
                 >
                   Track Your Order
@@ -3607,7 +3607,7 @@ export default function Cart() {
                               onClick={() => handleSelectAddressFromSheet(address)}
                               className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-colors ${
                                 isSelected
-                                  ? "border-[#EB590E]/40 bg-[#FFF7F2] dark:bg-[#EB590E]/10"
+                                  ? "border-[#E64100]/40 bg-[#FFF7F2] dark:bg-[#E64100]/10"
                                   : "border-gray-100 dark:border-gray-800 bg-white dark:bg-[#222222] hover:border-gray-200"
                               }`}
                             >
@@ -3687,7 +3687,7 @@ export default function Cart() {
                       }}
                       rows={4}
                       placeholder="E.g. less spicy, no onions, extra sauce..."
-                      className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#111111] px-4 py-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#EB590E] resize-none"
+                      className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#111111] px-4 py-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#E64100] resize-none"
                     />
                     <div className="mt-4 flex gap-2">
                       {note.trim() && (
@@ -3706,7 +3706,7 @@ export default function Cart() {
                         type="button"
                         onClick={() => setShowCookingSheet(false)}
                         className="flex-1 h-11 rounded-xl text-white text-sm font-bold"
-                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
                       >
                         Save
                       </button>
@@ -3729,7 +3729,7 @@ export default function Cart() {
               >
                 <div
                   className="sticky top-0 z-10 text-white shadow-sm"
-                  style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+                  style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
                 >
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Button
@@ -3764,7 +3764,7 @@ export default function Cart() {
                       <button
                         type="button"
                         onClick={handleRemoveCoupon}
-                        className="text-xs font-bold text-[#EB590E] uppercase tracking-wide shrink-0"
+                        className="text-xs font-bold text-[#E64100] uppercase tracking-wide shrink-0"
                       >
                         Remove
                       </button>
@@ -3779,13 +3779,13 @@ export default function Cart() {
                         value={manualCouponCode}
                         onChange={(e) => setManualCouponCode(e.target.value.toUpperCase())}
                         placeholder="Enter coupon code"
-                        className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#111111] px-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#EB590E]"
+                        className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#111111] px-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:border-[#E64100]"
                       />
                       <button
                         type="button"
                         onClick={handleApplyCouponCode}
                         className="h-11 px-4 rounded-xl text-white text-sm font-bold shrink-0"
-                        style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+                        style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
                       >
                         Apply
                       </button>
@@ -3817,7 +3817,7 @@ export default function Cart() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex items-start gap-3 min-w-0">
                                 <div className="h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center shrink-0">
-                                  <Percent className="h-5 w-5 text-[#EB590E]" />
+                                  <Percent className="h-5 w-5 text-[#E64100]" />
                                 </div>
                                 <div className="min-w-0">
                                   <p className="text-sm font-bold text-gray-900 dark:text-white">
@@ -3825,7 +3825,7 @@ export default function Cart() {
                                   </p>
                                   <p className="text-xs text-gray-500 mt-0.5">Use code '{coupon.code}'</p>
                                   {coupon.customerGroup === "new" ? (
-                                    <p className="text-[11px] text-[#EB590E] mt-1">First-time users only</p>
+                                    <p className="text-[11px] text-[#E64100] mt-1">First-time users only</p>
                                   ) : isLocked ? (
                                     <p className="text-[11px] text-blue-600 mt-1">
                                       Add items worth {RUPEE_SYMBOL}{(Number(coupon.minOrder) - subtotal).toFixed(0)} more
@@ -3839,7 +3839,7 @@ export default function Cart() {
                                 type="button"
                                 onClick={() => handleApplyCoupon(coupon)}
                                 disabled={isDisabled}
-                                className="shrink-0 border border-[#EB590E] text-[#EB590E] rounded-full px-4 py-1.5 text-xs font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="shrink-0 border border-[#E64100] text-[#E64100] rounded-full px-4 py-1.5 text-xs font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 {isApplied ? "Applied" : "Apply"}
                               </button>
@@ -3851,7 +3851,7 @@ export default function Cart() {
                   ) : (
                     <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 p-8 text-center">
                       <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-gradient-to-br from-pink-100 to-orange-100 dark:from-pink-950/40 dark:to-orange-950/30 flex items-center justify-center">
-                        <Sparkles className="h-7 w-7 text-[#EB590E]" />
+                        <Sparkles className="h-7 w-7 text-[#E64100]" />
                       </div>
                       <h3 className="text-base font-bold text-gray-900 dark:text-white">No offers right now</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-xs mx-auto">
@@ -3864,7 +3864,7 @@ export default function Cart() {
                           <p className="text-[11px] text-gray-500 mt-1">Check at payment step</p>
                         </div>
                         <div className="rounded-xl bg-slate-50 dark:bg-[#141414] p-3">
-                          <Percent className="h-4 w-4 text-[#EB590E] mb-2" />
+                          <Percent className="h-4 w-4 text-[#E64100] mb-2" />
                           <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Restaurant deals</p>
                           <p className="text-[11px] text-gray-500 mt-1">Add more items to unlock</p>
                         </div>
@@ -3972,7 +3972,7 @@ export default function Cart() {
                             }
                           }}
                           className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all duration-300 group ${selectedPaymentMethod === option.id
-                              ? 'border-[#EB590E] bg-[#EB590E] shadow-lg shadow-orange-500/30'
+                              ? 'border-[#E64100] bg-[#E64100] shadow-lg shadow-orange-500/30'
                               : 'border-gray-100 dark:border-gray-800/80 bg-white dark:bg-[#222222] hover:border-orange-200 dark:hover:border-orange-900/30 shadow-sm'
                             } ${option.disabled ? 'opacity-40 grayscale-[0.8] cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]'}`}
                         >
@@ -4026,7 +4026,7 @@ export default function Cart() {
                               ? 'bg-white border-white'
                               : 'border-gray-200 dark:border-gray-700'
                             }`}>
-                            {selectedPaymentMethod === option.id && <Check className="w-3.5 h-3.5 text-[#EB590E]" strokeWidth={4} />}
+                            {selectedPaymentMethod === option.id && <Check className="w-3.5 h-3.5 text-[#E64100]" strokeWidth={4} />}
                           </div>
                         </button>
                       ))}
@@ -4038,11 +4038,11 @@ export default function Cart() {
                     >
                       <div className="flex-shrink-0">
                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Total Pay</p>
-                        <p className="text-xl font-black text-[#EB590E] tabular-nums">{RUPEE_SYMBOL}{total.toFixed(0)}</p>
+                        <p className="text-xl font-black text-[#E64100] tabular-nums">{RUPEE_SYMBOL}{total.toFixed(0)}</p>
                       </div>
                       <Button
                         onClick={() => setShowPaymentSheet(false)}
-                        className="flex-1 bg-[#EB590E] hover:bg-[#D94F0C] text-white h-11 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-[0.98]"
+                        className="flex-1 bg-[#E64100] hover:bg-[#D94F0C] text-white h-11 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-[0.98]"
                       >
                         Confirm Order
                       </Button>

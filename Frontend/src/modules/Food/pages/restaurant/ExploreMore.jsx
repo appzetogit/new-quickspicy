@@ -765,13 +765,13 @@ export default function ExploreMore() {
                     navigate(item.route)
                   }
                 }}
-                className="group relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[20px] bg-white p-4 shadow-[0_2px_10px_rgb(0,0,0,0.02)] ring-1 ring-black/[0.04] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(235, 89, 14,0.06)] hover:ring-[#EB590E]/10 hover:bg-[#EB590E]/[0.02] min-h-[105px] md:min-h-[120px] md:rounded-2xl md:p-5 md:shadow-sm md:ring-slate-200/80 md:hover:shadow-md"
+                className="group relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[20px] bg-white p-4 shadow-[0_2px_10px_rgb(0,0,0,0.02)] ring-1 ring-black/[0.04] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(230, 65, 0,0.06)] hover:ring-[#E64100]/10 hover:bg-[#E64100]/[0.02] min-h-[105px] md:min-h-[120px] md:rounded-2xl md:p-5 md:shadow-sm md:ring-slate-200/80 md:hover:shadow-md"
               >
-                <div className="relative flex items-center justify-center h-11 w-11 rounded-full bg-gray-50 transition-colors group-hover:bg-[#EB590E]/10 md:h-12 md:w-12">
+                <div className="relative flex items-center justify-center h-11 w-11 rounded-full bg-gray-50 transition-colors group-hover:bg-[#E64100]/10 md:h-12 md:w-12">
                   {item.customIcon ? (
-                    <span className="text-lg font-bold text-gray-900 group-hover:text-[#EB590E] transition-colors">hp</span>
+                    <span className="text-lg font-bold text-gray-900 group-hover:text-[#E64100] transition-colors">hp</span>
                   ) : (
-                    <IconComponent className="relative z-10 w-[22px] h-[22px] text-gray-600 transition-colors group-hover:text-[#EB590E] md:w-6 md:h-6" strokeWidth={1.75} />
+                    <IconComponent className="relative z-10 w-[22px] h-[22px] text-gray-600 transition-colors group-hover:text-[#E64100] md:w-6 md:h-6" strokeWidth={1.75} />
                   )}
                   {item.badge && (
                     <motion.span
@@ -784,7 +784,7 @@ export default function ExploreMore() {
                     </motion.span>
                   )}
                 </div>
-                <span className="text-[11px] font-semibold tracking-tight text-gray-500 transition-colors group-hover:text-[#EB590E] text-center leading-tight md:text-sm md:text-slate-600">
+                <span className="text-[11px] font-semibold tracking-tight text-gray-500 transition-colors group-hover:text-[#E64100] text-center leading-tight md:text-sm md:text-slate-600">
                   {item.label}
                 </span>
               </motion.button>
@@ -862,10 +862,10 @@ export default function ExploreMore() {
           className="mb-8"
         >
           <div className="relative overflow-hidden rounded-[24px] bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 md:rounded-2xl md:p-6 md:shadow-sm md:ring-slate-200 md:border md:border-slate-200">
-            <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#EB590E]/5 blur-3xl pointer-events-none md:bg-slate-100/80" />
+            <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#E64100]/5 blur-3xl pointer-events-none md:bg-slate-100/80" />
             <div className="relative flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-gradient-to-br from-[#EB590E]/10 to-[#EB590E]/5 ring-1 ring-[#EB590E]/10 md:from-slate-100 md:to-slate-50 md:ring-slate-200">
-                <Store className="h-6 w-6 text-[#EB590E] md:text-slate-700" strokeWidth={1.5} />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-gradient-to-br from-[#E64100]/10 to-[#E64100]/5 ring-1 ring-[#E64100]/10 md:from-slate-100 md:to-slate-50 md:ring-slate-200">
+                <Store className="h-6 w-6 text-[#E64100] md:text-slate-700" strokeWidth={1.5} />
               </div>
               <div className="flex-1 min-w-0 text-left">
                 <h2 className="text-[17px] font-extrabold text-gray-900 truncate tracking-tight mb-0.5 md:text-xl md:font-bold">

@@ -877,19 +877,19 @@ export default function HubFinance() {
               onClick={() => navigate("/food/restaurant/withdrawal-history")}
               title="Withdrawal History"
             >
-              <Wallet className="w-5 h-5" style={{ color: "var(--module-theme-color, #2563EB)" }} />
+              <Wallet className="w-5 h-5" style={{ color: "var(--module-theme-color, #E64100)" }} />
             </button>
             <button
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
               onClick={() => navigate("/restaurant/notifications")}
             >
-              <Bell className="w-5 h-5" style={{ color: "var(--module-theme-color, #2563EB)" }} />
+              <Bell className="w-5 h-5" style={{ color: "var(--module-theme-color, #E64100)" }} />
             </button>
             <button
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
               onClick={() => navigate("/restaurant/explore")}
             >
-              <Menu className="w-5 h-5" style={{ color: "var(--module-theme-color, #2563EB)" }} />
+              <Menu className="w-5 h-5" style={{ color: "var(--module-theme-color, #E64100)" }} />
             </button>
           </div>
         </div>
@@ -946,9 +946,9 @@ export default function HubFinance() {
               : "bg-white text-gray-600 border border-gray-300"
               }`}
             style={activeTab === "payouts" ? {
-              backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)",
-              color: "var(--module-theme-color, #2563EB)",
-              border: "1px solid rgba(var(--module-theme-rgb, 37,99,235), 0.35)",
+              backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)",
+              color: "var(--module-theme-color, #E64100)",
+              border: "1px solid rgba(var(--module-theme-rgb, 230,65,0), 0.35)",
             } : undefined}
           >
             Payouts
@@ -960,9 +960,9 @@ export default function HubFinance() {
               : "bg-white text-gray-600 border border-gray-300"
               }`}
             style={activeTab === "invoices" ? {
-              backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)",
-              color: "var(--module-theme-color, #2563EB)",
-              border: "1px solid rgba(var(--module-theme-rgb, 37,99,235), 0.35)",
+              backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)",
+              color: "var(--module-theme-color, #E64100)",
+              border: "1px solid rgba(var(--module-theme-rgb, 230,65,0), 0.35)",
             } : undefined}
           >
             Invoices & Taxes
@@ -1032,8 +1032,8 @@ export default function HubFinance() {
                         : "bg-gray-200 text-gray-500 cursor-not-allowed"
                         }`}
                       style={walletNetAvailable > 0 ? {
-                        background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 37,99,235), 0.9), var(--module-theme-color, #2563EB))",
-                        boxShadow: "0 10px 20px rgba(var(--module-theme-rgb, 37,99,235), 0.28)",
+                        background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.9), var(--module-theme-color, #E64100))",
+                        boxShadow: "0 10px 20px rgba(var(--module-theme-rgb, 230,65,0), 0.28)",
                       } : undefined}
                     >
                       <Wallet className="h-5 w-5" />
@@ -1164,7 +1164,7 @@ export default function HubFinance() {
                         type="button"
                         onClick={() => navigate("/food/restaurant/withdrawal-history")}
                         className="w-full text-sm font-medium hover:underline pt-1 md:hidden"
-                        style={{ color: "var(--module-theme-color, #2563EB)" }}
+                        style={{ color: "var(--module-theme-color, #E64100)" }}
                       >
                         View all requests
                       </button>
@@ -1334,8 +1334,8 @@ export default function HubFinance() {
                       onClick={() => setShowDownloadMenu(!showDownloadMenu)}
                       className="text-white rounded-lg px-4 py-3 flex items-center justify-center gap-2 transition-colors md:rounded-xl md:!bg-[#141820] md:!shadow-[0_12px_24px_-16px_rgba(20,24,32,0.55)] md:hover:!bg-[#1e2633]"
                       style={{
-                        background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 37,99,235), 0.9), var(--module-theme-color, #2563EB))",
-                        boxShadow: "0 10px 22px rgba(var(--module-theme-rgb, 37,99,235), 0.28)",
+                        background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.9), var(--module-theme-color, #E64100))",
+                        boxShadow: "0 10px 22px rgba(var(--module-theme-rgb, 230,65,0), 0.28)",
                       }}
                     >
                       <Download className="w-4 h-4" />
@@ -1636,7 +1636,7 @@ export default function HubFinance() {
                     onChange={(e) => setWithdrawalAmount(e.target.value)}
                     placeholder="0.00"
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none"
-                    style={{ "--tw-ring-color": "rgba(var(--module-theme-rgb, 37,99,235), 0.25)" }}
+                    style={{ "--tw-ring-color": "rgba(var(--module-theme-rgb, 230,65,0), 0.25)" }}
                   />
                   {withdrawalAmount && parseFloat(withdrawalAmount) > walletNetAvailable && (
                     <p className="text-sm text-red-600 mt-1">Amount exceeds your withdrawable limit</p>
@@ -1704,7 +1704,7 @@ export default function HubFinance() {
                     disabled={submittingWithdrawal || !withdrawalAmount || parseFloat(withdrawalAmount) <= 0 || parseFloat(withdrawalAmount) > walletNetAvailable}
                     className="flex-1 px-4 py-3 text-white rounded-lg font-medium transition-all disabled:bg-gray-300 disabled:cursor-not-allowed shadow-lg"
                     style={{
-                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 37,99,235), 0.9), var(--module-theme-color, #2563EB))",
+                      background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.9), var(--module-theme-color, #E64100))",
                     }}
                   >
                     {submittingWithdrawal ? 'Submitting...' : 'Submit Request'}

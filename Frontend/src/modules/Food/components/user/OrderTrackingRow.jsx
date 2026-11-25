@@ -6,7 +6,7 @@ import { getOrderKey, getOrderStatusText } from "@food/hooks/useActiveOrderTrack
 import { restaurantLabel } from "@food/utils/entityLabels"
 
 const CookingAnimation = memo(() => (
-  <div className="relative w-10 h-10 flex items-center justify-center rounded-xl bg-orange-50 border border-orange-100 overflow-visible shadow-[0_4px_12px_rgba(235,89,14,0.12)] shrink-0">
+  <div className="relative w-10 h-10 flex items-center justify-center rounded-xl bg-orange-50 border border-orange-100 overflow-visible shadow-[0_4px_12px_rgba(230,65,0,0.12)] shrink-0">
     <div className="absolute -top-2.5 flex gap-1">
       <motion.div animate={{ opacity: [0, 0.8, 0], y: [0, -6, -10], scale: [0.8, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0, ease: "easeOut" }} className="w-1 h-2.5 bg-orange-400/60 rounded-full blur-[1px]" />
       <motion.div animate={{ opacity: [0, 0.8, 0], y: [0, -8, -12], scale: [0.8, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.5, ease: "easeOut" }} className="w-1 h-2.5 bg-orange-400/60 rounded-full blur-[1px]" />
@@ -36,7 +36,7 @@ function OrderTrackingRowInner({ order, timeRemaining, onDismiss, compact = fals
   const orderId = getOrderKey(order);
   const restaurantName = restaurantLabel(order.restaurant) || order.restaurantName || "Restaurant";
   const statusText = getOrderStatusText(order);
-  const themeColor = "var(--module-theme-color, #EB590E)";
+  const themeColor = "var(--module-theme-color, #E64100)";
 
   return (
     <motion.button
@@ -47,14 +47,14 @@ function OrderTrackingRowInner({ order, timeRemaining, onDismiss, compact = fals
         compact ? "p-3" : "p-4"
       }`}
       style={{
-        boxShadow: "0 8px 24px rgba(var(--module-theme-rgb, 235,89,14), 0.14)",
-        borderColor: "rgba(var(--module-theme-rgb, 235,89,14), 0.2)",
+        boxShadow: "0 8px 24px rgba(var(--module-theme-rgb, 230,65,0), 0.14)",
+        borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.2)",
       }}
     >
       <div
         className="absolute inset-0 opacity-50 pointer-events-none rounded-2xl"
         style={{
-          background: "linear-gradient(to right, rgba(var(--module-theme-rgb, 235,89,14), 0.1), rgba(255,255,255,0.5))",
+          background: "linear-gradient(to right, rgba(var(--module-theme-rgb, 230,65,0), 0.1), rgba(255,255,255,0.5))",
         }}
       />
 
@@ -74,7 +74,7 @@ function OrderTrackingRowInner({ order, timeRemaining, onDismiss, compact = fals
         }}
         className="absolute top-2 right-2 p-1 rounded-full transition-colors z-20"
         style={{
-          backgroundColor: "rgba(var(--module-theme-rgb, 235,89,14), 0.15)",
+          backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.15)",
           color: themeColor,
         }}
       >
@@ -95,9 +95,9 @@ function OrderTrackingRowInner({ order, timeRemaining, onDismiss, compact = fals
         <div
           className="rounded-xl px-3 py-1.5 shrink-0 flex flex-col items-center justify-center border"
           style={{
-            background: "linear-gradient(135deg, var(--module-theme-color, #EB590E), rgba(var(--module-theme-rgb, 235,89,14), 0.84))",
-            boxShadow: "0 6px 14px rgba(var(--module-theme-rgb, 235,89,14), 0.22)",
-            borderColor: "rgba(var(--module-theme-rgb, 235,89,14), 0.3)",
+            background: "linear-gradient(135deg, var(--module-theme-color, #E64100), rgba(var(--module-theme-rgb, 230,65,0), 0.84))",
+            boxShadow: "0 6px 14px rgba(var(--module-theme-rgb, 230,65,0), 0.22)",
+            borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.3)",
           }}
         >
           <p className="text-orange-50 text-[9px] font-bold uppercase tracking-wider opacity-95 leading-tight">

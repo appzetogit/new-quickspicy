@@ -1153,13 +1153,13 @@ export default function OutletInfo() {
                   className="px-2.5 py-1.5 rounded flex items-center gap-1 shrink-0"
                   style={{
                     background:
-                      "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.90), var(--module-theme-color,#2563EB))",
+                      "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.90), var(--module-theme-color,#E64100))",
                   }}
                 >
                   <span className="text-white text-sm font-bold">{Number(displayRating || 0).toFixed(1)}</span>
                   <Star className="w-3.5 h-3.5 text-white fill-white" />
                 </div>
-                <span className="text-sm font-semibold" style={{ color: "var(--module-theme-color, #2563EB)" }}>
+                <span className="text-sm font-semibold" style={{ color: "var(--module-theme-color, #E64100)" }}>
                   {displayTotalRatings || 0} DELIVERY REVIEWS
                 </span>
                 <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 ml-auto" />

@@ -48,7 +48,7 @@ export default function TableBookingSuccess() {
                 animate={{ scale: 1, opacity: 1 }}
                 className="w-20 h-20 bg-[#FFF2EB] rounded-full flex items-center justify-center mb-6"
             >
-                <CheckCircle2 className="w-12 h-12 text-[#EB590E]" />
+                <CheckCircle2 className="w-12 h-12 text-[#E64100]" />
             </motion.div>
 
             <motion.div
@@ -60,7 +60,7 @@ export default function TableBookingSuccess() {
                 <h1 className="text-3xl font-black text-gray-900">Table is Booked!</h1>
                 <p className="text-gray-500 font-medium tracking-wide italic">Restaurant will confirm your request soon</p>
                 <div className="pt-2">
-                    <span className="bg-[#FFF2EB] text-[#EB590E] px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest border border-[#EB590E]/20">
+                    <span className="bg-[#FFF2EB] text-[#E64100] px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest border border-[#E64100]/20">
                         BOOKING ID: {booking.bookingId}
                     </span>
                 </div>

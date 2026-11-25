@@ -32,8 +32,8 @@ const STATES = {
 const rupees = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`
 
 const themeButton = {
-  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-  boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,37,99,235),0.26)",
+  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+  boxShadow: "0 8px 18px rgba(var(--module-theme-rgb,230,65,0),0.26)",
 }
 
 export default function CouponListPage() {
@@ -212,15 +212,15 @@ export default function CouponListPage() {
                 >
                   <div
                     className="h-1 rounded-t-lg"
-                    style={{ backgroundColor: coupon.state === "live" ? "var(--module-theme-color, #2563EB)" : "#d1d5db" }}
+                    style={{ backgroundColor: coupon.state === "live" ? "var(--module-theme-color, #E64100)" : "#d1d5db" }}
                   />
                   <div className="p-4">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <span
                         className={`px-2.5 py-1 rounded text-[11px] font-bold tracking-wide ${meta.className || ""}`}
                         style={meta.themed ? {
-                          backgroundColor: "rgba(var(--module-theme-rgb,37,99,235),0.10)",
-                          color: "var(--module-theme-color,#2563EB)",
+                          backgroundColor: "rgba(var(--module-theme-rgb,230,65,0),0.10)",
+                          color: "var(--module-theme-color,#E64100)",
                         } : undefined}
                       >
                         {meta.label}
@@ -270,7 +270,7 @@ export default function CouponListPage() {
                         className="p-1.5 hover:bg-gray-100 rounded transition-colors"
                         aria-label="Copy code"
                       >
-                        <Copy className="w-4 h-4" style={{ color: "var(--module-theme-color, #2563EB)" }} />
+                        <Copy className="w-4 h-4" style={{ color: "var(--module-theme-color, #E64100)" }} />
                       </button>
                     </div>
 

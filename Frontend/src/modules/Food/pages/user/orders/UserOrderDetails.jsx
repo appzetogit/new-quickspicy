@@ -110,7 +110,7 @@ export default function UserOrderDetails() {
           <p className="text-gray-700 text-sm font-medium">Order not found</p>
           <button
             onClick={() => navigate("/user/orders")}
-            className="px-4 py-2 rounded-lg bg-[#EB590E] text-white text-sm font-semibold"
+            className="px-4 py-2 rounded-lg bg-[#E64100] text-white text-sm font-semibold"
           >
             Back to Orders
           </button>
@@ -476,7 +476,7 @@ export default function UserOrderDetails() {
             <button
               type="button"
               onClick={handleCallRestaurant}
-              className="w-8 h-8 rounded-full border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[#EB590E] hover:bg-orange-50 dark:hover:bg-orange-950/30"
+              className="w-8 h-8 rounded-full border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[#E64100] hover:bg-orange-50 dark:hover:bg-orange-950/30"
             >
               <Phone className="w-4 h-4" />
             </button>
@@ -524,7 +524,7 @@ export default function UserOrderDetails() {
                 compareAmount={compareUnit > 0 ? compareUnit * qty : 0}
                 decimals={2}
                 plainClassName="text-sm text-gray-800 dark:text-gray-200 font-medium tabular-nums"
-                saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
               />
             </div>
             )
@@ -541,7 +541,7 @@ export default function UserOrderDetails() {
             <button
               type="button"
               onClick={handleDownloadSummary}
-              className="w-7 h-7 rounded-full bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center text-[#EB590E] hover:bg-orange-100 dark:hover:bg-orange-900/40"
+              className="w-7 h-7 rounded-full bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center text-[#E64100] hover:bg-orange-100 dark:hover:bg-orange-900/40"
             >
               <Download className="w-4 h-4" />
             </button>
@@ -555,7 +555,7 @@ export default function UserOrderDetails() {
                 compareAmount={displayCompareItemTotal}
                 decimals={2}
                 plainClassName="text-gray-800 dark:text-gray-200 tabular-nums"
-                saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
               />
             </div>
             <div className="flex justify-between">
@@ -567,18 +567,18 @@ export default function UserOrderDetails() {
             <div className="flex justify-between">
               <span className="text-gray-400 dark:text-gray-500 font-medium">Delivery fee</span>
               {pricing.deliveryFee === 0 && (
-                <span className="text-[#EB590E] text-[10px] font-bold border border-[#EB590E] px-1 rounded ml-1">
+                <span className="text-[#E64100] text-[10px] font-bold border border-[#E64100] px-1 rounded ml-1">
                   FREE
                 </span>
               )}
-              <span className="text-[#EB590E] font-medium uppercase">
+              <span className="text-[#E64100] font-medium uppercase">
                 {pricing.deliveryFee ? `₹${Number(pricing.deliveryFee).toFixed(2)}` : "Free"}
               </span>
             </div>
             {Number(pricing.quickDeliveryFee || 0) > 0 && (
               <div className="flex justify-between font-semibold">
-                <span className="text-[#EB590E]">Quick Mode</span>
-                <span className="text-[#EB590E]">
+                <span className="text-[#E64100]">Quick Mode</span>
+                <span className="text-[#E64100]">
                   ₹{Number(pricing.quickDeliveryFee).toFixed(2)}
                 </span>
               </div>
@@ -597,7 +597,7 @@ export default function UserOrderDetails() {
                 compareAmount={compareToPay}
                 decimals={2}
                 plainClassName="font-bold text-gray-800 dark:text-white tabular-nums"
-                saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
               />
             </div>
           </div>
@@ -620,7 +620,7 @@ export default function UserOrderDetails() {
                 </svg>
               </div>
 
-              <div className="flex items-center justify-center gap-2 pt-1 text-[#EB590E] font-bold text-sm">
+              <div className="flex items-center justify-center gap-2 pt-1 text-[#E64100] font-bold text-sm">
                 <span>??</span>
                 <span>
                   You saved ₹{Number(savings).toFixed(2)} on this order!
@@ -695,7 +695,7 @@ export default function UserOrderDetails() {
         <button
           type="button"
           onClick={() => handleReorder(order)}
-          className="flex-1 bg-[#EB590E] text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-[#D94F0C] transition-colors"
+          className="flex-1 bg-[#E64100] text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-[#D94F0C] transition-colors"
         >
           <RotateCcw className="w-4 h-4" />
           Reorder
@@ -703,7 +703,7 @@ export default function UserOrderDetails() {
         <button
           type="button"
           onClick={handleDownloadSummary}
-          className="flex-1 bg-white dark:bg-zinc-800 border border-[#EB590E] text-[#EB590E] py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+          className="flex-1 bg-white dark:bg-zinc-800 border border-[#E64100] text-[#E64100] py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
         >
           <Download className="w-4 h-4" />
           Invoice

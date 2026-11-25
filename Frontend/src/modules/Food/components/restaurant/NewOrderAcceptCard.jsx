@@ -210,20 +210,20 @@ export default function NewOrderAcceptCard({
       className="w-full bg-white rounded-[24px] overflow-hidden mb-3 relative"
       style={{
         borderStyle: "solid",
-        borderColor: "var(--module-theme-color, #2563EB)",
+        borderColor: "var(--module-theme-color, #E64100)",
         borderWidth: "2px",
         borderTopWidth: "5px",
         boxShadow:
-          "0 0 0 4px rgba(var(--module-theme-rgb, 37,99,235), 0.12), 0 10px 28px -8px rgba(var(--module-theme-rgb, 37,99,235), 0.35)",
+          "0 0 0 4px rgba(var(--module-theme-rgb, 230,65,0), 0.12), 0 10px 28px -8px rgba(var(--module-theme-rgb, 230,65,0), 0.35)",
         background:
-          "linear-gradient(180deg, rgba(var(--module-theme-rgb, 37,99,235), 0.06) 0%, #ffffff 42%)",
+          "linear-gradient(180deg, rgba(var(--module-theme-rgb, 230,65,0), 0.06) 0%, #ffffff 42%)",
       }}
     >
       <div
         className="px-5 py-4 border-b flex items-center justify-between gap-3"
         style={{
-          borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.18)",
-          backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.08)",
+          borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.18)",
+          backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.08)",
         }}
       >
         <div className="min-w-0">
@@ -231,16 +231,16 @@ export default function NewOrderAcceptCard({
             <span className="relative flex h-2.5 w-2.5">
               <span
                 className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style={{ backgroundColor: "var(--module-theme-color, #2563EB)" }}
+                style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
               />
               <span
                 className="relative inline-flex rounded-full h-2.5 w-2.5"
-                style={{ backgroundColor: "var(--module-theme-color, #2563EB)" }}
+                style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
               />
             </span>
             <h3
               className="font-bold tracking-wider text-[11px] uppercase"
-              style={{ color: "var(--module-theme-color, #2563EB)" }}
+              style={{ color: "var(--module-theme-color, #E64100)" }}
             >
               New Order
             </h3>
@@ -255,8 +255,8 @@ export default function NewOrderAcceptCard({
           <div
             className="hidden md:flex flex-col items-end px-3 py-1.5 rounded-xl border mr-1"
             style={{
-              borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.25)",
-              backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.08)",
+              borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.25)",
+              backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.08)",
             }}
           >
             <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">
@@ -264,7 +264,7 @@ export default function NewOrderAcceptCard({
             </span>
             <span
               className="text-sm font-black tabular-nums"
-              style={{ color: "var(--module-theme-color, #2563EB)" }}
+              style={{ color: "var(--module-theme-color, #E64100)" }}
             >
               {isExpired ? "00:00" : formatTime(countdown)}
             </span>

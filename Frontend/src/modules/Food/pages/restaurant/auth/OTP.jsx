@@ -14,7 +14,7 @@ import { loadBusinessSettings, getModuleLogoUrl } from "@food/utils/businessSett
 import RestaurantPartnerHero from "@food/components/restaurant/auth/RestaurantPartnerHero"
 import brandLogo from "@food/assets/quickspicy-logo.png"
 
-const THEME = "#EB590E"
+const THEME = "#E64100"
 
 export default function RestaurantOTP() {
   const companyName = useCompanyName()
@@ -360,7 +360,7 @@ export default function RestaurantOTP() {
                         error
                           ? "border-red-300 bg-red-50"
                           : focusedIndex === index
-                            ? "border-[#EB590E] ring-4 ring-[#EB590E]/15"
+                            ? "border-[#E64100] ring-4 ring-[#E64100]/15"
                             : "border-gray-200"
                       }`}
                     />

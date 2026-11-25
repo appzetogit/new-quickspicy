@@ -1211,7 +1211,7 @@ export default function OrderTracking() {
           <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-4 dark:text-white">Order Not Found</h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">{error || 'The order you\'re looking for doesn\'t exist.'}</p>
           <Link to="/user/orders">
-            <Button className="text-white border-0" style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}>Back to Orders</Button>
+            <Button className="text-white border-0" style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}>Back to Orders</Button>
           </Link>
         </div>
       </AnimatedPage>
@@ -1308,8 +1308,8 @@ export default function OrderTracking() {
   const complaintOrderId = encodeURIComponent(
     String(order?.orderId || order?.id || orderId || "")
   )
-  const themeColor = "var(--module-theme-color, #EB590E)"
-  const themeRgb = "var(--module-theme-rgb, 235,89,14)"
+  const themeColor = "var(--module-theme-color, #E64100)"
+  const themeRgb = "var(--module-theme-rgb, 230,65,0)"
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0a0a0a]">

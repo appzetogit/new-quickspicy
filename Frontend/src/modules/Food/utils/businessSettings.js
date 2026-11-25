@@ -17,14 +17,14 @@ export { resolveModuleFromPath } from "./moduleTheme";
 
 const SETTINGS_KEY = 'food_business_settings';
 const DEFAULT_MODULE_POWER_SCANNING = {
-  // Quick Spicy orange (the logo colour) for the customer app and admin.
-  user: { themeColor: "#EB590E", fontFamily: "Outfit" },
-  restaurant: { themeColor: "#2563EB", fontFamily: "Poppins" },
-  delivery: { themeColor: "#00B761", fontFamily: "Poppins" },
+  // One Quick Spicy theme for every app, same as the mobile apps.
+  user: { themeColor: "#E64100", fontFamily: "Poppins" },
+  restaurant: { themeColor: "#E64100", fontFamily: "Poppins" },
+  delivery: { themeColor: "#E64100", fontFamily: "Poppins" },
   // Fixed. The admin panel is internal tooling with a stable brand, not a
   // themeable storefront -- getModulePowerScanning deliberately ignores any
   // stored value for this key.
-  admin: { themeColor: "#EB590E", fontFamily: "Outfit" },
+  admin: { themeColor: "#E64100", fontFamily: "Poppins" },
 };
 
 const FONT_STACKS = {
@@ -50,7 +50,7 @@ const LEGACY_BRAND_HEXES = [
   "#00B761",
   "#2563EB",
   "#DC2626",
-  "#EB590E",
+  "#E64100",
   "#D94F0C",
   "#C44409",
   "#FF8100",
@@ -70,7 +70,7 @@ const shadeOf = (colorToken) => {
 const hexToRgbTuple = (hex) => {
   const raw = String(hex || "").trim();
   const normalized = raw.startsWith("#") ? raw.slice(1) : raw;
-  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return "235, 89, 14";
+  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return "230, 65, 0";
   const r = parseInt(normalized.slice(0, 2), 16);
   const g = parseInt(normalized.slice(2, 4), 16);
   const b = parseInt(normalized.slice(4, 6), 16);

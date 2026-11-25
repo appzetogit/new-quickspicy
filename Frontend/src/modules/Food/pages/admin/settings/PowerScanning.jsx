@@ -5,9 +5,9 @@ import { adminAPI } from "@food/api";
 import { getCachedSettings, setCachedSettings } from "@food/utils/businessSettings";
 
 const MODULES = [
-  { key: "user", label: "User Module", fallbackColor: "#EB590E" },
-  { key: "restaurant", label: "Restaurant Module", fallbackColor: "#2563EB" },
-  { key: "delivery", label: "Delivery Module", fallbackColor: "#00B761" },
+  { key: "user", label: "User Module", fallbackColor: "#E64100" },
+  { key: "restaurant", label: "Restaurant Module", fallbackColor: "#E64100" },
+  { key: "delivery", label: "Delivery Module", fallbackColor: "#E64100" },
 ];
 
 const FONT_OPTIONS = [
@@ -300,7 +300,7 @@ export default function PowerScanning() {
                     <input
                       type="text"
                       value={value.themeColor || ""}
-                      placeholder="#EB590E"
+                      placeholder="#E64100"
                       onChange={(e) => updateModule(module.key, { themeColor: e.target.value })}
                       onBlur={() => updateModule(module.key, { themeColor: normalizeHex(value.themeColor, module.fallbackColor) })}
                       className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

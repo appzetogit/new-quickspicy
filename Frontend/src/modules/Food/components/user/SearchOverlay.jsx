@@ -201,12 +201,12 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="Search for food, restaurants..."
                 enterKeyHint="search"
-                className="pl-12 pr-12 h-12 w-full bg-white dark:bg-[#1a1a1a] border-gray-100 dark:border-gray-800 focus:border-[#EB590E] dark:focus:border-[#EB590E] rounded-full text-lg dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
+                className="pl-12 pr-12 h-12 w-full bg-white dark:bg-[#1a1a1a] border-gray-100 dark:border-gray-800 focus:border-[#E64100] dark:focus:border-[#E64100] rounded-full text-lg dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
               />
               <button
                 type="button"
                 onClick={startVoiceSearch}
-                className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-1.5 rounded-full transition-all ${isListening ? 'bg-[#EB590E] text-white animate-pulse' : 'text-gray-400 hover:text-[#EB590E] hover:bg-[#EB590E]/5'}`}
+                className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-1.5 rounded-full transition-all ${isListening ? 'bg-[#E64100] text-white animate-pulse' : 'text-gray-400 hover:text-[#E64100] hover:bg-[#E64100]/5'}`}
               >
                 <Mic className="h-5 w-5" />
               </button>
@@ -404,11 +404,11 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
         <div className="absolute inset-0 z-[10000] flex flex-col items-center justify-center bg-white/95 dark:bg-[#0a0a0a]/95 backdrop-blur-md">
           <div className="relative flex items-center justify-center">
             {/* Animated Ripples */}
-            <div className="absolute w-40 h-40 bg-[#EB590E]/20 rounded-full animate-ping" />
-            <div className="absolute w-32 h-32 bg-[#EB590E]/30 rounded-full animate-pulse" />
+            <div className="absolute w-40 h-40 bg-[#E64100]/20 rounded-full animate-ping" />
+            <div className="absolute w-32 h-32 bg-[#E64100]/30 rounded-full animate-pulse" />
 
             {/* Mic Icon Container */}
-            <div className="relative bg-gradient-to-tr from-[#EB590E] to-[#F47835] p-8 rounded-full text-white shadow-[0_0_40px_rgba(235,89,14,0.4)] border-4 border-white dark:border-gray-800">
+            <div className="relative bg-gradient-to-tr from-[#E64100] to-[#F47835] p-8 rounded-full text-white shadow-[0_0_40px_rgba(230,65,0,0.4)] border-4 border-white dark:border-gray-800">
               <Mic className="h-12 w-12" />
             </div>
 
@@ -417,7 +417,7 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
               {[1, 2, 3, 4, 5, 6, 7].map((i) => (
                 <div
                   key={i}
-                  className="w-1.5 bg-[#EB590E] rounded-full animate-voice-bar"
+                  className="w-1.5 bg-[#E64100] rounded-full animate-voice-bar"
                   style={{
                     animationDelay: `${i * 0.1}s`,
                     height: `${20 + Math.random() * 80}%`
@@ -435,7 +435,7 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
           <Button
             variant="ghost"
             onClick={onClose}
-            className="mt-16 text-gray-400 hover:text-[#EB590E] hover:bg-[#EB590E]/5 rounded-full px-8"
+            className="mt-16 text-gray-400 hover:text-[#E64100] hover:bg-[#E64100]/5 rounded-full px-8"
           >
             Cancel
           </Button>

@@ -71,7 +71,7 @@ function BottomNavOrders() {
                     <motion.div
                       layoutId="bottomNavActive"
                       className="absolute inset-x-1 inset-y-1 rounded-full"
-                      style={{ backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)" }}
+                      style={{ backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)" }}
                       initial={false}
                       transition={{ type: "spring", stiffness: 400, damping: 30 }}
                     />
@@ -79,12 +79,12 @@ function BottomNavOrders() {
                   <Icon
                     className={`relative z-10 h-[18px] w-[18px] transition-all duration-300 ${isActive ? "scale-110" : "text-white/40"
                       }`}
-                    style={isActive ? { color: "var(--module-theme-color, #2563EB)" } : undefined}
+                    style={isActive ? { color: "var(--module-theme-color, #E64100)" } : undefined}
                   />
                   <span
                     className={`relative z-10 whitespace-nowrap text-[9px] font-bold tracking-tight transition-colors duration-300 ${isActive ? "" : "text-white/40"
                       }`}
-                    style={isActive ? { color: "var(--module-theme-color, #2563EB)" } : undefined}
+                    style={isActive ? { color: "var(--module-theme-color, #E64100)" } : undefined}
                   >
                     {tab.label}
                   </span>

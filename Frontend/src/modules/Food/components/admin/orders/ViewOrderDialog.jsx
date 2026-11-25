@@ -494,7 +494,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                       compareAmount={compareUnit > 0 ? compareUnit * qty : 0}
                       decimals={2}
                       plainClassName="text-sm font-semibold text-slate-900 tabular-nums"
-                      saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                      saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
                     />
                   </div>
                   )
@@ -617,7 +617,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                     compareAmount={compareItemTotal}
                     decimals={2}
                     plainClassName="font-medium text-slate-900 tabular-nums"
-                    saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-sm font-bold text-[#EB590E] tabular-nums"
+                    saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-sm font-bold text-[#E64100] tabular-nums"
                   />
                 </div>
               )}
@@ -653,7 +653,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                 </div>
               )}
               {quickDeliveryFee > 0 && (
-                <div className="flex justify-between text-sm font-semibold text-[#EB590E]">
+                <div className="flex justify-between text-sm font-semibold text-[#E64100]">
                   <span>Quick Mode</span>
                   <span>₹{quickDeliveryFee.toFixed(2)}</span>
                 </div>
@@ -680,7 +680,7 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                     compareAmount={compareOrderTotal}
                     decimals={2}
                     plainClassName="text-xl font-bold text-emerald-600 tabular-nums"
-                    saleClassName="inline-flex items-center rounded-full border border-[#EB590E] bg-[#EB590E]/10 px-2 py-0.5 text-base font-bold text-[#EB590E] tabular-nums"
+                    saleClassName="inline-flex items-center rounded-full border border-[#E64100] bg-[#E64100]/10 px-2 py-0.5 text-base font-bold text-[#E64100] tabular-nums"
                   />
                 </div>
               </div>

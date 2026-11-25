@@ -458,7 +458,7 @@ export default function PointOfSale() {
                     setTimeout(() => setShowSearchResults(false), 200)
                   }}
                   placeholder="Type restaurant name or ID to search..."
-                  className="w-full h-11 pl-10 pr-3 rounded-md border border-[#e3e6ef] bg-white text-sm text-[#4a5671] focus:outline-none focus:ring-1 focus:ring-[#006fbd]"
+                  className="w-full h-11 pl-10 pr-3 rounded-md border border-[#e3e6ef] bg-white text-sm text-[#4a5671] focus:outline-none focus:ring-1 focus:ring-[#E64100]"
                 />
                 
                 {/* Search Results Dropdown */}
@@ -480,7 +480,7 @@ export default function PointOfSale() {
                             <p className="text-xs text-[#8a94aa]">ID: {restaurant.restaurantId || restaurant._id}</p>
                           </div>
                           {selectedRestaurant === restaurant._id && (
-                            <div className="w-2 h-2 bg-[#006fbd] rounded-full"></div>
+                            <div className="w-2 h-2 bg-[#E64100] rounded-full"></div>
                           )}
                         </div>
                       </button>
@@ -513,13 +513,13 @@ export default function PointOfSale() {
                   onClick={() => setShowPickerDropdown((open) => !open)}
                   className={`w-full min-h-11 flex items-center justify-between gap-3 px-3 py-2 rounded-xl border bg-white text-sm transition-all ${
                     showPickerDropdown
-                      ? 'border-[#006fbd] ring-2 ring-[#006fbd]/15 shadow-sm'
-                      : 'border-[#e3e6ef] hover:border-[#006fbd]/35 hover:shadow-sm'
+                      ? 'border-[#E64100] ring-2 ring-[#E64100]/15 shadow-sm'
+                      : 'border-[#e3e6ef] hover:border-[#E64100]/35 hover:shadow-sm'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0 text-left">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#006fbd]/15 to-[#006fbd]/5 flex items-center justify-center shrink-0 border border-[#006fbd]/10">
-                      <Store className="w-4 h-4 text-[#006fbd]" />
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#E64100]/15 to-[#E64100]/5 flex items-center justify-center shrink-0 border border-[#E64100]/10">
+                      <Store className="w-4 h-4 text-[#E64100]" />
                     </div>
                     <div className="min-w-0">
                       <p className={`font-medium truncate ${selectedRestaurant ? 'text-[#334257]' : 'text-[#8a94aa]'}`}>
@@ -538,7 +538,7 @@ export default function PointOfSale() {
                   </div>
                   <ChevronDown
                     className={`w-4 h-4 text-[#8a94aa] shrink-0 transition-transform duration-200 ${
-                      showPickerDropdown ? 'rotate-180 text-[#006fbd]' : ''
+                      showPickerDropdown ? 'rotate-180 text-[#E64100]' : ''
                     }`}
                   />
                 </button>
@@ -553,7 +553,7 @@ export default function PointOfSale() {
                           value={pickerFilter}
                           onChange={(e) => setPickerFilter(e.target.value)}
                           placeholder="Filter by name or ID..."
-                          className="w-full h-10 pl-9 pr-3 text-sm rounded-lg border border-[#e3e6ef] bg-white text-[#334257] placeholder:text-[#8a94aa] focus:outline-none focus:ring-2 focus:ring-[#006fbd]/20 focus:border-[#006fbd]"
+                          className="w-full h-10 pl-9 pr-3 text-sm rounded-lg border border-[#e3e6ef] bg-white text-[#334257] placeholder:text-[#8a94aa] focus:outline-none focus:ring-2 focus:ring-[#E64100]/20 focus:border-[#E64100]"
                         />
                       </div>
                       <p className="text-[11px] font-medium text-[#8a94aa] mt-2 uppercase tracking-wide">
@@ -574,14 +574,14 @@ export default function PointOfSale() {
                               onClick={() => handleRestaurantSelect(restaurant._id)}
                               className={`w-full px-4 py-3 text-left transition-colors border-b border-[#eef1f6] last:border-b-0 ${
                                 isSelected
-                                  ? 'bg-[#006fbd]/8 hover:bg-[#006fbd]/10'
+                                  ? 'bg-[#E64100]/8 hover:bg-[#E64100]/10'
                                   : 'hover:bg-[#f8fafc]'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-3 min-w-0">
                                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                    isSelected ? 'bg-[#006fbd] text-white' : 'bg-slate-100 text-slate-500'
+                                    isSelected ? 'bg-[#E64100] text-white' : 'bg-slate-100 text-slate-500'
                                   }`}>
                                     <Store className="w-4 h-4" />
                                   </div>
@@ -593,7 +593,7 @@ export default function PointOfSale() {
                                   </div>
                                 </div>
                                 {isSelected && (
-                                  <div className="w-6 h-6 rounded-full bg-[#006fbd] flex items-center justify-center shrink-0">
+                                  <div className="w-6 h-6 rounded-full bg-[#E64100] flex items-center justify-center shrink-0">
                                     <Check className="w-3.5 h-3.5 text-white" />
                                   </div>
                                 )}
@@ -829,7 +829,7 @@ export default function PointOfSale() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-[#8a94aa]">Total subscription collected</span>
-                      <span className="text-sm font-semibold text-[#006fbd]">{formatCurrency(subscriptionSummary.totalCollected)}</span>
+                      <span className="text-sm font-semibold text-[#E64100]">{formatCurrency(subscriptionSummary.totalCollected)}</span>
                     </div>
                   </div>
                 </div>
@@ -874,7 +874,7 @@ export default function PointOfSale() {
                   </div>
                   <div className="flex justify-between items-center py-2">
                     <span className="text-sm font-semibold text-[#334257]">Total Order Value</span>
-                    <span className="text-sm font-bold text-[#006fbd]">{formatCurrency(paymentSummary?.total || 0)}</span>
+                    <span className="text-sm font-bold text-[#E64100]">{formatCurrency(paymentSummary?.total || 0)}</span>
                   </div>
                 </div>
 
@@ -900,7 +900,7 @@ export default function PointOfSale() {
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-[#e3e6ef]">
                     <span className="text-sm text-[#8a94aa]">Total collected</span>
-                    <span className="text-sm font-semibold text-[#006fbd]">{formatCurrency(subscriptionSummary.totalCollected)}</span>
+                    <span className="text-sm font-semibold text-[#E64100]">{formatCurrency(subscriptionSummary.totalCollected)}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-[#e3e6ef]">
                     <span className="text-sm text-[#8a94aa]">Deducted from wallet</span>
@@ -1064,7 +1064,7 @@ export default function PointOfSale() {
           </div>
         ) : selectedRestaurant && loading ? (
           <div className="bg-white rounded-lg shadow-sm border border-[#e3e6ef] p-12 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#006fbd] mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E64100] mx-auto mb-4"></div>
             <p className="text-sm text-[#8a94aa]">Loading restaurant analytics...</p>
           </div>
         ) : (

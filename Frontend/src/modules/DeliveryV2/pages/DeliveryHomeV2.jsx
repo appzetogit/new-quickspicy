@@ -1181,7 +1181,7 @@ export default function DeliveryHomeV2({ tab = 'feed' }) {
               >
                 <Icon
                   className="w-5 h-5 shrink-0 transition-all duration-500"
-                  style={isActive ? { color: "var(--module-theme-color, #00B761)" } : undefined}
+                  style={isActive ? { color: "var(--module-theme-color, #E64100)" } : undefined}
                 />
                 <AnimatePresence>
                   {isActive && (

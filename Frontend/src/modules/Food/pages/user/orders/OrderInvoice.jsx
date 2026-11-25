@@ -69,7 +69,7 @@ export default function OrderInvoice() {
     return (
       <AnimatedPage className="min-h-screen bg-[#f5f5f5] dark:bg-[#0a0a0a] p-4">
         <div className="max-w-4xl mx-auto text-center py-20">
-          <div className="w-8 h-8 border-2 border-[#EB590E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-8 h-8 border-2 border-[#E64100] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Loading bill...</p>
         </div>
       </AnimatedPage>
@@ -110,7 +110,7 @@ export default function OrderInvoice() {
               {busy === "print" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               <span className="hidden sm:inline">Print</span>
             </Button>
-            <Button onClick={handleDownload} disabled={!!busy} className="h-9 gap-2 text-sm bg-[#EB590E] hover:bg-[#D94F0C] text-white">
+            <Button onClick={handleDownload} disabled={!!busy} className="h-9 gap-2 text-sm bg-[#E64100] hover:bg-[#D94F0C] text-white">
               {busy === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               PDF
             </Button>

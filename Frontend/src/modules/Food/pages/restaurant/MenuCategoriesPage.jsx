@@ -32,7 +32,7 @@ const defaultFormData = {
 
 const approvalBadgeClass = (status) => {
   const value = String(status || "pending").toLowerCase()
-  if (value === "approved") return "border-[color:rgba(var(--module-theme-rgb,37,99,235),0.35)] bg-[rgba(var(--module-theme-rgb,37,99,235),0.10)] text-[color:var(--module-theme-color,#2563EB)]"
+  if (value === "approved") return "border-[color:rgba(var(--module-theme-rgb,230,65,0),0.35)] bg-[rgba(var(--module-theme-rgb,230,65,0),0.10)] text-[color:var(--module-theme-color,#E64100)]"
   if (value === "rejected") return "bg-rose-50 text-rose-700 border-rose-200"
   if (value === "deactivated") return "bg-slate-100 text-slate-700 border-slate-200"
   return "bg-amber-50 text-amber-700 border-amber-200"
@@ -375,7 +375,7 @@ export default function MenuCategoriesPage() {
         className="flex-1 rounded-xl py-3 font-medium text-white disabled:opacity-60"
         style={{
           background:
-            "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
+            "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
         }}
       >
         {uploadingImage ? "Uploading..." : editingCategory ? "Save & Resubmit" : "Create"}
@@ -407,8 +407,8 @@ export default function MenuCategoriesPage() {
               className="hidden md:flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 shrink-0"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-                boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,37,99,235),0.28)",
+                  "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+                boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,230,65,0),0.28)",
               }}
             >
               <Plus className="h-4 w-4" />
@@ -433,8 +433,8 @@ export default function MenuCategoriesPage() {
           className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white md:hidden"
           style={{
             background:
-              "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-            boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,37,99,235),0.28)",
+              "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+            boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,230,65,0),0.28)",
           }}
         >
           <Plus className="h-5 w-5" />
@@ -556,8 +556,8 @@ export default function MenuCategoriesPage() {
                         onClick={() => openEditModal(category)}
                         className="rounded-xl p-2 disabled:opacity-50 transition-colors"
                         style={{
-                          backgroundColor: "rgba(var(--module-theme-rgb,37,99,235),0.10)",
-                          color: "var(--module-theme-color,#2563EB)",
+                          backgroundColor: "rgba(var(--module-theme-rgb,230,65,0),0.10)",
+                          color: "var(--module-theme-color,#E64100)",
                         }}
                         disabled={!isEditable}
                       >

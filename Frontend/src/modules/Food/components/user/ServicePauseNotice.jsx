@@ -95,7 +95,7 @@ export default function ServicePauseNotice({ zoneId, className = "" }) {
               type="button"
               onClick={() => setOpen(false)}
               className="mt-5 w-full rounded-full py-2.5 text-sm font-bold text-white"
-              style={{ backgroundColor: "var(--module-theme-color, #EB590E)" }}
+              style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
             >
               OK
             </button>

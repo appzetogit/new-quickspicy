@@ -1930,9 +1930,9 @@ export default function Inventory() {
                 : "border-white/80 bg-white/80 text-slate-700 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.4)] md:bg-transparent md:shadow-none md:hover:bg-transparent"
             }`}
             style={activeTab === "all-items" ? {
-              borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.45)",
-              color: "var(--module-theme-color, #2563EB)",
-              boxShadow: "0 18px 32px -24px rgba(var(--module-theme-rgb, 37,99,235), 0.65)",
+              borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.45)",
+              color: "var(--module-theme-color, #E64100)",
+              boxShadow: "0 18px 32px -24px rgba(var(--module-theme-rgb, 230,65,0), 0.65)",
             } : undefined}
             animate={{
               scale: activeTab === "all-items" ? 1.02 : 1,
@@ -1943,7 +1943,7 @@ export default function Inventory() {
               <motion.div
                 layoutId="activeTabBackground"
                 className="absolute inset-0 rounded-[24px] md:rounded-xl -z-10 md:bg-white md:shadow-sm"
-                style={{ backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)" }}
+                style={{ backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)" }}
                 initial={false}
                 transition={{
                   type: "spring",
@@ -1958,8 +1958,8 @@ export default function Inventory() {
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                 activeTab === "all-items" ? "" : "bg-slate-100 text-slate-600"
               }`} style={activeTab === "all-items" ? {
-                backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.14)",
-                color: "var(--module-theme-color, #2563EB)",
+                backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.14)",
+                color: "var(--module-theme-color, #E64100)",
               } : undefined}>
                 {totalItems}
               </span>
@@ -1974,9 +1974,9 @@ export default function Inventory() {
                 : "border-white/80 bg-white/80 text-slate-700 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.4)] md:bg-transparent md:shadow-none md:hover:bg-transparent"
             }`}
             style={activeTab === "add-ons" ? {
-              borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.45)",
-              color: "var(--module-theme-color, #2563EB)",
-              boxShadow: "0 18px 32px -24px rgba(var(--module-theme-rgb, 37,99,235), 0.65)",
+              borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.45)",
+              color: "var(--module-theme-color, #E64100)",
+              boxShadow: "0 18px 32px -24px rgba(var(--module-theme-rgb, 230,65,0), 0.65)",
             } : undefined}
             animate={{
               scale: activeTab === "add-ons" ? 1.02 : 1,
@@ -1987,7 +1987,7 @@ export default function Inventory() {
               <motion.div
                 layoutId="activeTabBackground"
                 className="absolute inset-0 rounded-[24px] md:rounded-xl -z-10 md:bg-white md:shadow-sm"
-                style={{ backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)" }}
+                style={{ backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)" }}
                 initial={false}
                 transition={{
                   type: "spring",
@@ -2001,8 +2001,8 @@ export default function Inventory() {
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                 activeTab === "add-ons" ? "" : "bg-slate-100 text-slate-600"
               }`} style={activeTab === "add-ons" ? {
-                backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.14)",
-                color: "var(--module-theme-color, #2563EB)",
+                backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.14)",
+                color: "var(--module-theme-color, #E64100)",
               } : undefined}>
                 {addons.length}
               </span>
@@ -2032,7 +2032,7 @@ export default function Inventory() {
             {selectedFilter !== "all" ? (
               <span
                 className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full"
-                style={{ backgroundColor: "var(--module-theme-color, #2563EB)" }}
+                style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
               />
             ) : null}
           </button>
@@ -2114,7 +2114,7 @@ export default function Inventory() {
                 <SlidersHorizontal className="w-4 h-4 text-slate-700" />
                 <span>Filters</span>
                 {selectedFilter !== "all" && (
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full" style={{ backgroundColor: "var(--module-theme-color, #2563EB)" }} />
+                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full" style={{ backgroundColor: "var(--module-theme-color, #E64100)" }} />
                 )}
               </button>
 
@@ -2138,18 +2138,18 @@ export default function Inventory() {
                         : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
                     }`}
                     style={isActive ? {
-                      borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.5)",
-                      color: "var(--module-theme-color, #2563EB)",
-                      backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.16)",
-                      boxShadow: "0 14px 28px -24px rgba(var(--module-theme-rgb, 37,99,235), 0.65)",
+                      borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.5)",
+                      color: "var(--module-theme-color, #E64100)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.16)",
+                      boxShadow: "0 14px 28px -24px rgba(var(--module-theme-rgb, 230,65,0), 0.65)",
                     } : undefined}
                   >
                     <span>{option.label}</span>
                     <span className={`ml-2 inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] ${
                       isActive ? "" : "bg-white text-slate-500"
                     }`} style={isActive ? {
-                      backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.12)",
-                      color: "var(--module-theme-color, #2563EB)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.12)",
+                      color: "var(--module-theme-color, #E64100)",
                     } : undefined}>
                       {count}
                     </span>
@@ -3230,13 +3230,13 @@ export default function Inventory() {
                     })
                   }}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all group"
-                  style={{ borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.18)" }}
+                  style={{ borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.18)" }}
                 >
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform"
                     style={{
-                      backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.10)",
-                      color: "var(--module-theme-color, #2563EB)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                      color: "var(--module-theme-color, #E64100)",
                     }}
                   >
                     <Plus className="w-6 h-6" />
@@ -3253,13 +3253,13 @@ export default function Inventory() {
                     setIsBulkUploadModalOpen(true)
                   }}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group"
-                  style={{ borderColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.18)" }}
+                  style={{ borderColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.18)" }}
                 >
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform"
                     style={{
-                      backgroundColor: "rgba(var(--module-theme-rgb, 37,99,235), 0.10)",
-                      color: "var(--module-theme-color, #2563EB)",
+                      backgroundColor: "rgba(var(--module-theme-rgb, 230,65,0), 0.10)",
+                      color: "var(--module-theme-color, #E64100)",
                     }}
                   >
                     <FileUp className="w-6 h-6" />
@@ -3288,8 +3288,8 @@ export default function Inventory() {
           }}
           className="rounded-full px-5 py-3 text-sm font-semibold text-white"
           style={{
-            background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 37,99,235), 0.88), var(--module-theme-color, #2563EB))",
-            boxShadow: "0 22px 40px -24px rgba(var(--module-theme-rgb, 37,99,235), 0.75)",
+            background: "linear-gradient(135deg, rgba(var(--module-theme-rgb, 230,65,0), 0.88), var(--module-theme-color, #E64100))",
+            boxShadow: "0 22px 40px -24px rgba(var(--module-theme-rgb, 230,65,0), 0.75)",
           }}
         >
           {activeTab === "add-ons" ? (isAddAddonOpen ? "Close" : "+ Add add-on") : "+ Add item"}

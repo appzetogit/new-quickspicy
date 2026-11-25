@@ -2745,11 +2745,11 @@ model FoodBusinessSettings {
   ordersPausedMessage String    @default("") @db.VarChar(300)
   ordersPausedUntil   DateTime?
 
-  userThemeColor       String @default("#EB590E")
-  userFontFamily       String @default("Outfit")
-  restaurantThemeColor String @default("#2563EB")
+  userThemeColor       String @default("#E64100")
+  userFontFamily       String @default("Poppins")
+  restaurantThemeColor String @default("#E64100")
   restaurantFontFamily String @default("Poppins")
-  deliveryThemeColor   String @default("#00B761")
+  deliveryThemeColor   String @default("#E64100")
   deliveryFontFamily   String @default("Poppins")
 
   orderAcceptanceTimeMinutes Int  @default(4)

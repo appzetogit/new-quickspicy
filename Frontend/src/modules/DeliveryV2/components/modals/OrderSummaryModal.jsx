@@ -12,7 +12,7 @@ export const OrderSummaryModal = ({ order, onDone }) => {
   return (
     <div
       className="fixed inset-0 z-[160] overflow-y-auto"
-      style={{ backgroundColor: "var(--module-theme-color, #00B761)" }}
+      style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
     >
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
         <motion.div

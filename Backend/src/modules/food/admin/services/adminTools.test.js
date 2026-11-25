@@ -66,9 +66,9 @@ test('secrets are masked on read, kept when sent back masked, and never public',
     assert.equal(raw.value.apiKey, 'sk-test-9999');
     assert.equal(raw.value.model, 'gpt-4o-mini');
 
-    await savePlatformSetting('theme', { primaryColor: '#EB590E', accessToken: 'secret' });
+    await savePlatformSetting('theme', { primaryColor: '#E64100', accessToken: 'secret' });
     const pub = await getPublicPlatformSettings();
-    assert.equal(pub.theme.primaryColor, '#EB590E');
+    assert.equal(pub.theme.primaryColor, '#E64100');
     assert.equal(pub.theme.accessToken, undefined);
     assert.equal(pub.ai, undefined, 'AI settings are admin-only');
     await assert.rejects(() => savePlatformSetting('not_a_page', {}), /Unknown settings page/);

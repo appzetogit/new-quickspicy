@@ -91,13 +91,13 @@ const Section = ({ title, icon: Icon, children }) => (
 )
 
 const themeButton = {
-  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,37,99,235),0.9), var(--module-theme-color,#2563EB))",
-  boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,37,99,235),0.28)",
+  background: "linear-gradient(135deg, rgba(var(--module-theme-rgb,230,65,0),0.9), var(--module-theme-color,#E64100))",
+  boxShadow: "0 10px 22px rgba(var(--module-theme-rgb,230,65,0),0.28)",
 }
 const themeSelected = {
-  backgroundColor: "rgba(var(--module-theme-rgb,37,99,235),0.10)",
-  borderColor: "var(--module-theme-color,#2563EB)",
-  color: "var(--module-theme-color,#2563EB)",
+  backgroundColor: "rgba(var(--module-theme-rgb,230,65,0),0.10)",
+  borderColor: "var(--module-theme-color,#E64100)",
+  color: "var(--module-theme-color,#E64100)",
 }
 
 export default function AddCouponPage(props) {
@@ -301,7 +301,7 @@ export default function AddCouponPage(props) {
 
       <div className="px-4 py-4 pb-8 space-y-3 max-w-lg mx-auto">
         {/* Live preview */}
-        <div className="rounded-lg border-2 border-dashed p-4 bg-white" style={{ borderColor: "var(--module-theme-color,#2563EB)" }}>
+        <div className="rounded-lg border-2 border-dashed p-4 bg-white" style={{ borderColor: "var(--module-theme-color,#E64100)" }}>
           <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 mb-1">Customers will see</p>
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={themeSelected}>

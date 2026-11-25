@@ -24,7 +24,7 @@ const ADMIN_DEFAULTS = {
   availableZone: { enabled: true, title: "", showZones: true },
   fixedData: { enabled: true, companyName: "", contactEmail: "", contactPhone: "" },
   buttonLinks: { enabled: true, primaryText: "", primaryLink: "", secondaryText: "", secondaryLink: "" },
-  backgroundColor: { enabled: true, primary: "#ffffff", secondary: "#f8f9fa", accent: "#006fbd" },
+  backgroundColor: { enabled: true, primary: "#ffffff", secondary: "#f8f9fa", accent: "#E64100" },
 };
 
 // Stored under "landing_react": one entry per section.

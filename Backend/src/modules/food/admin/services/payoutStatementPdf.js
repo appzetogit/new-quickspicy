@@ -8,7 +8,7 @@ import PDFDocument from 'pdfkit';
  * "Rs." rather than a missing-character box.
  */
 
-const BRAND = '#EB590E';
+const BRAND = '#E64100';
 const INK = '#1F2937';
 const MUTED = '#6B7280';
 

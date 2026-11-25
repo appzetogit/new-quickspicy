@@ -138,7 +138,7 @@ export const PocketStatementV2 = () => {
           {/* Summary (Original Grid Style) */}
           <div className="bg-white rounded-xl border border-gray-100 p-5 mt-4 mb-6 shadow-sm">
              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle className="w-4 h-4" style={{ color: "var(--module-theme-color, #00B761)" }} />
+                <CheckCircle className="w-4 h-4" style={{ color: "var(--module-theme-color, #E64100)" }} />
                 <span className="text-sm font-bold text-gray-800 uppercase tracking-tight">
                    Pocket summary
                 </span>
@@ -158,7 +158,7 @@ export const PocketStatementV2 = () => {
                 </div>
                 <div className="text-right">
                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Total</p>
-                   <p className="text-base font-bold leading-none" style={{ color: "var(--module-theme-color, #00B761)" }}>
+                   <p className="text-base font-bold leading-none" style={{ color: "var(--module-theme-color, #E64100)" }}>
                       ₹{summary.grandTotal.toFixed(0)}
                    </p>
                 </div>
@@ -168,7 +168,7 @@ export const PocketStatementV2 = () => {
           {/* Orders List */}
           {loading ? (
              <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--module-theme-color, #00B761)" }} />
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--module-theme-color, #E64100)" }} />
                 <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Loading Statement...</p>
              </div>
           ) : orders.length === 0 ? (
@@ -202,7 +202,7 @@ export const PocketStatementV2 = () => {
                             <div className="flex items-start gap-4">
                                <div
                                  className="w-2 h-2 rounded mt-1.5"
-                                 style={{ backgroundColor: "var(--module-theme-color, #00B761)" }}
+                                 style={{ backgroundColor: "var(--module-theme-color, #E64100)" }}
                                ></div>
                                <div>
                                   <p className="text-gray-900 text-sm font-bold mb-0.5">
@@ -225,15 +225,15 @@ export const PocketStatementV2 = () => {
                                </div>
                                {amounts.bonus > 0 && (
                                   <div className="mb-2">
-                                     <p className="text-[10px] font-bold uppercase" style={{ color: "var(--module-theme-color, #00B761)" }}>Bonus</p>
-                                     <p className="text-sm font-bold" style={{ color: "var(--module-theme-color, #00B761)" }}>
+                                     <p className="text-[10px] font-bold uppercase" style={{ color: "var(--module-theme-color, #E64100)" }}>Bonus</p>
+                                     <p className="text-sm font-bold" style={{ color: "var(--module-theme-color, #E64100)" }}>
                                         + ₹{amounts.bonus}
                                      </p>
                                   </div>
                                )}
                                <div className="pt-2 border-t border-gray-50">
                                   <p className="text-[10px] text-gray-800 font-bold uppercase">Total</p>
-                                  <p className="text-base font-bold" style={{ color: "var(--module-theme-color, #00B761)" }}>
+                                  <p className="text-base font-bold" style={{ color: "var(--module-theme-color, #E64100)" }}>
                                      ₹{amounts.total}
                                   </p>
                                </div>

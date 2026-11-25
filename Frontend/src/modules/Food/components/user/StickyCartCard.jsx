@@ -62,7 +62,7 @@ function FloatingCartRow({ entry, onViewCart, onRemove }) {
             />
           ) : (
             <div className="w-11 h-11 rounded-lg shrink-0 flex items-center justify-center bg-orange-50 dark:bg-gray-800">
-              <ShoppingBag className="h-5 w-5 text-[var(--module-theme-color,#EB590E)]" />
+              <ShoppingBag className="h-5 w-5 text-[var(--module-theme-color,#E64100)]" />
             </div>
           )}
 
@@ -84,7 +84,7 @@ function FloatingCartRow({ entry, onViewCart, onRemove }) {
             className="shrink-0 rounded-xl px-3.5 py-2 text-white text-center"
             style={{
               background:
-                "linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.94), rgba(var(--module-theme-rgb,235, 89, 14),0.78))",
+                "linear-gradient(135deg, rgba(var(--module-theme-rgb,230, 65, 0),0.94), rgba(var(--module-theme-rgb,230, 65, 0),0.78))",
             }}
             aria-label={`View cart for ${name}`}
           >

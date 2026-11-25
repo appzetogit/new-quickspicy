@@ -1419,7 +1419,7 @@ export default function AllOrdersPage() {
 
               >
 
-                <Copy className="w-4 h-4" style={{ color: "var(--module-theme-color, #2563EB)" }} />
+                <Copy className="w-4 h-4" style={{ color: "var(--module-theme-color, #E64100)" }} />
 
               </button>
 

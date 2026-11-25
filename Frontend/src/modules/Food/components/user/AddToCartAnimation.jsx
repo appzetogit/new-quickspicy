@@ -340,7 +340,7 @@ export default function AddToCartAnimation({
       // Step 1: Scale up with glow
       tl.to(linkRef.current, {
         scale: 1.08,
-        boxShadow: '0 10px 25px rgba(235,89,14, 0.4)',
+        boxShadow: '0 10px 25px rgba(230,65,0, 0.4)',
         duration: 0.15,
         ease: 'power2.out',
         transformOrigin: 'center center',
@@ -349,7 +349,7 @@ export default function AddToCartAnimation({
         // Step 2: Bounce back
         .to(linkRef.current, {
           scale: 1.0,
-          boxShadow: '0 4px 12px rgba(235,89,14, 0.3)',
+          boxShadow: '0 4px 12px rgba(230,65,0, 0.3)',
           duration: 0.2,
           ease: 'power2.inOut',
         })
@@ -462,7 +462,7 @@ export default function AddToCartAnimation({
                   : 'rounded-full px-3.5 py-2 flex items-center gap-2.5'
               } ${pillClassName}`}
               style={{
-                background: 'linear-gradient(135deg, rgba(var(--module-theme-rgb,235, 89, 14),0.94), rgba(var(--module-theme-rgb,235, 89, 14),0.78))',
+                background: 'linear-gradient(135deg, rgba(var(--module-theme-rgb,230, 65, 0),0.94), rgba(var(--module-theme-rgb,230, 65, 0),0.78))',
               }}
             >
               {variant === 'bar' ? (
