@@ -238,6 +238,9 @@ export const chatAPI = {
       { status },
       config,
     ),
+  // Support only: every Open / In progress / Resolved / Flag change, oldest first.
+  statusHistory: (conversationId, config = {}) =>
+    apiClient.get(`/food/chat/conversations/${String(conversationId)}/status-history`, config),
   // Only ever to the caller or to nobody -- the server refuses anything else.
   assign: (conversationId, assign = true, config = {}) =>
     apiClient.patch(

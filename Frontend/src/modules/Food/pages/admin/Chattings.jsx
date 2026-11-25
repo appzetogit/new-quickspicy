@@ -25,6 +25,28 @@ const TABS = [
   { key: "RESTAURANT", label: "Restaurants" },
 ]
 
+/**
+ * Ticket statuses, as on the Support Tickets page. The thread column says
+ * "closed" where the panel says Resolved. Support replying to an Open thread
+ * moves it to In progress on the server.
+ */
+const STATUSES = [
+  { key: "open", label: "Open", badge: "bg-blue-50 text-blue-700" },
+  { key: "in_progress", label: "In progress", badge: "bg-amber-50 text-amber-700" },
+  { key: "closed", label: "Resolved", badge: "bg-emerald-50 text-emerald-700" },
+  { key: "flagged", label: "Flag", badge: "bg-red-50 text-red-700" },
+]
+const statusMeta = (key) => STATUSES.find((s) => s.key === key) || STATUSES[0]
+
+const StatusBadge = ({ status }) => {
+  const meta = statusMeta(status)
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${meta.badge}`}>
+      {meta.label}
+    </span>
+  )
+}
+
 // Admin calls must say so: the token is looked up per module, and without this
 // the chat endpoints would be sent the customer app's token.
 const ADMIN_CONFIG = { contextModule: "admin" }
@@ -85,6 +107,10 @@ export default function Chattings() {
   const [lightbox, setLightbox] = useState(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [assigning, setAssigning] = useState(false)
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
   // Whose threads are mine. Read from the token rather than fetched: it is
   // already in hand, and this only decides which label a button shows.
   const myAdminId = useMemo(() => {
@@ -275,6 +301,7 @@ export default function Chattings() {
     const query = searchQuery.trim().toLowerCase()
     return conversations.filter((c) => {
       if ((c.peer?.role || "") !== activeTab) return false
+      if (statusFilter !== "all" && (c.status || "open") !== statusFilter) return false
       if (!query) return true
       return (
         String(c.peer?.name || "").toLowerCase().includes(query) ||
@@ -282,7 +309,38 @@ export default function Chattings() {
         String(c.title || "").toLowerCase().includes(query)
       )
     })
-  }, [conversations, activeTab, searchQuery])
+  }, [conversations, activeTab, searchQuery, statusFilter])
+
+  // How many threads of the open tab sit in each status, for the filter chips.
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0 }
+    for (const c of conversations) {
+      if ((c.peer?.role || "") !== activeTab) continue
+      counts.all += 1
+      const key = c.status || "open"
+      counts[key] = (counts[key] || 0) + 1
+    }
+    return counts
+  }, [conversations, activeTab])
+
+  const loadHistory = useCallback(async (conversationId) => {
+    if (!conversationId) return
+    setLoadingHistory(true)
+    try {
+      const response = await chatAPI.statusHistory(conversationId, ADMIN_CONFIG)
+      setHistory(response?.data?.data?.history ?? [])
+    } catch {
+      setHistory([])
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [])
+
+  // The open history follows the thread on screen and any change to its status,
+  // including the automatic move to In progress when someone replies.
+  useEffect(() => {
+    if (historyOpen && selected?.conversationId) loadHistory(selected.conversationId)
+  }, [historyOpen, selected?.conversationId, selected?.status, loadHistory])
 
   const unreadByTab = useMemo(() => {
     const counts = {}
@@ -357,6 +415,8 @@ export default function Chattings() {
                   ...c,
                   lastMessage: sent.text || photoSummary(sent.attachments?.length || 0),
                   lastAt: sent.createdAt,
+                  // The server moves an Open thread to In progress on a reply.
+                  status: (c.status || "open") === "open" ? "in_progress" : c.status,
                 }
               : c,
           ),
@@ -396,9 +456,8 @@ export default function Chattings() {
     }
   }
 
-  const toggleStatus = async () => {
-    if (!selected || updatingStatus) return
-    const next = selected.status === "closed" ? "open" : "closed"
+  const changeStatus = async (next) => {
+    if (!selected || updatingStatus || next === (selected.status || "open")) return
     setUpdatingStatus(true)
     try {
       await chatAPI.setStatus(selected.conversationId, next, ADMIN_CONFIG)
@@ -407,7 +466,7 @@ export default function Chattings() {
           c.conversationId === selected.conversationId ? { ...c, status: next } : c,
         ),
       )
-      toast.success(next === "closed" ? "Conversation closed" : "Conversation reopened")
+      toast.success(`Status: ${statusMeta(next).label}`)
     } catch (error) {
       toast.error(error?.response?.data?.message || "Could not update the conversation")
     } finally {
@@ -454,6 +513,24 @@ export default function Chattings() {
                           {unreadByTab[tab.key]}
                         </span>
                       ) : null}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+                  {[{ key: "all", label: "All" }, ...STATUSES].map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setStatusFilter(s.key)}
+                      aria-pressed={statusFilter === s.key}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                        statusFilter === s.key
+                          ? "border-teal-600 bg-teal-600 text-white"
+                          : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {s.label} {statusCounts[s.key] || 0}
                     </button>
                   ))}
                 </div>
@@ -511,11 +588,7 @@ export default function Chattings() {
                               ) : null}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {conversation.status === "closed" ? (
-                                <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
-                                  Closed
-                                </span>
-                              ) : null}
+                              <StatusBadge status={conversation.status || "open"} />
                               {conversation.assignedAdmin ? (
                                 <span className="inline-block rounded bg-teal-50 px-1.5 py-0.5 text-xs text-teal-700">
                                   {conversation.assignedAdminId === myAdminId
@@ -588,16 +661,59 @@ export default function Chattings() {
                       >
                         {selected.assignedAdminId === myAdminId ? "Release" : "Assign to me"}
                       </button>
+                      <label className="sr-only" htmlFor="chat-status">
+                        Ticket status
+                      </label>
+                      <select
+                        id="chat-status"
+                        value={selected.status || "open"}
+                        onChange={(e) => changeStatus(e.target.value)}
+                        disabled={updatingStatus}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        {STATUSES.map((s) => (
+                          <option key={s.key} value={s.key}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
-                        onClick={toggleStatus}
-                        disabled={updatingStatus}
-                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        onClick={() => setHistoryOpen((v) => !v)}
+                        aria-expanded={historyOpen}
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
-                        {selected.status === "closed" ? "Reopen" : "Close"}
+                        History
                       </button>
                     </div>
                   </div>
+
+                  {historyOpen ? (
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Status history
+                      </p>
+                      {loadingHistory ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                      ) : history.length === 0 ? (
+                        <p className="text-slate-500">No status changes yet. It has been Open since it started.</p>
+                      ) : (
+                        <ol className="space-y-1">
+                          {history.map((h) => (
+                            <li key={h.id} className="flex flex-wrap items-center gap-1.5 text-slate-700">
+                              <span className="text-xs text-slate-500">{clockTime(h.createdAt)}</span>
+                              {h.fromStatus ? <StatusBadge status={h.fromStatus} /> : null}
+                              <span aria-hidden="true">→</span>
+                              <StatusBadge status={h.toStatus} />
+                              <span className="text-xs text-slate-500">
+                                {[h.changedBy?.name || "System", h.note].filter(Boolean).join(" · ")}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  ) : null}
 
                   <div className="flex-1 overflow-y-auto p-6 min-h-0">
                     {loadingThread ? (
@@ -670,7 +786,7 @@ export default function Chattings() {
                   <div className="p-4 border-t border-slate-200">
                     {selected.status === "closed" ? (
                       <p className="text-center text-sm text-slate-500">
-                        This conversation is closed. Reopen it to reply.
+                        This conversation is resolved. Set it back to Open or In progress to reply.
                       </p>
                     ) : (
                       <>

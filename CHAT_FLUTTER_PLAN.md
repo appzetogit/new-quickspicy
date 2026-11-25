@@ -150,6 +150,10 @@ Only needed if you show a thread without fetching history.
 
 `{ "status": "open" | "in_progress" | "closed" }`
 
+A thread's `status` can also come back as `"flagged"` (support marked it for
+follow-up; only support can set it). Show it like `in_progress` in the apps.
+Support replying to an `open` thread moves it to `in_progress` by itself.
+
 ### `GET /food/chat/unread-count`
 
 → `data: { unread: 3 }` — one number for a tab badge. Cheaper than summing conversations.
@@ -157,6 +161,9 @@ Only needed if you show a thread without fetching history.
 ### Admin-only
 
 `PATCH /food/chat/conversations/:conversationId/assign` with `{ "assign": true|false }`.
+`PATCH .../status` also takes `"flagged"` and `"resolved"` (same as `"closed"`).
+`GET /food/chat/conversations/:conversationId/status-history` →
+`data: { history: [{ fromStatus, toStatus, changedBy: { id, name } | null, note, createdAt }] }`.
 Not needed by the mobile apps; listed so the shapes below make sense.
 
 ---

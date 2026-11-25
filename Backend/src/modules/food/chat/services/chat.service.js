@@ -10,6 +10,32 @@ import { buildPublicUrl } from '../../../../services/storage.service.js';
 
 const ROLES = ['USER', 'RESTAURANT', 'DELIVERY_PARTNER', 'ADMIN'];
 
+/**
+ * Chat statuses in the words of the shared ticket status history table, which
+ * says "resolved" where a chat thread says "closed".
+ */
+const CHAT_TO_TICKET_STATUS = { open: 'open', in_progress: 'in_progress', closed: 'resolved', flagged: 'flagged' };
+const TICKET_TO_CHAT_STATUS = { open: 'open', in_progress: 'in_progress', resolved: 'closed', flagged: 'flagged' };
+
+/**
+ * One row of status history for a chat thread, kept in the same table as the
+ * support tickets' history (ticketSource 'chat', ticketId = the thread row id).
+ * A no-op when the status is not actually changing.
+ */
+async function recordChatStatusChange(db, thread, toStatus, changedBy, note) {
+    if (!thread || thread.status === toStatus || !CHAT_TO_TICKET_STATUS[toStatus]) return;
+    await db.foodSupportTicketStatusHistory.create({
+        data: {
+            ticketSource: 'chat',
+            ticketId: String(thread.id),
+            fromStatus: CHAT_TO_TICKET_STATUS[thread.status] ?? null,
+            toStatus: CHAT_TO_TICKET_STATUS[toStatus],
+            changedBy: isId(changedBy) ? String(changedBy) : null,
+            note: note ? String(note).slice(0, 500) : null,
+        },
+    });
+}
+
 /** The order columns that decide who may talk to whom. */
 const ORDER_PARTIES = { userId: true, restaurantId: true, dispatchDeliveryPartnerId: true, dispatchAcceptedAt: true };
 
@@ -299,6 +325,21 @@ export async function sendMessage(sender, dto) {
             });
         }
 
+        // Support starting a thread or answering an untouched one means someone
+        // is on it, as with support tickets. Resolved and flagged threads keep
+        // their status: replying is not reopening.
+        let movedThread = null;
+        if (sender.role === 'ADMIN' && thread.status === 'open') {
+            movedThread = await tx.foodChatConversation.update({
+                where: { conversationId },
+                data: { status: 'in_progress', closedAt: null },
+            });
+            await recordChatStatusChange(tx, thread, 'in_progress', sender.id, 'Admin replied');
+        }
+
+        return { created, movedThread };
+    }).then(({ created, movedThread }) => {
+        if (movedThread) emitConversationUpdate(movedThread);
         return created;
     });
 
@@ -829,14 +870,19 @@ export async function assignConversation(me, conversationId, toSelf = true) {
     });
     if (!existing) throw new ValidationError('Conversation not found');
 
-    const doc = await prisma.foodChatConversation.update({
-        where: { conversationId: String(conversationId) },
-        data: {
-            assignedAdminId: toSelf ? String(me.id) : null,
-            assignedAt: toSelf ? new Date() : null,
-            // Closed stays closed: picking a thread up is not reopening it.
-            ...(toSelf && existing.status === 'open' ? { status: 'in_progress' } : {}),
-        },
+    // Closed stays closed: picking a thread up is not reopening it.
+    const moves = toSelf && existing.status === 'open';
+    const doc = await prisma.$transaction(async (tx) => {
+        const row = await tx.foodChatConversation.update({
+            where: { conversationId: String(conversationId) },
+            data: {
+                assignedAdminId: toSelf ? String(me.id) : null,
+                assignedAt: toSelf ? new Date() : null,
+                ...(moves ? { status: 'in_progress' } : {}),
+            },
+        });
+        if (moves) await recordChatStatusChange(tx, existing, 'in_progress', me.id, 'Picked up');
+        return row;
     });
 
     emitConversationUpdate(doc);
@@ -857,9 +903,14 @@ export async function assignConversation(me, conversationId, toSelf = true) {
  */
 export async function updateConversationStatus(me, conversationId, status) {
     const myToken = partyToken(me.role, me.id);
-    const next = String(status || '').trim().toLowerCase();
-    if (!['open', 'in_progress', 'closed'].includes(next)) {
-        throw new ValidationError('Status must be open, in_progress or closed');
+    let next = String(status || '').trim().toLowerCase().replace('-', '_');
+    // The panel says Resolved; the thread column says closed.
+    if (next === 'resolved') next = 'closed';
+    if (!['open', 'in_progress', 'closed', 'flagged'].includes(next)) {
+        throw new ValidationError('Status must be open, in_progress, closed (resolved) or flagged');
+    }
+    if (next === 'flagged' && me?.role !== 'ADMIN') {
+        throw new ForbiddenError('Only support can flag a conversation');
     }
 
     const existing = await prisma.foodChatConversation.findUnique({
@@ -872,11 +923,49 @@ export async function updateConversationStatus(me, conversationId, status) {
         throw new ForbiddenError('Not your conversation');
     }
 
-    const doc = await prisma.foodChatConversation.update({
-        where: { conversationId: existing.conversationId },
-        data: { status: next, closedAt: next === 'closed' ? new Date() : null },
+    const doc = await prisma.$transaction(async (tx) => {
+        const row = await tx.foodChatConversation.update({
+            where: { conversationId: existing.conversationId },
+            data: { status: next, closedAt: next === 'closed' ? new Date() : null },
+        });
+        await recordChatStatusChange(tx, existing, next, me?.role === 'ADMIN' ? me.id : null, null);
+        return row;
     });
 
     emitConversationUpdate(doc);
     return { conversation: serializeConversation(doc) };
+}
+
+/**
+ * Every status change on one thread, oldest first, with the admin's name.
+ * Support only: the history is an internal record.
+ */
+export async function getConversationStatusHistory(me, conversationId) {
+    if (me?.role !== 'ADMIN') throw new ForbiddenError('Only support can see the status history');
+    const thread = await prisma.foodChatConversation.findUnique({
+        where: { conversationId: String(conversationId || '').trim() },
+        select: { id: true },
+    });
+    if (!thread) throw new ValidationError('Conversation not found');
+
+    const rows = await prisma.foodSupportTicketStatusHistory.findMany({
+        where: { ticketSource: 'chat', ticketId: thread.id },
+        orderBy: { createdAt: 'asc' },
+    });
+    const adminIds = [...new Set(rows.map((r) => r.changedBy).filter(Boolean))];
+    const admins = adminIds.length
+        ? await prisma.foodAdmin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true } })
+        : [];
+    const nameOf = new Map(admins.map((a) => [a.id, a.name]));
+
+    return {
+        history: rows.map((r) => ({
+            id: r.id,
+            fromStatus: r.fromStatus ? TICKET_TO_CHAT_STATUS[r.fromStatus] : null,
+            toStatus: TICKET_TO_CHAT_STATUS[r.toStatus],
+            changedBy: r.changedBy ? { id: r.changedBy, name: nameOf.get(r.changedBy) || 'Admin' } : null,
+            note: r.note || null,
+            createdAt: r.createdAt,
+        })),
+    };
 }

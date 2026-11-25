@@ -8,6 +8,7 @@ import {
     markReadController,
     uploadAttachmentController,
     assignConversationController,
+    conversationStatusHistoryController,
     unreadCountController
 } from '../controllers/chat.controller.js';
 import { upload } from '../../../../middleware/upload.js';
@@ -25,6 +26,8 @@ router.get('/unread-count', unreadCountController);
 router.get('/conversations', listConversationsController);
 router.post('/conversations', createConversationController);
 router.patch('/conversations/:conversationId/status', updateConversationStatusController);
+// Support only: Open / In progress / Resolved / Flag changes, oldest first.
+router.get('/conversations/:conversationId/status-history', conversationStatusHistoryController);
 router.patch('/conversations/:conversationId/read', markReadController);
 // Body { assign: false } releases it; anything else takes it.
 router.patch('/conversations/:conversationId/assign', assignConversationController);

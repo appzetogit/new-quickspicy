@@ -405,7 +405,10 @@ enum SafetyReportPriority {
 enum ChatThreadStatus {
   open
   in_progress
+  /// Shown as "Resolved" in the admin panel.
   closed
+  /// Marked by an admin for follow-up ("Flag" in the panel).
+  flagged
 }
 
 enum ReferralRole {

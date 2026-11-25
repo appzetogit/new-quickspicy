@@ -80,6 +80,15 @@ export async function updateConversationStatusController(req, res, next) {
     }
 }
 
+export async function conversationStatusHistoryController(req, res, next) {
+    try {
+        const data = await chatService.getConversationStatusHistory(me(req), req.params.conversationId);
+        return sendResponse(res, 200, 'Status history', data);
+    } catch (err) {
+        next(err);
+    }
+}
+
 export async function assignConversationController(req, res, next) {
     try {
         // Only to the caller or to nobody -- see assignConversation.
