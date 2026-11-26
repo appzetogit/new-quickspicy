@@ -187,7 +187,14 @@ export default function DispatchSettings() {
               <tbody>
                 {data.zones.map((z) => (
                   <tr key={z.id} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 pr-3 font-medium text-slate-900">{z.name}</td>
+                    <td className="py-2 pr-3 font-medium text-slate-900">
+                      {z.name}
+                      {z.parentZoneName ? (
+                        <span className="block text-xs font-normal text-emerald-700">
+                          Small zone in {z.parentZoneName} · own riders only
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="py-2 pr-3 text-slate-600">{z.city || "—"}</td>
                     <td className="py-2 pr-3">
                       <select
@@ -196,7 +203,7 @@ export default function DispatchSettings() {
                         onChange={(e) => setZone(z, e.target.value)}
                         className="px-2 py-1.5 text-sm rounded-lg border border-slate-300 bg-white"
                       >
-                        <option value="default">Platform default</option>
+                        <option value="default">{z.parentZoneName ? "Follow the main zone" : "Platform default"}</option>
                         <option value="auto">Automatic</option>
                         <option value="manual">Manual</option>
                       </select>

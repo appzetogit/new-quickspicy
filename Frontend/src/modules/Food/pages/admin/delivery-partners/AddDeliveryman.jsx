@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Loader2, Upload, CheckCircle2, AlertTriangle } from "lucide-react"
 import { adminAPI } from "@food/api"
+import RiderZonePicker from "@food/components/admin/zones/RiderZonePicker"
 
 /**
  * Add Deliveryman.
@@ -34,7 +35,7 @@ const empty = {
   email: "",
   city: "",
   zoneId: "",
-  cohortId: "",
+  serviceZoneIds: [],
   payType: "gig",
   state: "",
   address: "",
@@ -78,30 +79,9 @@ export default function AddDeliveryman() {
   const [signupOpen, setSignupOpen] = useState(true)
   const [zones, setZones] = useState([])
   const [approveNow, setApproveNow] = useState(true)
-  const [cohorts, setCohorts] = useState([])
-
-  useEffect(() => {
-    adminAPI
-      .getRiderCohorts()
-      .then((res) => {
-        const data = res?.data?.data ?? res?.data ?? {}
-        setCohorts(Array.isArray(data.cohorts) ? data.cohorts : [])
-      })
-      .catch(() => setCohorts([]))
-  }, [])
-
-  // A cohort adds its zones to the rider's home zone, so any cohort can be
-  // picked; the ones that already cover the chosen zone are listed first.
-  const cohortGroups = useMemo(() => {
-    const zoneId = String(form.zoneId || "")
-    if (!zoneId) return { covering: [], others: cohorts }
-    const covers = (c) => (c.zoneIds || []).map(String).includes(zoneId)
-    return { covering: cohorts.filter(covers), others: cohorts.filter((c) => !covers(c)) }
-  }, [cohorts, form.zoneId])
-  const cohortLabel = (c) => {
-    const names = (c.zones || []).map((z) => z.name).filter(Boolean)
-    return names.length ? `${c.name} (${names.join(", ")})` : c.name
-  }
+  // The rider's main zone; their small zones inside it are in form.zoneId /
+  // form.serviceZoneIds.
+  const [mainZoneId, setMainZoneId] = useState("")
 
   useEffect(() => {
     adminAPI
@@ -125,8 +105,13 @@ export default function AddDeliveryman() {
   }, [])
 
   const set = (key, value) => {
-    // A new city can make the chosen zone wrong, so it is cleared.
-    setForm((f) => ({ ...f, [key]: value, ...(key === "city" && value !== f.city ? { zoneId: "" } : {}) }))
+    // A new city can make the chosen zones wrong, so they are cleared.
+    if (key === "city" && value !== form.city) setMainZoneId("")
+    setForm((f) => ({
+      ...f,
+      [key]: value,
+      ...(key === "city" && value !== f.city ? { zoneId: "", serviceZoneIds: [] } : {}),
+    }))
     if (errors[key]) setErrors((e) => ({ ...e, [key]: "" }))
   }
 
@@ -151,7 +136,8 @@ export default function AddDeliveryman() {
     if (!form.name.trim()) e.name = "Name is required"
     if (!/^[6-9]\d{9}$/.test(phone)) e.phone = "Enter a valid 10-digit mobile number"
     if (!form.city.trim()) e.city = "City is required"
-    if (zones.length && !form.zoneId) e.zoneId = "Choose a zone"
+    if (zones.length && !mainZoneId) e.zoneId = "Choose a main zone"
+    else if (zones.length && !form.zoneId) e.zoneId = "Tick at least one small zone"
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = "Invalid email"
     if (form.panNumber && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.toUpperCase())) e.panNumber = "Invalid PAN (e.g. ABCDE1234F)"
     if (form.aadharNumber && !/^\d{12}$/.test(form.aadharNumber)) e.aadharNumber = "Aadhaar must be 12 digits"
@@ -169,9 +155,12 @@ export default function AddDeliveryman() {
     if (!validate()) return
     const fd = new FormData()
     for (const [k, v] of Object.entries(form)) {
+      if (k === "serviceZoneIds") continue
       const value = String(v ?? "").trim()
       if (value) fd.append(k, k === "phone" ? value.replace(/\D/g, "").slice(-10) : value)
     }
+    // A list in a multipart form goes as JSON.
+    if (form.serviceZoneIds?.length) fd.append("serviceZoneIds", JSON.stringify(form.serviceZoneIds))
     for (const [k, file] of Object.entries(files)) if (file) fd.append(k, file)
     fd.append("approveNow", approveNow ? "true" : "false")
     try {
@@ -179,6 +168,7 @@ export default function AddDeliveryman() {
       const res = await adminAPI.createDeliveryPartner(fd)
       setAdded({ ...(res?.data?.data || { name: form.name, phone: form.phone }), message: res?.data?.message })
       setForm(empty)
+      setMainZoneId("")
       setFiles({})
     } catch (e) {
       setServerError(e?.response?.data?.message || e?.message || "Could not add the rider.")
@@ -252,35 +242,23 @@ export default function AddDeliveryman() {
                   <input className={input} value={form.city} onChange={(e) => set("city", e.target.value)} />
                 )}
               </Field>
-              <Field label="Zone" required={zones.length > 0} error={errors.zoneId} hint="The rider's home zone. Zones set to take their own riders only offer orders to riders who serve them">
-                <select className={input} value={form.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
-                  <option value="">Choose a zone…</option>
-                  {zonesForCity.map((z) => (
-                    <option key={z.id || z._id} value={z.id || z._id}>{z.name || z.zoneName}</option>
-                  ))}
-                </select>
+              <Field label="Zones" required={zones.length > 0} hint="">
+                <RiderZonePicker
+                  zones={zonesForCity}
+                  mainZoneId={mainZoneId}
+                  onMainZoneChange={(id) => {
+                    setMainZoneId(id)
+                    if (errors.zoneId) setErrors((e) => ({ ...e, zoneId: "" }))
+                  }}
+                  value={{ zoneId: form.zoneId, serviceZoneIds: form.serviceZoneIds }}
+                  onChange={(v) => {
+                    setForm((f) => ({ ...f, zoneId: v.zoneId, serviceZoneIds: v.serviceZoneIds }))
+                    if (errors.zoneId) setErrors((e) => ({ ...e, zoneId: "" }))
+                  }}
+                  inputClass={input}
+                  error={errors.zoneId}
+                />
               </Field>
-              {cohorts.length > 0 ? (
-                <Field label="Cohort" hint="Optional. The rider also serves this cohort's zones">
-                  <select className={input} value={form.cohortId} onChange={(e) => set("cohortId", e.target.value)}>
-                    <option value="">No cohort</option>
-                    {cohortGroups.covering.length > 0 ? (
-                      <optgroup label="Cover this zone">
-                        {cohortGroups.covering.map((c) => (
-                          <option key={c.id || c._id} value={c.id || c._id}>{cohortLabel(c)}</option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {cohortGroups.others.length > 0 ? (
-                      <optgroup label={cohortGroups.covering.length ? "Other cohorts" : "Cohorts"}>
-                        {cohortGroups.others.map((c) => (
-                          <option key={c.id || c._id} value={c.id || c._id}>{cohortLabel(c)}</option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
-                </Field>
-              ) : null}
               <Field label="Payment type" hint="Salaried: first N orders a day are covered by salary">
                 <select className={input} value={form.payType} onChange={(e) => set("payType", e.target.value)}>
                   <option value="gig">Gig worker (paid per order)</option>

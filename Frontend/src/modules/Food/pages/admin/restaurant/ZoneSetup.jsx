@@ -57,7 +57,33 @@ export default function ZoneSetup() {
     }
   }
 
-  const filteredZones = zones.filter((zone) => {
+  // Each main zone followed by its small zones, so they read as one group.
+  const ordered = (() => {
+    const idOf = (z) => String(z._id || z.id)
+    const childrenOf = new Map()
+    for (const z of zones) {
+      if (!z.parentZoneId) continue
+      const key = String(z.parentZoneId)
+      if (!childrenOf.has(key)) childrenOf.set(key, [])
+      childrenOf.get(key).push(z)
+    }
+    const out = []
+    const placed = new Set()
+    for (const z of zones) {
+      if (z.parentZoneId) continue
+      out.push(z)
+      placed.add(idOf(z))
+      for (const c of (childrenOf.get(idOf(z)) || []).sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+        out.push(c)
+        placed.add(idOf(c))
+      }
+    }
+    // A small zone whose main zone is filtered out or missing still shows.
+    for (const z of zones) if (!placed.has(idOf(z))) out.push(z)
+    return out
+  })()
+
+  const filteredZones = ordered.filter((zone) => {
     // Exact on city, because the options come from the zones themselves --
     // a loose match would make "Indore" also select "Indore Rural".
     if (cityFilter && zone.city !== cityFilter) return false
@@ -166,12 +192,34 @@ export default function ZoneSetup() {
             {filteredZones.map((zone) => (
               <div
                 key={zone._id || zone.id}
-                className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow"
+                className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow ${
+                  zone.parentZoneId ? "border-slate-200 border-l-4 border-l-emerald-500" : zone.smallZoneCount ? "border-orange-300" : "border-slate-200"
+                }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
+                    <div className="mb-1">
+                      {zone.parentZoneId ? (
+                        <span className="inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          Small zone in {zone.parentZone?.name || "a main zone"}
+                        </span>
+                      ) : zone.smallZoneCount ? (
+                        <span className="inline-block rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">
+                          Main zone · {zone.smallZoneCount} small zone{zone.smallZoneCount === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
+                    </div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-1">{zone.name || "Unnamed Zone"}</h3>
                     <p className="text-sm text-slate-600">{zone.serviceLocation || "N/A"}</p>
+                    {!zone.parentZoneId ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/admin/food/zone-setup/add?parent=${zone._id || zone.id}`)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                      >
+                        <Plus className="w-3 h-3" /> Add small zone inside
+                      </button>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <button

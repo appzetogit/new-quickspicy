@@ -265,24 +265,34 @@ test('a rider profile edit trims the name and rejects a blank one', async () => 
     // which owns that behaviour.
 });
 
-test('the Edit rider form sets, rejects and clears a cohort', async () => {
+test('the Edit rider form sets the small zones of one main zone, and refuses two main zones', async () => {
+    const zoneOf = (name, parentZoneId = null) => prisma.foodZone.create({
+        data: {
+            name: `${name} ${stamp()}`, parentZoneId,
+            coordinates: [{ latitude: 1, longitude: 1 }, { latitude: 1.1, longitude: 1 }, { latitude: 1.1, longitude: 1.1 }],
+        },
+    });
+    const main = await zoneOf('Edit Main');
+    const north = await zoneOf('Edit North', main.id);
+    const south = await zoneOf('Edit South', main.id);
+    const other = await zoneOf('Edit Other');
     const partner = await makePartner();
-    const cohort = await prisma.foodRiderCohort.create({ data: { name: `Cohort ${stamp()}`, zoneIds: [] } });
     try {
-        const set = await updateDeliveryPartnerProfile(partner.id, { cohortId: cohort.id });
-        assert.equal(set.cohortId, cohort.id);
-        assert.equal((await getDeliveryPartnerById(partner.id)).cohortId, cohort.id);
+        const set = await updateDeliveryPartnerProfile(partner.id, { zoneId: north.id, serviceZoneIds: [south.id] });
+        assert.equal(set.zoneId, north.id);
+        assert.deepEqual(set.serviceZoneIds, [south.id]);
+        assert.deepEqual((await getDeliveryPartnerById(partner.id)).serviceZoneIds, [south.id]);
 
         await assert.rejects(
-            () => updateDeliveryPartnerProfile(partner.id, { cohortId: 'b'.repeat(24) }),
-            /Unknown cohort/,
+            () => updateDeliveryPartnerProfile(partner.id, { serviceZoneIds: [south.id, other.id] }),
+            /one main zone/,
         );
 
-        // Left out: untouched. Empty: cleared.
-        assert.equal((await updateDeliveryPartnerProfile(partner.id, { name: 'Still here' })).cohortId, cohort.id);
-        assert.equal((await updateDeliveryPartnerProfile(partner.id, { cohortId: '' })).cohortId, null);
+        // Left out: untouched. Empty list: cleared.
+        assert.deepEqual((await updateDeliveryPartnerProfile(partner.id, { name: 'Still here' })).serviceZoneIds, [south.id]);
+        assert.deepEqual((await updateDeliveryPartnerProfile(partner.id, { serviceZoneIds: [] })).serviceZoneIds, []);
     } finally {
-        await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { cohortId: null } });
-        await prisma.foodRiderCohort.delete({ where: { id: cohort.id } });
+        await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { zoneId: null, serviceZoneIds: [] } });
+        await prisma.foodZone.deleteMany({ where: { id: { in: [north.id, south.id, main.id, other.id] } } });
     }
 });

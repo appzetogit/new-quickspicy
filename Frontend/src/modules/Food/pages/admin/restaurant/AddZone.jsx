@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { MapPin, ArrowLeft, Save, X, Shapes, Search } from "lucide-react"
 import { adminAPI } from "@food/api"
 import CityPicker from "@food/components/admin/zones/CityPicker"
@@ -15,6 +15,9 @@ export default function AddZone() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEditMode = !!id && !window.location.pathname.includes('/view/')
+  // "Add small zone inside" on the zone list opens this page with ?parent=<main zone>.
+  const [searchParams] = useSearchParams()
+  const presetParent = !isEditMode ? searchParams.get("parent") || "" : ""
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const polygonRef = useRef(null)
@@ -40,8 +43,15 @@ export default function AddZone() {
     // "" means follow the platform switch, which is not the same as off.
     codEnabled: "",
     codMinDeliveredOrders: "0",
+    // "main": customers order here (also any plain zone). "small": drawn
+    // inside a main zone; only decides which riders get its orders.
+    zoneType: presetParent ? "small" : "main",
+    parentZoneId: presetParent,
   })
-  
+  // Edit mode: how many small zones this zone already has (then it cannot
+  // become a small zone itself).
+  const [ownSmallZoneCount, setOwnSmallZoneCount] = useState(0)
+
   const [coordinates, setCoordinates] = useState([])
   const [isDrawing, setIsDrawing] = useState(false)
   const [locationSearch, setLocationSearch] = useState("")
@@ -151,8 +161,11 @@ export default function AddZone() {
                 : "",
           codMinDeliveredOrders: String(zoneData.codMinDeliveredOrders ?? 0),
           unit: zoneData.unit || "kilometer",
+          zoneType: zoneData.parentZoneId ? "small" : "main",
+          parentZoneId: zoneData.parentZoneId || "",
         })
-        
+        setOwnSmallZoneCount(Number(zoneData.smallZoneCount) || 0)
+
         if (zoneData.coordinates && zoneData.coordinates.length > 0) {
           setCoordinates(zoneData.coordinates)
         }
@@ -290,18 +303,24 @@ export default function AddZone() {
 
       if (path.length < 3) return
 
-      // Create polygon for existing zone with different color (gray/blue)
+      // Drawing a small zone: its main zone is outlined in orange (draw inside
+      // it) and the other small zones of that main zone in green (do not
+      // overlap them). Everything else stays faint blue.
+      const parentId = formData.zoneType === "small" ? formData.parentZoneId : ""
+      const isParent = parentId && String(zone._id || zone.id) === parentId
+      const isSibling = parentId && String(zone.parentZoneId || "") === parentId
+      const color = isParent ? "#f97316" : isSibling ? "#16a34a" : "#3b82f6"
       const polygon = new google.maps.Polygon({
         paths: path,
-        strokeColor: "#3b82f6", // Blue color for existing zones
-        strokeOpacity: 0.6,
-        strokeWeight: 2,
-        fillColor: "#3b82f6",
-        fillOpacity: 0.15, // Lighter opacity so new zone stands out
+        strokeColor: color,
+        strokeOpacity: isParent || isSibling ? 0.9 : 0.6,
+        strokeWeight: isParent ? 3 : 2,
+        fillColor: color,
+        fillOpacity: isParent ? 0.05 : 0.15, // Lighter opacity so new zone stands out
         editable: false, // Not editable
         draggable: false,
         clickable: true,
-        zIndex: 0 // Lower z-index so new zone appears on top
+        zIndex: isParent ? 0 : 1 // The new zone still appears on top
       })
 
       polygon.setMap(map)
@@ -312,7 +331,7 @@ export default function AddZone() {
         content: `
           <div style="padding: 8px;">
             <strong>${zone.name || zone.zoneName || 'Unnamed Zone'}</strong><br/>
-            <small>Country: ${zone.country || 'N/A'}</small>
+            <small>${zone.parentZone?.name ? `Small zone in ${zone.parentZone.name}` : (zone.smallZoneCount ? `Main zone, ${zone.smallZoneCount} small zone(s)` : `Country: ${zone.country || 'N/A'}`)}</small>
           </div>
         `
       })
@@ -336,7 +355,25 @@ export default function AddZone() {
     if (!mapLoading && mapInstanceRef.current && existingZones.length > 0 && window.google) {
       drawExistingZonesOnMap(window.google, mapInstanceRef.current)
     }
-  }, [existingZones, mapLoading])
+  }, [existingZones, mapLoading, formData.zoneType, formData.parentZoneId])
+
+  // Picking a main zone for a small zone brings it into view.
+  useEffect(() => {
+    if (formData.zoneType !== "small" || !formData.parentZoneId || !mapInstanceRef.current || !window.google) return
+    if (isEditMode && coordinates.length >= 3) return
+    const parent = existingZones.find((z) => String(z._id || z.id) === formData.parentZoneId)
+    const ring = (parent?.coordinates || [])
+      .map((c) => ({ lat: Number(c.latitude ?? c.lat), lng: Number(c.longitude ?? c.lng) }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    if (ring.length < 3) return
+    const bounds = new window.google.maps.LatLngBounds()
+    ring.forEach((p) => bounds.extend(p))
+    mapInstanceRef.current.fitBounds(bounds)
+  }, [formData.zoneType, formData.parentZoneId, existingZones, mapLoading])
+
+  // Main zones a small zone can go in: zones with no main zone of their own,
+  // other than the zone being edited.
+  const mainZoneOptions = existingZones.filter((z) => !z.parentZoneId && String(z._id || z.id) !== String(id || ""))
 
   useEffect(() => {
     return () => {
@@ -695,8 +732,14 @@ export default function AddZone() {
     try {
       setLoading(true)
       
-      // Validate coordinates format
-      if (!formData.cityId && !formData.createCity) {
+      const isSmall = formData.zoneType === "small"
+      if (isSmall && !formData.parentZoneId) {
+        alert("Pick the main zone this small zone is inside")
+        setLoading(false)
+        return
+      }
+      // A small zone takes its main zone's city.
+      if (!isSmall && !formData.cityId && !formData.createCity) {
         alert("Pick the city this zone is in, or add it as a new city")
         setLoading(false)
         return
@@ -727,9 +770,12 @@ export default function AddZone() {
         coordinates: validCoordinates,
         // An existing city by id, or a typed name the server matches to one;
         // createCity only when the admin chose to add a new city.
-        ...(formData.cityId
-          ? { cityId: formData.cityId }
-          : { city: formData.city.trim(), createCity: formData.createCity }),
+        ...(isSmall
+          ? {}
+          : formData.cityId
+            ? { cityId: formData.cityId }
+            : { city: formData.city.trim(), createCity: formData.createCity }),
+        parentZoneId: isSmall ? formData.parentZoneId : null,
         // Three states, and null is one of them: "not decided here, follow
         // the platform". Sending false instead would switch COD off in every
         // zone anyone edits.
@@ -849,15 +895,61 @@ export default function AddZone() {
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    City <span className="text-red-500">*</span>
+                    Zone type <span className="text-red-500">*</span>
                   </label>
-                  <CityPicker
-                    value={{ cityId: formData.cityId, name: formData.city, createCity: formData.createCity }}
-                    onChange={(c) =>
-                      setFormData((prev) => ({ ...prev, city: c.name, cityId: c.cityId, createCity: c.createCity }))
-                    }
-                  />
+                  <select
+                    value={formData.zoneType}
+                    onChange={(e) => handleInputChange("zoneType", e.target.value)}
+                    disabled={ownSmallZoneCount > 0}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+                  >
+                    <option value="main">Main zone (customers order here)</option>
+                    <option value="small">Small zone (inside a main zone, for riders)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {ownSmallZoneCount > 0
+                      ? `This main zone has ${ownSmallZoneCount} small zone(s), so it stays a main zone.`
+                      : formData.zoneType === "small"
+                        ? "Orders from restaurants in a small zone go only to riders given this small zone. Blank settings follow the main zone."
+                        : "Customers anywhere in a main zone see its restaurants. Draw small zones inside it to split riders."}
+                  </p>
                 </div>
+
+                {formData.zoneType === "small" ? (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Main zone <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.parentZoneId}
+                      onChange={(e) => handleInputChange("parentZoneId", e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Choose the main zone…</option>
+                      {mainZoneOptions.map((z) => (
+                        <option key={z._id || z.id} value={z._id || z.id}>
+                          {z.name}{z.cityRef?.name || z.city ? ` (${z.cityRef?.name || z.city})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Draw inside the orange outline and away from the green small zones. The city is the main zone's.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      City <span className="text-red-500">*</span>
+                    </label>
+                    <CityPicker
+                      value={{ cityId: formData.cityId, name: formData.city, createCity: formData.createCity }}
+                      onChange={(c) =>
+                        setFormData((prev) => ({ ...prev, city: c.name, cityId: c.cityId, createCity: c.createCity }))
+                      }
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">
@@ -868,7 +960,7 @@ export default function AddZone() {
                     onChange={(e) => handleInputChange("codEnabled", e.target.value)}
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Follow the platform setting</option>
+                    <option value="">{formData.zoneType === "small" ? "Follow the main zone" : "Follow the platform setting"}</option>
                     <option value="on">On in this zone</option>
                     <option value="off">Off in this zone</option>
                   </select>

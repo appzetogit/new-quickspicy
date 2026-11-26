@@ -1819,17 +1819,30 @@ export async function deleteZone(req, res, next) {
 const ZONE_PAYMENT_SELECT = {
     id: true, name: true, city: true,
     codEnabled: true, codMinDeliveredOrders: true, onlinePaymentEnabled: true,
+    parentZoneId: true, parentZone: { select: { name: true } },
 };
 
 // One zone as the screen shows it: the stored settings and what they mean.
 // effective keeps its COD shape; online payment sits beside it so an older
-// screen reading effective.newCustomer is unaffected.
-const zonePaymentView = (zone, platformCodEnabled) => {
-    const effective = effectiveCod(zone, platformCodEnabled);
+// screen reading effective.newCustomer is unaffected. A small zone's blanks
+// follow its main zone (`main`, when given), as checkout does.
+const zonePaymentView = (zone, platformCodEnabled, main = null) => {
+    const merged = main
+        ? {
+            ...zone,
+            codEnabled: zone.codEnabled ?? main.codEnabled,
+            onlinePaymentEnabled: zone.onlinePaymentEnabled ?? main.onlinePaymentEnabled,
+            codMinDeliveredOrders: Number(zone.codMinDeliveredOrders) > 0
+                ? zone.codMinDeliveredOrders
+                : main.codMinDeliveredOrders,
+        }
+        : zone;
+    const effective = effectiveCod(merged, platformCodEnabled);
     return {
         ...zone,
+        parentZoneName: zone.parentZone?.name || null,
         effective,
-        effectiveOnlinePayment: effectiveOnlinePayment(zone, effective),
+        effectiveOnlinePayment: effectiveOnlinePayment(merged, effective),
     };
 };
 
@@ -1854,7 +1867,11 @@ export async function getCodSettings(req, res, next) {
                 // No platform-wide online switch: a zone that says nothing takes
                 // online payments. Sent so the screen does not have to assume it.
                 platformOnlinePaymentEnabled: true,
-                zones: zones.map((zone) => zonePaymentView(zone, platformEnabled)),
+                zones: zones.map((zone) => zonePaymentView(
+                    zone,
+                    platformEnabled,
+                    zone.parentZoneId ? zones.find((z) => z.id === zone.parentZoneId) : null,
+                )),
             },
         });
     } catch (error) {
@@ -1903,10 +1920,13 @@ export async function updateZoneCodSettings(req, res, next) {
         });
 
         const platformEnabled = await resolvePlatformCodEnabled();
+        const main = zone.parentZoneId
+            ? await prisma.foodZone.findUnique({ where: { id: zone.parentZoneId }, select: ZONE_PAYMENT_SELECT })
+            : null;
         res.status(200).json({
             success: true,
             message: 'Zone COD settings updated successfully',
-            data: { zone: zonePaymentView(zone, platformEnabled) },
+            data: { zone: zonePaymentView(zone, platformEnabled, main) },
         });
     } catch (error) {
         next(error);

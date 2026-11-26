@@ -1,14 +1,24 @@
 import { prisma } from '../../../config/prisma.js';
 import { isId } from '../../../utils/helpers.js';
+import { loadZoneTree } from './zoneHierarchy.js';
 
 /**
  * Which riders may serve a zone.
  *
- * A rider serves their home zone (FoodDeliveryPartner.zoneId) plus the zones of
- * their cohort, when that cohort is active. Dispatch only applies this to zones
- * an admin has switched to "riders from this zone only"
- * (FoodZone.ridersFromZoneOnly); every other zone keeps going purely by
- * distance, as before.
+ * A rider serves their home zone (FoodDeliveryPartner.zoneId) plus their
+ * serviceZoneIds (the small zones of their main zone they were given; this
+ * replaced rider cohorts).
+ *
+ * Restricted zones only offer orders to riders who serve them:
+ *  - every small zone (a zone with a main zone), always -- that is what a
+ *    small zone is for, and orders are never widened to other small zones;
+ *  - any other zone an admin switched to "riders from this zone only"
+ *    (FoodZone.ridersFromZoneOnly).
+ * Everything else goes purely by distance, as before.
+ *
+ * A main zone that is restricted takes riders serving it or any of its small
+ * zones: a restaurant inside the main zone but outside every small zone is
+ * nobody's small zone, so everyone in that main zone may take it.
  */
 
 /** True when the zone only takes riders who serve it. */
@@ -16,9 +26,19 @@ export async function zoneRestrictsRiders(zoneId) {
     if (!isId(zoneId)) return false;
     const zone = await prisma.foodZone.findUnique({
         where: { id: String(zoneId) },
-        select: { ridersFromZoneOnly: true },
+        select: { ridersFromZoneOnly: true, parentZoneId: true },
     });
-    return Boolean(zone?.ridersFromZoneOnly);
+    return Boolean(zone?.parentZoneId || zone?.ridersFromZoneOnly);
+}
+
+/** The zones whose riders count as serving `zoneId`. */
+async function zonesThatServe(zoneId) {
+    const id = String(zoneId);
+    const byId = await loadZoneTree(id);
+    const zone = byId.get(id);
+    if (zone?.parentZoneId) return new Set([id]);
+    const small = [...byId.values()].filter((z) => z.parentZoneId === id).map((z) => z.id);
+    return new Set([id, ...small]);
 }
 
 /**
@@ -35,23 +55,19 @@ export async function ridersOutsideZone(zoneId, partnerIds = []) {
 
     const riders = await prisma.foodDeliveryPartner.findMany({
         where: { id: { in: ids } },
-        select: { id: true, zoneId: true, cohortId: true },
+        select: { id: true, zoneId: true, serviceZoneIds: true },
     });
-    const cohortIds = [...new Set(riders.map((r) => r.cohortId).filter(Boolean))];
-    const cohorts = cohortIds.length
-        ? await prisma.foodRiderCohort.findMany({
-            where: { id: { in: cohortIds }, isActive: true },
-            select: { id: true, zoneIds: true },
-        })
-        : [];
-    const cohortZones = new Map(cohorts.map((c) => [c.id, new Set(c.zoneIds || [])]));
-    const target = String(zoneId);
+    const accepted = await zonesThatServe(zoneId);
 
     const outside = new Set(ids);
     for (const rider of riders) {
-        if (rider.zoneId === target || cohortZones.get(rider.cohortId)?.has(target)) {
-            outside.delete(rider.id);
-        }
+        const serves = [rider.zoneId, ...(rider.serviceZoneIds || [])].filter(Boolean);
+        if (serves.some((z) => accepted.has(z))) outside.delete(rider.id);
     }
     return outside;
+}
+
+/** Every zone a rider serves, home zone first. */
+export function zonesOfRider(rider) {
+    return [...new Set([rider?.zoneId, ...(rider?.serviceZoneIds || [])].filter(Boolean).map(String))];
 }

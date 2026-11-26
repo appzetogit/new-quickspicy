@@ -13,6 +13,7 @@ import {
 import { restaurantsInReach } from '../../shared/deliveryRadius.js';
 import { verticalFilterFromQuery, categoryVerticalWhere } from '../../shared/verticals.js';
 import { languageFromQuery, pickText } from '../../shared/language.js';
+import { withMainZones } from '../../shared/zoneHierarchy.js';
 
 /** Columns the category screens read. */
 const CATEGORY_SELECT = {
@@ -70,7 +71,8 @@ export async function listRestaurantCategories(restaurantId, query = {}) {
             ],
     };
 
-    const AND = [visibility, zoneVisibilityFilter(zoneIdRaw)];
+    // A customer in a small zone also sees their main zone's categories.
+    const AND = [visibility, zoneVisibilityFilter(isId(zoneIdRaw) ? await withMainZones([zoneIdRaw]) : zoneIdRaw)];
     if (search) {
         AND.push({ name: { contains: search.slice(0, 80), mode: 'insensitive' } });
     }

@@ -22,11 +22,19 @@ export const GLOBAL_CATEGORY_FILTER = { restaurantId: null };
  */
 export const APPROVED_CATEGORY_FILTER = { approvalStatus: 'approved' };
 
-/** zoneId set = that zone only; null = everywhere. */
-export const zoneVisibilityFilter = (zoneIdRaw) =>
-    isId(zoneIdRaw)
+/**
+ * zoneId set = that zone only; null = everywhere. Also takes a list (a small
+ * zone and its main zone), so a customer in a small zone sees both.
+ */
+export const zoneVisibilityFilter = (zoneIdRaw) => {
+    if (Array.isArray(zoneIdRaw)) {
+        const ids = zoneIdRaw.filter(isId).map(String);
+        return ids.length ? { OR: [{ zoneId: { in: ids } }, { zoneId: null }] } : { zoneId: null };
+    }
+    return isId(zoneIdRaw)
         ? { OR: [{ zoneId: String(zoneIdRaw) }, { zoneId: null }] }
         : { zoneId: null };
+};
 
 export const normalizeCategoryApprovalStatus = (value, fallback = 'pending') => {
     const normalized = String(value || '').trim();

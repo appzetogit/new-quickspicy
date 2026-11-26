@@ -1,4 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
+import { effectiveZoneSettings } from '../../shared/zoneHierarchy.js';
 import { isCodAvailable } from './codAvailability.service.js';
 
 /**
@@ -77,12 +78,8 @@ export const effectiveOnlinePayment = (zone, effectiveCodResult) => {
  * payments after an admin switched them off.
  */
 export async function isOnlinePaymentAvailable({ zoneId }) {
-    const zone = zoneId
-        ? await prisma.foodZone.findUnique({
-              where: { id: String(zoneId) },
-              select: { onlinePaymentEnabled: true },
-          })
-        : null;
+    // A small zone's blank switch follows its main zone.
+    const zone = zoneId ? await effectiveZoneSettings(zoneId, ['onlinePaymentEnabled']) : null;
     const decision = decideOnlinePayment(zone);
     return { ...decision, message: onlinePaymentMessage(decision.reason) };
 }

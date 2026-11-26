@@ -4,6 +4,7 @@ import { currentAdminScope } from '../../../core/roles/adminScope.context.js';
 import { addDays, resolveDayWindow, resolveZoneFilter } from '../admin/services/reportDays.js';
 import { zoneScopeSql } from '../admin/services/reportFilters.helpers.js';
 import { FUNNEL_STAGES, PLATFORMS, RETENTION_DAYS } from './funnel.constants.js';
+import { zoneMatch } from '../shared/zoneHierarchy.js';
 
 /**
  * Customer Funnel report (Report Management).
@@ -130,7 +131,7 @@ export async function getFunnelReport(query = {}) {
         ? Prisma.sql`AND e."sessionId" IN (
             SELECT z."sessionId" FROM "food_funnel_events" z
             WHERE z."createdAt" >= ${window.gte} AND z."createdAt" <= ${window.lte}
-              AND z."zoneId" IS NOT NULL ${zoneScopeSql(zoneId, 'z')}
+              AND z."zoneId" IS NOT NULL ${zoneScopeSql(await zoneMatch(zoneId), 'z')}
         )`
         : Prisma.empty;
     const where = Prisma.sql`

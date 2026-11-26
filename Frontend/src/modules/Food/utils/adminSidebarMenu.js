@@ -211,7 +211,6 @@ export const adminSidebarMenu = [
           { label: "New Join Request", path: "/admin/food/delivery-partners/join-request" },
           { label: "Deliveryman List", path: "/admin/food/delivery-partners" },
           { label: "Add Deliveryman", path: "/admin/food/delivery-partners/add" },
-          { label: "Rider Cohorts", path: "/admin/food/delivery-partners/cohorts" },
           { label: "Live Tracking", path: "/admin/food/delivery-partners/live-tracking" },
           { label: "Duty Log", path: "/admin/food/delivery-partners/duty-log" },
           { label: "Deliveryman Reviews", path: "/admin/food/delivery-partners/reviews" },

@@ -996,8 +996,12 @@ model FoodDeliveryPartner {
   /// ridersFromZoneOnly, which only take riders whose home zone or cohort
   /// zones include them.
   zoneId   String? @db.VarChar(24)
-  /// Rider cohort (FoodRiderCohort). Groups riders for incentives, pay rules
-  /// and zone eligibility; null means not in any cohort.
+  /// Other zones the rider serves besides zoneId: the small zones of their
+  /// main zone they are given. Orders from a small zone only go to riders
+  /// whose zoneId or serviceZoneIds include it.
+  serviceZoneIds String[] @default([])
+  /// Retired: rider cohorts were replaced by main/small zones (Nov 2026). Kept
+  /// so old data is not lost; nothing reads it for dispatch any more.
   cohortId String? @db.VarChar(24)
   /// Gig riders earn per order. Salaried riders earn nothing per order for
   /// their first N deliveries of the IST day (the salary covers them), then
@@ -2389,6 +2393,15 @@ model FoodZone {
   /// needs an override for anyone else. False keeps dispatch by distance.
   ridersFromZoneOnly Boolean @default(false)
 
+  /// Main zone / small zone. A zone with no parent is a main zone: the area
+  /// customers order in. A zone with a parent is a small zone drawn inside it:
+  /// it only decides which riders get an order (always riders-from-zone-only),
+  /// and its settings (COD, online payment, fees, dispatch mode) fall back to
+  /// the main zone's when blank. One level only; see shared/zoneHierarchy.js.
+  parentZoneId String?    @db.VarChar(24)
+  parentZone   FoodZone?  @relation("ZoneHierarchy", fields: [parentZoneId], references: [id], onDelete: NoAction)
+  smallZones   FoodZone[] @relation("ZoneHierarchy")
+
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -2410,6 +2423,7 @@ model FoodZone {
   @@index([city, name])
   @@index([cityId])
   @@index([country, name])
+  @@index([parentZoneId])
   @@map("food_zones")
 }
 

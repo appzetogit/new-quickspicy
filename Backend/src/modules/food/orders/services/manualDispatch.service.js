@@ -6,6 +6,7 @@ import { getIO, rooms } from '../../../../config/socket.js';
 import { addOrderJob } from '../../../../queues/producers/order.producer.js';
 import { runUnscoped } from '../../../../core/roles/adminScope.context.js';
 import { ridersOutsideZone } from '../../shared/riderServiceArea.js';
+import { zoneFamilyIds } from '../../shared/zoneHierarchy.js';
 import {
   buildDeliverySocketPayload,
   getRiderActiveOrderCounts,
@@ -50,10 +51,16 @@ async function loadModes() {
   const [settings, zones] = await Promise.all([
     getDispatchSettings(),
     runUnscoped(() =>
-      prisma.foodZone.findMany({ where: { dispatchMode: { not: null } }, select: { id: true, dispatchMode: true } }),
+      prisma.foodZone.findMany({ select: { id: true, dispatchMode: true, parentZoneId: true } }),
     ),
   ]);
-  const zoneModes = new Map(zones.map((z) => [z.id, z.dispatchMode === 'manual' ? 'manual' : 'auto']));
+  // A small zone with no mode of its own follows its main zone's.
+  const own = new Map(zones.filter((z) => z.dispatchMode).map((z) => [z.id, z.dispatchMode]));
+  const zoneModes = new Map();
+  for (const z of zones) {
+    const mode = own.get(z.id) || (z.parentZoneId ? own.get(z.parentZoneId) : null);
+    if (mode) zoneModes.set(z.id, mode === 'manual' ? 'manual' : 'auto');
+  }
   modeCache = { at: Date.now(), value: { global: settings.dispatchMode, settings, zoneModes } };
   return modeCache.value;
 }
@@ -716,11 +723,14 @@ export async function setZoneDispatchMode(zoneId, mode) {
 }
 
 export async function listZoneDispatchModes() {
-  const [{ global, settings }, zones] = await Promise.all([
+  const [{ global, settings, zoneModes }, zones] = await Promise.all([
     loadModes(),
     prisma.foodZone.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, dispatchMode: true, ridersFromZoneOnly: true, cityRef: { select: { name: true } } },
+      select: {
+        id: true, name: true, dispatchMode: true, ridersFromZoneOnly: true, parentZoneId: true,
+        parentZone: { select: { name: true } }, cityRef: { select: { name: true } },
+      },
       orderBy: { name: 'asc' },
     }),
   ]);
@@ -732,14 +742,20 @@ export async function listZoneDispatchModes() {
       name: z.name,
       city: z.cityRef?.name || '',
       dispatchMode: z.dispatchMode || null,
-      effectiveMode: z.dispatchMode || global,
-      ridersFromZoneOnly: Boolean(z.ridersFromZoneOnly),
+      // A small zone with no mode follows its main zone, then the platform.
+      effectiveMode: zoneModes.get(z.id) || global,
+      // Small zones always take only their own riders.
+      ridersFromZoneOnly: Boolean(z.ridersFromZoneOnly || z.parentZoneId),
+      parentZoneId: z.parentZoneId || null,
+      parentZoneName: z.parentZone?.name || null,
     })),
   };
 }
 
 /** A zone went back to automatic: offer its waiting orders to riders now. */
 export async function sweepWaitingOrdersToAuto(zoneId = null) {
+  // A main zone going automatic also frees its small zones that follow it.
+  const family = zoneId ? await zoneFamilyIds(zoneId) : null;
   const rows = await runUnscoped(() =>
     prisma.foodOrder.findMany({
       where: {
@@ -747,7 +763,7 @@ export async function sweepWaitingOrdersToAuto(zoneId = null) {
         dispatchAcceptedAt: null,
         dispatchStatus: 'unassigned',
         orderStatus: { in: ASSIGNABLE },
-        ...(zoneId ? { zoneId: String(zoneId) } : {}),
+        ...(family ? { zoneId: { in: family } } : {}),
       },
       select: { id: true, zoneId: true },
     }),

@@ -17,6 +17,36 @@ import {
 import { fetchDrivingRoute } from '../utils/googleMaps.js';
 import { parseGeoPoint } from '../../shared/geo.utils.js';
 import { ridersOutsideZone } from '../../shared/riderServiceArea.js';
+import { loadZoneTree } from '../../shared/zoneHierarchy.js';
+
+/**
+ * Orders already alerted for "no rider in the small zone", so a run of dispatch
+ * attempts on one order does not repeat it. Per process, pruned after an hour.
+ */
+const noRiderAlerted = new Map();
+const NO_RIDER_ALERT_TTL_MS = 60 * 60 * 1000;
+
+async function alertNoRiderInSmallZone(orderId, order, zoneId) {
+  if (!zoneId) return;
+  const zone = (await loadZoneTree(zoneId)).get(String(zoneId));
+  if (!zone?.parentZoneId) return;
+  const now = Date.now();
+  for (const [key, at] of noRiderAlerted) if (now - at > NO_RIDER_ALERT_TTL_MS) noRiderAlerted.delete(key);
+  if (noRiderAlerted.has(String(orderId))) return;
+  noRiderAlerted.set(String(orderId), now);
+
+  const zoneName = zone.zoneName || zone.name || 'its small zone';
+  logger.warn(`[Dispatch] No rider online in small zone ${zoneName} for order ${orderId}.`);
+  try {
+    await notifyOwnersSafely([{ ownerType: 'ADMIN', ownerId: 'GLOBAL' }], {
+      title: `No rider online in ${zoneName}`,
+      body: `Order #${order.order_id || orderId} is waiting: no rider who serves ${zoneName} is online nearby. Orders are not sent to other zones' riders, so assign one by hand if needed.`,
+      data: { type: 'admin_alert_no_zone_rider', orderId: String(orderId), zoneId: String(zoneId) },
+    });
+  } catch (err) {
+    logger.warn(`Admin notification failed: ${err.message}`);
+  }
+}
 
 /** Everything a dispatch broadcast needs about the order. */
 const dispatchInclude = { ...orderInclude, restaurant: true, user: true };
@@ -515,7 +545,14 @@ export async function tryAutoAssign(orderId, options = {}) {
 
     // A zone set to "riders from this zone only" skips riders whose home zone
     // and cohort zones do not include it. Other zones go by distance alone.
-    const outsideZone = await ridersOutsideZone(row.zoneId || row.restaurant?.zoneId, candidateIds);
+    const orderZoneId = row.zoneId || row.restaurant?.zoneId;
+    const outsideZone = await ridersOutsideZone(orderZoneId, candidateIds);
+    // A small zone never widens to other riders, so say so straight away when
+    // none of its riders is online near the restaurant, instead of only after
+    // the 5-minute unassigned alert.
+    if (partners.length === 0 || partners.every((p) => outsideZone.has(String(p.partnerId)))) {
+      await alertNoRiderInSmallZone(id, order, orderZoneId);
+    }
 
     // Nearest first (listNearbyOnlineDeliveryPartners sorts by distance).
     const free = partners.filter((p) => {

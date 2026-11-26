@@ -126,21 +126,25 @@ test('pausing a city covers its zones, and the service status says so', async ()
     assert.deepEqual((await settings.getOrderPause()).cityIds, []);
 });
 
-test('a rider sees pauses in their cohort zones as a partial pause', async () => {
-    const home = await makeZone();
-    const cohortZone = await makeZone();
-    const otherCohortZone = await makeZone();
-    const cohort = await prisma.foodRiderCohort.create({
-        data: { name: `Pause Cohort ${uniqueTag('C')}`, zoneIds: [cohortZone.id, otherCohortZone.id] },
-    });
+test('a rider sees pauses in their small zones as a partial pause', async () => {
+    const main = await makeZone();
+    const home = await makeZone({ parentZoneId: main.id });
+    const cohortZone = await makeZone({ parentZoneId: main.id });
+    const otherCohortZone = await makeZone({ parentZoneId: main.id });
     const rider = await prisma.foodDeliveryPartner.create({
-        data: { name: 'Pause Rider', phone: uniquePhone('8'), status: 'approved', zoneId: home.id, cohortId: cohort.id },
+        data: {
+            name: 'Pause Rider', phone: uniquePhone('8'), status: 'approved',
+            zoneId: home.id, serviceZoneIds: [cohortZone.id, otherCohortZone.id],
+        },
     });
     const homeless = await prisma.foodDeliveryPartner.create({
-        data: { name: 'No Home Rider', phone: uniquePhone('8'), status: 'approved', cohortId: cohort.id },
+        data: {
+            name: 'No Home Rider', phone: uniquePhone('8'), status: 'approved',
+            serviceZoneIds: [cohortZone.id, otherCohortZone.id],
+        },
     });
     try {
-        // Only a cohort zone paused: not paused, but partly.
+        // Only one other small zone paused: not paused, but partly.
         await settings.updateOrderPause({ paused: true, zoneIds: [cohortZone.id], message: 'Flood' });
         let s = await settings.getServiceStatusForAccount('DELIVERY_PARTNER', rider.id);
         assert.equal(s.paused, false);
@@ -155,7 +159,7 @@ test('a rider sees pauses in their cohort zones as a partial pause', async () =>
         assert.equal(cz.name, cohortZone.name);
         assert.equal(s.zones[2].paused, false);
 
-        // Home zone paused too: paused, and still partial (one cohort zone open).
+        // Home zone paused too: paused, and still partial (one small zone open).
         await settings.updateOrderPause({ paused: true, zoneIds: [home.id, cohortZone.id], message: 'Flood' });
         s = await settings.getServiceStatusForAccount('DELIVERY_PARTNER', rider.id);
         assert.equal(s.paused, true);
@@ -170,7 +174,7 @@ test('a rider sees pauses in their cohort zones as a partial pause', async () =>
         assert.equal(s.partial, false);
         assert.equal(s.pausedZones.length, 3);
 
-        // No home zone: paused only when all cohort zones are.
+        // No home zone: paused only when all their small zones are.
         s = await settings.getServiceStatusForAccount('DELIVERY_PARTNER', homeless.id);
         assert.equal(s.paused, true);
         assert.equal(s.partial, false);
@@ -179,16 +183,17 @@ test('a rider sees pauses in their cohort zones as a partial pause', async () =>
         assert.equal(s.paused, false);
         assert.equal(s.partial, true);
 
-        // An inactive cohort's zones do not count.
-        await prisma.foodRiderCohort.update({ where: { id: cohort.id }, data: { isActive: false } });
+        // Pausing the main zone pauses every small zone in it.
+        await settings.updateOrderPause({ paused: true, zoneIds: [main.id], message: 'Storm' });
         s = await settings.getServiceStatusForAccount('DELIVERY_PARTNER', rider.id);
-        assert.equal(s.paused, false);
+        assert.equal(s.paused, true);
         assert.equal(s.partial, false);
-        assert.deepEqual(s.zones.map((z) => z.zoneId), [home.id]);
+        assert.equal(s.message, 'Storm');
+        assert.equal((await settings.getServiceStatus([cohortZone.id])).paused, true);
+        await assert.rejects(() => settings.assertOrderingNotPaused([home.id]), /Storm/);
     } finally {
         await settings.updateOrderPause({ paused: false });
         await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: [rider.id, homeless.id] } } });
-        await prisma.foodRiderCohort.delete({ where: { id: cohort.id } }).catch(() => {});
     }
 });
 

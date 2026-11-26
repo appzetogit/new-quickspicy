@@ -1,5 +1,6 @@
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
+import { zoneChain } from '../../shared/zoneHierarchy.js';
 
 /**
  * Landing settings are a singleton.
@@ -75,9 +76,12 @@ const ORDER_MODES = ['manual', 'nearest'];
  */
 export const resolveLandingSettingsForZone = async (zoneId) => {
     const global = await getLandingSettings();
-    const zoned = isId(zoneId)
-        ? await prisma.foodLandingZoneSettings.findUnique({ where: { zoneId: String(zoneId) } })
-        : null;
+    // A small zone with no settings of its own uses its main zone's.
+    let zoned = null;
+    for (const id of await zoneChain(zoneId)) {
+        zoned = await prisma.foodLandingZoneSettings.findUnique({ where: { zoneId: id } });
+        if (zoned) break;
+    }
 
     const ids =
         zoned && zoned.recommendedRestaurantIds?.length

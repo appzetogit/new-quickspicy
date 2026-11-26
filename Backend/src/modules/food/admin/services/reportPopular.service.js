@@ -4,6 +4,7 @@ import { getRestaurantTimezone } from '../../../../utils/timezone.js';
 import { EARNED_ORDER } from '../../shared/restaurantPayout.sql.js';
 import { fromFoodTypeColumn } from '../../shared/foodType.util.js';
 import { num, reportFilters, zoneScopeSql, createdAtSql } from './reportFilters.helpers.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * Popular items & analytics: what sells, when orders come in, and where.
@@ -37,6 +38,7 @@ export const fillHours = (rows = []) => {
 
 export async function getPopularItemsReport(query = {}) {
     const filters = reportFilters(query);
+    filters.zoneId = await zoneMatch(filters.zoneId);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
     const where = orderWhereSql(filters);
     const tz = getRestaurantTimezone();

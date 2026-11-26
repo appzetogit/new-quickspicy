@@ -2,6 +2,7 @@ import { prisma } from '../../../../config/prisma.js';
 import {
     addDays, createdAtIn, fromPaise, istDayOf, num, resolveDayWindow, resolveZoneFilter, toPaise,
 } from './reportDays.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * End-of-day cumulative report: one row per India day, and the totals for the
@@ -130,7 +131,8 @@ export async function getEodReport(query = {}) {
     ];
     // As the Transaction report: the restaurant's zone, or the order's own
     // (a restaurant with no zone set still has orders in one).
-    if (zoneId) and.push({ OR: [{ restaurant: { zoneId } }, { order: { zoneId } }] });
+    const zoneFilter = await zoneMatch(zoneId);
+    if (zoneId) and.push({ OR: [{ restaurant: { zoneId: zoneFilter } }, { order: { zoneId: zoneFilter } }] });
 
     // A row per order for at most EOD_MAX_DAYS days, numbers only. The admin
     // city scope applies through the Prisma extension (foodTransaction).

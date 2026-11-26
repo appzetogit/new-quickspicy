@@ -162,6 +162,57 @@ export async function addRidersToCohort(cohortId, body = {}) {
 }
 
 /**
+ * The zones a rider serves, from what a form sent.
+ *
+ * `zoneId` is the home zone and `serviceZoneIds` the other zones they serve:
+ * the small zones of their main zone. All of them must be in one main zone (a
+ * rider works in one main zone). Fields not sent keep their current value.
+ * Returns {} when neither was sent, else { zoneId, serviceZoneIds }.
+ *
+ * @param {object} body
+ * @param {{zoneId?: string|null, serviceZoneIds?: string[]}} current
+ */
+export async function resolveRiderZones(body = {}, current = {}) {
+    const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
+    if (!has('zoneId') && !has('serviceZoneIds')) return {};
+
+    let zoneId = has('zoneId') ? String(body.zoneId ?? '').trim() || null : current.zoneId || null;
+    let list = current.serviceZoneIds || [];
+    if (has('serviceZoneIds')) {
+        const raw = body.serviceZoneIds;
+        // Multipart forms send a list as a JSON string or a comma-separated one.
+        let parsed = raw;
+        if (typeof raw === 'string') {
+            try { parsed = JSON.parse(raw); } catch { parsed = raw.split(','); }
+        }
+        if (parsed !== null && parsed !== undefined && !Array.isArray(parsed)) {
+            throw new ValidationError('serviceZoneIds must be a list');
+        }
+        list = (parsed || []).map((v) => String(v ?? '').trim()).filter(Boolean);
+    }
+
+    const all = [...new Set([zoneId, ...list].filter(Boolean))];
+    if (all.length > 50) throw new ValidationError('Too many zones for one rider');
+    if (all.some((id) => !isId(id))) throw new ValidationError('Choose a valid zone');
+    const zones = all.length
+        ? await prisma.foodZone.findMany({ where: { id: { in: all } }, select: { id: true, name: true, parentZoneId: true } })
+        : [];
+    if (zones.length !== all.length) throw new ValidationError('Choose a valid zone');
+
+    const mains = new Map();
+    for (const z of zones) mains.set(z.parentZoneId || z.id, z.name);
+    if (mains.size > 1) {
+        throw new ValidationError(
+            `A rider works in one main zone. These zones are in different main zones: ${zones.map((z) => z.name).join(', ')}.`,
+        );
+    }
+
+    if (!zoneId && list.length) [zoneId] = list;
+    const serviceZoneIds = [...new Set(list)].filter((id) => id !== zoneId);
+    return { zoneId: zoneId || null, serviceZoneIds };
+}
+
+/**
  * A cohortId sent for a rider: undefined when not sent (leave as is), null when
  * cleared ('' or null), else the id of an existing cohort. Used by the service
  * area endpoint and the Add / Edit Deliveryman forms.
@@ -189,62 +240,55 @@ export async function setRiderServiceArea(riderId, body = {}) {
     });
     if (!rider || rider.deletedAt) throw new ValidationError('Rider not found');
 
-    const data = {};
-    if (body.zoneId !== undefined) {
-        if (body.zoneId === null || body.zoneId === '') data.zoneId = null;
-        else {
-            const zoneId = String(body.zoneId).trim();
-            if (!isId(zoneId) || !(await prisma.foodZone.count({ where: { id: zoneId } }))) {
-                throw new ValidationError('Unknown zone');
-            }
-            data.zoneId = zoneId;
-        }
-    }
-    const cohortId = await resolveCohortId(body.cohortId);
-    if (cohortId !== undefined) data.cohortId = cohortId;
-    if (!Object.keys(data).length) throw new ValidationError('Nothing to change: send zoneId and/or cohortId');
+    const current = await prisma.foodDeliveryPartner.findUnique({
+        where: { id: rider.id },
+        select: { zoneId: true, serviceZoneIds: true },
+    });
+    const data = await resolveRiderZones(body, current || {});
+    if (!Object.keys(data).length) throw new ValidationError('Nothing to change: send zoneId and/or serviceZoneIds');
 
     const updated = await prisma.foodDeliveryPartner.update({
         where: { id: rider.id },
         data,
-        select: { id: true, name: true, zoneId: true, cohortId: true },
+        select: { id: true, name: true, zoneId: true, serviceZoneIds: true },
     });
     return { rider: updated };
 }
 
 /**
- * What the rider app shows on its map: the rider's home zone and their cohort's
- * zones, each with its boundary. `zones` is the union, home zone first.
+ * What the rider app shows on its map: the zones the rider serves (home zone
+ * first), each with its boundary, plus the main zone they are in. Only orders
+ * from restaurants in these zones are offered to them when the zone is a small
+ * zone. `cohort` is always null now (cohorts were retired) and kept so older
+ * app builds still parse the response.
  */
 export async function getRiderServiceArea(riderId) {
     if (!isId(riderId)) throw new ValidationError('Rider not found');
     const rider = await prisma.foodDeliveryPartner.findUnique({
         where: { id: String(riderId) },
-        select: { id: true, zoneId: true, cohortId: true },
+        select: { id: true, zoneId: true, serviceZoneIds: true },
     });
     if (!rider) throw new ValidationError('Rider not found');
 
-    const cohort = rider.cohortId
-        ? await prisma.foodRiderCohort.findUnique({
-            where: { id: rider.cohortId },
-            select: { id: true, name: true, description: true, zoneIds: true, isActive: true },
-        })
-        : null;
-    const cohortZoneIds = cohort?.isActive ? cohort.zoneIds || [] : [];
-    const ids = [...new Set([rider.zoneId, ...cohortZoneIds].filter(isId))];
+    const ids = [...new Set([rider.zoneId, ...(rider.serviceZoneIds || [])].filter(isId))];
     const zones = ids.length
         ? await prisma.foodZone.findMany({
             where: { id: { in: ids }, isActive: true },
-            select: { id: true, name: true, serviceLocation: true, coordinates: true },
+            select: {
+                id: true, name: true, serviceLocation: true, coordinates: true, parentZoneId: true,
+                parentZone: { select: { id: true, name: true, coordinates: true } },
+            },
         })
         : [];
     const byId = new Map(zones.map((z) => [z.id, z]));
     const ordered = ids.map((id) => byId.get(id)).filter(Boolean)
-        .map((z) => ({ ...z, isHomeZone: z.id === rider.zoneId }));
+        .map(({ parentZone, ...z }) => ({ ...z, isHomeZone: z.id === rider.zoneId, isSmallZone: Boolean(z.parentZoneId) }));
+    const main = zones.find((z) => z.parentZone)?.parentZone || null;
 
     return {
         homeZone: ordered.find((z) => z.isHomeZone) || null,
-        cohort: cohort ? { id: cohort.id, name: cohort.name, description: cohort.description, isActive: cohort.isActive } : null,
+        mainZone: main,
+        cohort: null,
         zones: ordered,
     };
 }

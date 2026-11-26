@@ -51,7 +51,7 @@ Same as the user app. For a rider, `/me` also carries `payType`: `"gig"` (paid p
 
 `/me` also returns `data.serviceStatus` (next to `data.user`): `{ paused, servicePaused, message, resumeAt, scope }`. When `servicePaused` is true the admin has paused ordering in the rider's home zone (or everywhere), so few or no new offers will come; show a banner with `message` and `resumeAt` (ISO, may be null). Orders already placed carry on.
 
-A rider also serves their cohort's zones, so `serviceStatus` adds `partial`, `pausedZones` and `zones`:
+A rider also serves their other small zones, so `serviceStatus` adds `partial`, `pausedZones` and `zones`:
 
 ```json
 { "paused": false, "servicePaused": false, "message": "", "resumeAt": null, "scope": null,
@@ -63,7 +63,7 @@ A rider also serves their cohort's zones, so `serviceStatus` adds `partial`, `pa
 ```
 
 - `paused` / `servicePaused` / `message` / `resumeAt` / `scope` are about the **home zone**, as before. (A rider with no home zone counts as paused only when every cohort zone is paused.)
-- `zones`: every zone the rider serves (home zone first, then the active cohort's zones), each with its own pause state.
+- `zones`: every zone the rider serves (home zone first, then their other small zones; pausing a main zone pauses all its small zones), each with its own pause state.
 - `partial: true`: some, but not all, of those zones are paused. Offers still come from the others. Show a lighter banner such as "Orders are paused in Miyapur. You still get orders from Kukatpally." When `paused` is true and `partial` is true, show the paused banner and list the zones still open.
 - `pausedZones`: ids of the paused zones. Empty when nothing is paused.
 
@@ -173,16 +173,20 @@ Stub. Always returns `{ "success": true, "message": "Submitted" }` — no `data`
 Location freshness drives the offer radius (20 km cap), so keep pinging this while online.
 
 ### `GET /food/delivery/service-area`
-The rider's own zones for the map: their home zone plus the zones of their cohort (both set by admin).
+The rider's own zones for the map, set by admin: one **main zone** and the **small zones** inside it the rider serves (Nov 2026; this replaced rider cohorts).
 ```json
 {
-  "homeZone": { "id": "…", "name": "MARKAPURAM BRANCH", "serviceLocation": "Markapuram",
-                "coordinates": [{ "latitude": 15.75, "longitude": 79.27 }, …], "isHomeZone": true },
-  "cohort":   { "id": "…", "name": "Night Shift", "description": "", "isActive": true },
-  "zones":    [ /* homeZone first, then the cohort's zones, same shape */ ]
+  "homeZone": { "id": "…", "name": "Markapuram North", "serviceLocation": "Markapuram",
+                "coordinates": [{ "latitude": 15.75, "longitude": 79.27 }, …],
+                "parentZoneId": "…", "isHomeZone": true, "isSmallZone": true },
+  "mainZone": { "id": "…", "name": "Markapuram", "coordinates": [ … ] },
+  "cohort":   null,
+  "zones":    [ /* homeZone first, then the rider's other small zones, same shape */ ]
 }
 ```
-`homeZone` / `cohort` are `null` when not assigned; `zones` is then empty. Draw `zones[].coordinates` as polygons and highlight `isHomeZone`. A switched-off cohort contributes no zones. Order dispatch does **not** use zones yet (it still goes by distance), so this is display-only for now.
+- Draw `mainZone.coordinates` faintly and `zones[].coordinates` on top; highlight `isHomeZone`.
+- **Dispatch uses this.** An order from a restaurant inside a small zone is only offered to riders whose `zones` include that small zone. It is never widened to other small zones' riders; admin can still assign by hand.
+- `mainZone` is `null` for a rider whose zone has no small zones (then dispatch goes by distance, as before). `cohort` is always `null` and kept only so older builds still parse.
 
 ---
 
@@ -527,7 +531,7 @@ Note the type label differs between endpoints: `earning_addon` in `/wallet`, `bo
 ```
 `activeOffer` is just `offers[0]`, or `null`.
 
-Only offers meant for this rider are listed (an offer can be limited to zones or cohorts). Each offer also has:
+Only offers meant for this rider are listed (an offer can be limited to zones; an offer for a main zone reaches the riders of its small zones). Each offer also has:
 
 - `criteria` (`orders` | `online_hours`), `currentOnlineMinutes`, `targetOnlineMinutes`.
 - `recurrence` (`none` | `daily` | `weekly`), with `periodStart` / `periodEnd` for the run progress is counted over: the whole offer, or the current IST day / Monday–Sunday week. A weekly target restarts every Monday.

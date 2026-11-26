@@ -213,8 +213,7 @@ test('the public list is active verticals only, in the requested language', asyn
 
 // ----- Cohorts -----
 
-test('cohorts: zones are checked, riders join, the service area joins home and cohort zones', async () => {
-    const home = await makeZone('Home Zone');
+test('cohorts (retired screen): zones are checked and names are unique', async () => {
     const extra = await makeZone('Extra Zone');
     await assert.rejects(() => cohorts.createRiderCohort({ name: `Bad ${stamp}`, zoneIds: ['b'.repeat(24)] }), /Unknown zone/);
 
@@ -222,36 +221,56 @@ test('cohorts: zones are checked, riders join, the service area joins home and c
     created.cohorts.push(cohort.id);
     assert.deepEqual(cohort.zoneIds, [extra.id], 'duplicates folded');
     await assert.rejects(() => cohorts.createRiderCohort({ name: `night shift ${stamp}` }), /already exists/);
-
-    const rider = await makeRider();
-    await cohorts.setRiderServiceArea(rider.id, { zoneId: home.id });
-    const added = await cohorts.addRidersToCohort(cohort.id, { riderIds: [rider.id] });
-    assert.equal(added.ridersUpdated, 1);
-
-    const area = await cohorts.getRiderServiceArea(rider.id);
-    assert.equal(area.homeZone.id, home.id);
-    assert.equal(area.cohort.id, cohort.id);
-    assert.deepEqual(area.zones.map((z) => z.id), [home.id, extra.id], 'home zone first');
-    assert.ok(Array.isArray(area.zones[0].coordinates), 'boundary sent for the map');
-
-    const listed = (await cohorts.listRiderCohorts()).cohorts.find((c) => c.id === cohort.id);
-    assert.equal(listed.riderCount, 1);
-    assert.equal(listed.zones[0].id, extra.id);
 });
 
-test('a switched-off cohort adds no zones; clearing with null works', async () => {
-    const zone = await makeZone('Off Zone');
-    const { cohort } = await cohorts.createRiderCohort({ name: `Paused ${stamp}`, zoneIds: [zone.id] });
-    created.cohorts.push(cohort.id);
-    const rider = await makeRider();
-    await cohorts.setRiderServiceArea(rider.id, { cohortId: cohort.id });
-    await cohorts.updateRiderCohort(cohort.id, { isActive: false });
-    assert.deepEqual((await cohorts.getRiderServiceArea(rider.id)).zones, []);
+const makeSmallZone = async (name, parentZoneId) => {
+    const zone = await prisma.foodZone.create({
+        data: {
+            name: `${name} ${stamp}`,
+            parentZoneId,
+            coordinates: [
+                { latitude: 15.71, longitude: 79.21 },
+                { latitude: 15.72, longitude: 79.21 },
+                { latitude: 15.72, longitude: 79.22 },
+            ],
+        },
+    });
+    created.zones.unshift(zone.id); // deleted before its main zone
+    return zone;
+};
 
-    await cohorts.setRiderServiceArea(rider.id, { cohortId: null });
-    assert.equal((await prisma.foodDeliveryPartner.findUnique({ where: { id: rider.id } })).cohortId, null);
+test('rider zones: one main zone, home zone first, small zones listed for the map', async () => {
+    const main = await makeZone('Main Zone');
+    const north = await makeSmallZone('North', main.id);
+    const south = await makeSmallZone('South', main.id);
+    const otherMain = await makeZone('Other Main');
+    const rider = await makeRider();
+
+    await cohorts.setRiderServiceArea(rider.id, { zoneId: north.id, serviceZoneIds: [south.id, north.id, south.id] });
+    const saved = await prisma.foodDeliveryPartner.findUnique({ where: { id: rider.id } });
+    assert.equal(saved.zoneId, north.id);
+    assert.deepEqual(saved.serviceZoneIds, [south.id], 'home zone and duplicates folded out');
+
+    const area = await cohorts.getRiderServiceArea(rider.id);
+    assert.equal(area.homeZone.id, north.id);
+    assert.equal(area.mainZone.id, main.id);
+    assert.equal(area.cohort, null, 'kept for older apps, always empty');
+    assert.deepEqual(area.zones.map((z) => z.id), [north.id, south.id], 'home zone first');
+    assert.ok(area.zones.every((z) => z.isSmallZone));
+    assert.ok(Array.isArray(area.zones[0].coordinates), 'boundary sent for the map');
+
+    await assert.rejects(
+        () => cohorts.setRiderServiceArea(rider.id, { serviceZoneIds: [south.id, otherMain.id] }),
+        /one main zone/,
+    );
+    await assert.rejects(() => cohorts.setRiderServiceArea(rider.id, { serviceZoneIds: ['c'.repeat(24)] }), /valid zone/);
     await assert.rejects(() => cohorts.setRiderServiceArea(rider.id, {}), /Nothing to change/);
-    await assert.rejects(() => cohorts.setRiderServiceArea(rider.id, { cohortId: 'c'.repeat(24) }), /Unknown cohort/);
+
+    // No home zone sent: the first small zone becomes it.
+    await cohorts.setRiderServiceArea(rider.id, { zoneId: null, serviceZoneIds: [south.id] });
+    const moved = await prisma.foodDeliveryPartner.findUnique({ where: { id: rider.id } });
+    assert.equal(moved.zoneId, south.id);
+    assert.deepEqual(moved.serviceZoneIds, []);
 });
 
 test('deleting a cohort releases its riders instead of deleting them', async () => {

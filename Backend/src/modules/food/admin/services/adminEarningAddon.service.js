@@ -7,6 +7,7 @@ import { ValidationError } from '../../../../core/auth/errors.js';
 import {
     normalizeRecurrence, offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, cleanTiers,
 } from '../../shared/incentiveRules.js';
+import { withMainZones, expandZoneFamilies } from '../../shared/zoneHierarchy.js';
 
 /**
  * Rider incentives ("earning addons"), extracted from admin.service.js.
@@ -23,7 +24,7 @@ import {
  * rider and periodKey); the lookup stays as the fast path, the index is what
  * makes it true.
  *
- * An offer can target zones and cohorts, repeat daily or weekly, pay in
+ * An offer can target zones (cohorts were retired), repeat daily or weekly, pay in
  * order-count slabs, and credit itself; the rules are in shared/incentiveRules.js.
  */
 
@@ -96,7 +97,8 @@ const addonFields = async (body = {}) => {
         endDate: body.endDate ? new Date(body.endDate) : undefined,
         maxRedemptions: body.maxRedemptions ?? null,
         zoneIds: await checkIds(body.zoneIds, 'foodZone', 'zoneIds'),
-        cohortIds: await checkIds(body.cohortIds, 'foodRiderCohort', 'cohortIds'),
+        // Rider cohorts were retired: offers target zones (a main zone reaches its small zones).
+        cohortIds: body.cohortIds === undefined ? undefined : [],
         recurrence: body.recurrence === undefined ? undefined : normalizeRecurrence(body.recurrence),
         autoCredit: body.autoCredit === undefined ? undefined : body.autoCredit === true,
         tiers,
@@ -378,15 +380,13 @@ export async function onlineMinutesInWindow(partnerId, from, to) {
     return Math.round(ms / 60000);
 }
 
-/** Zones of each active cohort among the given riders, by cohort id. */
-export async function cohortZonesFor(riders) {
-    const cohortIds = [...new Set(riders.map((r) => r.cohortId).filter(Boolean))];
-    if (!cohortIds.length) return new Map();
-    const cohorts = await prisma.foodRiderCohort.findMany({
-        where: { id: { in: cohortIds }, isActive: true },
-        select: { id: true, zoneIds: true },
-    });
-    return new Map(cohorts.map((c) => [c.id, c.zoneIds || []]));
+/**
+ * The zones a rider counts as serving for offers, besides their home zone:
+ * their small zones, plus the main zone of each, so an offer aimed at a main
+ * zone reaches the riders of its small zones. (Rider cohorts were retired.)
+ */
+export async function riderOfferZones(rider) {
+    return withMainZones([rider?.zoneId, ...(rider?.serviceZoneIds || [])].filter(Boolean));
 }
 
 /**
@@ -418,10 +418,11 @@ export async function checkEarningAddonCompletions(deliveryPartnerId, _force = f
 
     const riders = await prisma.foodDeliveryPartner.findMany({
         where,
-        select: { id: true, zoneId: true, cohortId: true },
+        select: { id: true, zoneId: true, cohortId: true, serviceZoneIds: true },
     });
     if (!riders.length) return { completionsFound: 0, autoCredited: 0 };
-    const cohortZones = await cohortZonesFor(riders);
+    const zonesOf = new Map();
+    for (const r of riders) zonesOf.set(r.id, await riderOfferZones(r));
 
     let completionsFound = 0;
     const toAutoCredit = [];
@@ -429,7 +430,7 @@ export async function checkEarningAddonCompletions(deliveryPartnerId, _force = f
     for (const rider of riders) {
         const partnerId = rider.id;
         for (const offer of activeOffers) {
-            if (!riderTargeted(offer, rider, cohortZones.get(rider.cohortId) || [])) continue;
+            if (!riderTargeted(offer, rider, zonesOf.get(rider.id) || [])) continue;
             const period = offerPeriod(offer, now);
             if (!period) continue;
 
@@ -457,7 +458,7 @@ export async function checkEarningAddonCompletions(deliveryPartnerId, _force = f
                     dispatchDeliveryPartnerId: partnerId,
                     orderStatus: 'delivered',
                     deliveredAt: { gte: period.start, lte: period.end },
-                    ...(offer.zoneIds?.length ? { zoneId: { in: offer.zoneIds } } : {}),
+                    ...(offer.zoneIds?.length ? { zoneId: { in: await expandZoneFamilies(offer.zoneIds) } } : {}),
                 },
             });
             const onlineMinutes =

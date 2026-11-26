@@ -1,4 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
+import { effectiveZoneSettings } from '../../shared/zoneHierarchy.js';
 
 /**
  * Whether cash on delivery may be offered.
@@ -189,12 +190,13 @@ export async function isCodAvailable({ userId, zoneId }) {
         return { allowed: false, reason: 'platform-off', message: codMessage('platform-off') };
     }
 
-    const zone = zoneId
-        ? await prisma.foodZone.findUnique({
-              where: { id: String(zoneId) },
-              select: { codEnabled: true, codMinDeliveredOrders: true },
-          })
-        : null;
+    // A small zone's blank COD switch follows its main zone, and so does a
+    // threshold of 0 (no threshold of its own).
+    const zone = zoneId ? await effectiveZoneSettings(zoneId, ['codEnabled', 'codMinDeliveredOrders']) : null;
+    if (zone?.parentZoneId && !(Number(zone.codMinDeliveredOrders) > 0)) {
+        const main = await effectiveZoneSettings(zone.parentZoneId, ['codMinDeliveredOrders']);
+        zone.codMinDeliveredOrders = Number(main?.codMinDeliveredOrders) || 0;
+    }
 
     // Only counted when a threshold is actually set — otherwise every checkout
     // would pay for a count nothing reads.

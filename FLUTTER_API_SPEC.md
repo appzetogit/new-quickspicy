@@ -124,14 +124,14 @@ Passing `zoneId` restricts the recommendations to that zone.
 Point-in-polygon against active zones. 400 if lat/lng missing.
 ```json
 { "success": true, "message": "Zone detected",
-  "data": { "status": "IN_SERVICE", "zoneId": "…", "zone": { /* full zone doc */ } } }
+  "data": { "status": "IN_SERVICE", "zoneId": "…", "mainZoneId": "…", "zone": { /* full zone doc */ } } }
 ```
 Out of coverage — still HTTP 200:
 ```json
 { "success": true, "message": "Out of service",
   "data": { "status": "OUT_OF_SERVICE", "zoneId": null, "zone": null } }
 ```
-Check `data.status`, not the HTTP code. Cached ~3 min server-side, keyed to 3-decimal-rounded coordinates (~110 m buckets).
+`zoneId` is the tightest zone (a small zone when the point is inside one); `mainZoneId` is the main zone the customer is in (the same id when there are no small zones). Keep sending `zoneId` as before: the server works out the main zone. Check `data.status`, not the HTTP code. Cached ~3 min server-side, keyed to 3-decimal-rounded coordinates (~110 m buckets).
 
 **Ordering paused by the admin (both responses):** `data` also carries `servicePaused` (bool), `serviceMessage`, `resumeAt` (ISO or null) and `serviceStatus: { paused, servicePaused, message, resumeAt, scope: "zone" | "all" | null }`. When `servicePaused` is true, show a popup on the home screen with `serviceMessage` (and "resumes around `resumeAt`" if set), keep a banner, and disable checkout with the same message. Pricing / place order also refuse with that message (`400`), so the app must not rely on the flag alone.
 

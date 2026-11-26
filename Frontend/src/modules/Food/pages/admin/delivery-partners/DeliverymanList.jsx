@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner"
 import { zoneLabel } from "@food/utils/entityLabels"
 import DeliveryDutyLog from "@food/components/admin/DeliveryDutyLog"
+import RiderZonePicker, { mainZoneOfRider } from "@food/components/admin/zones/RiderZonePicker"
 const debugError = () => {}
 
 
@@ -34,7 +35,7 @@ export default function DeliverymanList() {
   const [statusFilter, setStatusFilter] = useState("")
   const [payTypeFilter, setPayTypeFilter] = useState("")
   const [zones, setZones] = useState([])
-  const [cohorts, setCohorts] = useState([])
+  const [detailsMainZoneId, setDetailsMainZoneId] = useState("")
   const [detailsFor, setDetailsFor] = useState(null)
   const [detailsForm, setDetailsForm] = useState({})
   const [savingDetails, setSavingDetails] = useState(false)
@@ -177,14 +178,6 @@ availableCashLimit: wallet?.availableCashLimit || 0,
         setZones(Array.isArray(data.zones) ? data.zones : [])
       })
       .catch(() => setZones([]))
-    // Inactive ones too, so a rider already in one still shows it.
-    adminAPI
-      .getRiderCohorts({ includeInactive: true })
-      .then((res) => {
-        const data = res?.data?.data ?? res?.data ?? {}
-        setCohorts(Array.isArray(data.cohorts) ? data.cohorts : [])
-      })
-      .catch(() => setCohorts([]))
   }, [])
 
   const filteredDeliverymen = useMemo(() => {
@@ -532,13 +525,16 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
   }
 
   const DETAIL_FIELDS = [
-    "zoneId", "cohortId", "payType", "city", "vehicleType", "vehicleName", "vehicleNumber",
+    "zoneId", "payType", "city", "vehicleType", "vehicleName", "vehicleNumber",
     "bankAccountHolderName", "bankAccountNumber", "bankIfscCode", "bankName", "upiId",
   ]
 
   const openDetails = (deliveryman) => {
     setDetailsFor(deliveryman)
-    setDetailsForm(Object.fromEntries(DETAIL_FIELDS.map((k) => [k, deliveryman?.[k] ?? ""])))
+    const form = Object.fromEntries(DETAIL_FIELDS.map((k) => [k, deliveryman?.[k] ?? ""]))
+    form.serviceZoneIds = Array.isArray(deliveryman?.serviceZoneIds) ? deliveryman.serviceZoneIds : []
+    setDetailsForm(form)
+    setDetailsMainZoneId(mainZoneOfRider(zones, form))
   }
 
   const saveDetails = async () => {
@@ -1449,45 +1445,19 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-medium text-slate-600">
-                Zone
-                <select
-                  value={detailsForm.zoneId ?? ""}
-                  onChange={(e) => setDetailsForm((f) => ({ ...f, zoneId: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white"
-                >
-                  <option value="">No zone</option>
-                  {zones.map((z) => (
-                    <option key={z.id || z._id} value={z.id || z._id}>{z.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs font-medium text-slate-600">
-                Cohort (optional)
-                <select
-                  value={detailsForm.cohortId ?? ""}
-                  onChange={(e) => setDetailsForm((f) => ({ ...f, cohortId: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white"
-                >
-                  <option value="">No cohort</option>
-                  {cohorts.map((c) => {
-                    const id = c.id || c._id
-                    const covers = detailsForm.zoneId && (c.zoneIds || []).map(String).includes(String(detailsForm.zoneId))
-                    const names = (c.zones || []).map((z) => z.name).filter(Boolean)
-                    return (
-                      <option key={id} value={id}>
-                        {c.name}
-                        {names.length ? ` (${names.join(", ")})` : ""}
-                        {c.isActive === false ? " [inactive]" : ""}
-                        {covers ? " *" : ""}
-                      </option>
-                    )
-                  })}
-                </select>
-                <span className="mt-1 block text-[11px] text-slate-400">
-                  The rider also serves the cohort's zones. * covers the chosen zone.
-                </span>
-              </label>
+              <div className="text-xs font-medium text-slate-600 sm:col-span-2">
+                Zones
+                <div className="mt-1">
+                  <RiderZonePicker
+                    zones={zones}
+                    mainZoneId={detailsMainZoneId}
+                    onMainZoneChange={setDetailsMainZoneId}
+                    value={{ zoneId: detailsForm.zoneId || "", serviceZoneIds: detailsForm.serviceZoneIds || [] }}
+                    onChange={(v) => setDetailsForm((f) => ({ ...f, zoneId: v.zoneId, serviceZoneIds: v.serviceZoneIds }))}
+                    inputClass="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white"
+                  />
+                </div>
+              </div>
               <label className="text-xs font-medium text-slate-600">
                 Payment type
                 <select

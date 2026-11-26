@@ -177,11 +177,13 @@ const MESSAGES = {
  * = everywhere. A restricted coupon with no known zone is refused: nothing
  * shows the order is inside its area.
  */
-export const offerCoversZone = (offer, zoneId = null, cityId = null) => {
+export const offerCoversZone = (offer, zoneId = null, cityId = null, mainZoneId = null) => {
     const zones = Array.isArray(offer?.zoneIds) ? offer.zoneIds.map(String).filter(Boolean) : [];
     const cities = Array.isArray(offer?.cityIds) ? offer.cityIds.map(String).filter(Boolean) : [];
     if (!zones.length && !cities.length) return true;
     if (zoneId && zones.includes(String(zoneId))) return true;
+    // A coupon for a main zone covers its small zones.
+    if (mainZoneId && zones.includes(String(mainZoneId))) return true;
     if (cityId && cities.includes(String(cityId))) return true;
     return false;
 };
@@ -218,6 +220,7 @@ export const checkOfferEligibility = ({
     priorOrdersHere = 0,
     zoneId = null,
     cityId = null,
+    mainZoneId = null,
 } = {}) => {
     if (!offer) return refuse('not-found');
     const ctx = { subtotal };
@@ -235,7 +238,7 @@ export const checkOfferEligibility = ({
     }
 
     // zoneId/cityId are the restaurant's zone and that zone's city.
-    if (!offerCoversZone(offer, zoneId, cityId)) return refuse('wrong-zone', offer);
+    if (!offerCoversZone(offer, zoneId, cityId, mainZoneId)) return refuse('wrong-zone', offer);
 
     const signedIn = Boolean(userId);
     const scope = normalizeCustomerScope(offer.customerScope);

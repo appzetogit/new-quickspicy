@@ -6,6 +6,7 @@ import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
 import { normalizeMediaUrlForStorage } from '../../../../services/storage.service.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
 import { findZoneForPoint } from '../../shared/zone.service.js';
+import { mainZoneIdOf } from '../../shared/zoneHierarchy.js';
 import { fssaiListingFilter } from './fssaiExpiry.service.js';
 import { parseDayBound } from '../../../../utils/timezone.js';
 import { extractBankChange, requestBankChange, getPendingBankChange } from './bankChange.service.js';
@@ -292,6 +293,7 @@ const attachPublicOffersToRestaurants = async (restaurants = []) => {
     // Zone/city-limited offers only show on cards of restaurants in that area.
     const zoneOfRestaurant = new Map();
     const cityOfZone = new Map();
+    const mainOfZone = new Map();
     if (offers.some(isZoneRestricted)) {
         const rows = await prisma.foodRestaurant.findMany({
             where: { id: { in: restaurantIds } },
@@ -299,11 +301,12 @@ const attachPublicOffersToRestaurants = async (restaurants = []) => {
         });
         for (const r of rows) zoneOfRestaurant.set(r.id, r.zoneId || null);
         for (const [z, c] of await cityIdsOfZones(rows.map((r) => r.zoneId))) cityOfZone.set(z, c);
+        for (const r of rows) if (r.zoneId) mainOfZone.set(r.zoneId, await mainZoneIdOf(r.zoneId));
     }
     const offerFitsRestaurant = (offer, restaurantId) => {
         if (!isZoneRestricted(offer)) return true;
         const zoneId = zoneOfRestaurant.get(restaurantId) || null;
-        return offerCoversZone(offer, zoneId, zoneId ? cityOfZone.get(zoneId) : null);
+        return offerCoversZone(offer, zoneId, zoneId ? cityOfZone.get(zoneId) : null, zoneId ? mainOfZone.get(zoneId) : null);
     };
 
     const globalOfferSummaries = [];
@@ -2254,7 +2257,8 @@ export const listPublicOffers = async (query = {}) => {
 
     // A lunch-only code is not shown at dinner: checkout would refuse it, and
     // advertising a coupon that fails at the till is worse than not showing it.
-    const list = listAll.filter((o) => checkSchedule(o, now).ok && offerCoversZone(o, listZoneId, listCityId));
+    const listMainZoneId = listZoneId ? await mainZoneIdOf(listZoneId) : null;
+    const list = listAll.filter((o) => checkSchedule(o, now).ok && offerCoversZone(o, listZoneId, listCityId, listMainZoneId));
 
     // restaurantIds is a plain array column, so the second .populate() has no
     // relation to walk. Every named restaurant across every offer is fetched

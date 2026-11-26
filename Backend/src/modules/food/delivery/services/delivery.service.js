@@ -9,7 +9,8 @@ import { collectDynamicRegistration } from './driverRegistrationField.service.js
 import { saveRiderActiveOrdersPosition } from './riderPosition.service.js';
 import { TERMINAL_ORDER_STATUSES } from '../../orders/services/order.helpers.js';
 import { offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, normalizeRecurrence } from '../../shared/incentiveRules.js';
-import { onlineMinutesInWindow, cohortZonesFor } from '../../admin/services/adminEarningAddon.service.js';
+import { onlineMinutesInWindow, riderOfferZones } from '../../admin/services/adminEarningAddon.service.js';
+import { expandZoneFamilies } from '../../shared/zoneHierarchy.js';
 import { getSalariedStatus } from './salariedIncentive.service.js';
 import { getRiderCashInHand } from './deliveryFinance.service.js';
 
@@ -1015,14 +1016,14 @@ export const getActiveEarningAddonsForPartner = async (deliveryPartnerId) => {
         }),
         prisma.foodDeliveryPartner.findUnique({
             where: { id: partnerId },
-            select: { id: true, zoneId: true, cohortId: true },
+            select: { id: true, zoneId: true, cohortId: true, serviceZoneIds: true },
         }),
     ]);
     if (!rider) throw new ValidationError('Delivery partner not found');
-    const cohortZones = (await cohortZonesFor([rider])).get(rider.cohortId) || [];
+    const riderZones = await riderOfferZones(rider);
 
     const liveAddons = (addons || []).filter((addon) => {
-        if (!addon || !riderTargeted(addon, rider, cohortZones)) return false;
+        if (!addon || !riderTargeted(addon, rider, riderZones)) return false;
         const maxRedemptions = Number(addon.maxRedemptions);
         if (!Number.isFinite(maxRedemptions) || maxRedemptions <= 0) return true;
         return Number(addon.currentRedemptions || 0) < maxRedemptions;
@@ -1055,7 +1056,7 @@ export const getActiveEarningAddonsForPartner = async (deliveryPartnerId) => {
                 dispatchDeliveryPartnerId: partnerId,
                 orderStatus: 'delivered',
                 deliveredAt: { gte: period.start, lte: period.end },
-                ...(addon.zoneIds?.length ? { zoneId: { in: addon.zoneIds } } : {}),
+                ...(addon.zoneIds?.length ? { zoneId: { in: await expandZoneFamilies(addon.zoneIds) } } : {}),
             };
 
             const [currentOrders, earningsAgg, currentOnlineMinutes] = await Promise.all([

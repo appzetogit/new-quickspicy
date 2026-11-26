@@ -8,6 +8,7 @@ import { parseDayBound } from '../../../../utils/timezone.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { countLiveDeliveryAgents } from './reportDelivery.service.js';
 import { getOnlinePaymentsSummary } from './reportOnlinePayments.service.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * The admin dashboard: headline totals over a preset period or a custom
@@ -212,7 +213,7 @@ async function trend(where, range) {
               OR "paymentStatus" IN ('paid', 'authorized', 'refunded')
           )
           ${since ? Prisma.sql`AND "createdAt" >= ${since}` : Prisma.empty}
-          ${where.zoneId ? Prisma.sql`AND "zoneId" = ${where.zoneId}` : Prisma.empty}
+          ${where.zoneId?.in ? Prisma.sql`AND "zoneId" = ANY(${where.zoneId.in})` : where.zoneId ? Prisma.sql`AND "zoneId" = ${where.zoneId}` : Prisma.empty}
           ${scope ? Prisma.sql`AND "zoneId" = ANY(${scope.zoneIds})` : Prisma.empty}
           ${where.createdAt?.gte ? Prisma.sql`AND "createdAt" >= ${where.createdAt.gte}` : Prisma.empty}
           ${where.createdAt?.lte ? Prisma.sql`AND "createdAt" <= ${where.createdAt.lte}` : Prisma.empty}
@@ -266,7 +267,9 @@ export async function getDashboardStats(query = {}) {
 
     const orderWhere = { ...REAL_ORDER };
     if (range) orderWhere.createdAt = { gte: range.start, lte: range.end };
-    if (zoneId) orderWhere.zoneId = zoneId;
+    // A main zone includes its small zones.
+    const zoneFilter = zoneId ? await zoneMatch(zoneId) : null;
+    if (zoneId) orderWhere.zoneId = zoneFilter;
 
     // The "Online payments received" tile. Started now, awaited at the end; a
     // failure blanks the tile rather than the dashboard.
@@ -278,9 +281,9 @@ export async function getDashboardStats(query = {}) {
         return null;
     });
 
-    const restaurantWhere = zoneId ? { zoneId } : {};
+    const restaurantWhere = zoneId ? { zoneId: zoneFilter } : {};
     // Menu counts follow the zone through the restaurant that owns the dish.
-    const menuScope = zoneId ? { restaurant: { zoneId } } : {};
+    const menuScope = zoneId ? { restaurant: { zoneId: zoneFilter } } : {};
 
     const [
         statusCounts,

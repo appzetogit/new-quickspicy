@@ -27,7 +27,10 @@ export const reportFilters = (query = {}) => {
 export const zoneScopeSql = (zoneId, alias = 'o') => {
     const column = Prisma.raw(`${alias}."zoneId"`);
     const parts = [];
-    if (zoneId) parts.push(Prisma.sql`AND ${column} = ${zoneId}`);
+    // A main zone comes as { in: [...] } (see zoneMatch): itself and its small zones.
+    if (zoneId && Array.isArray(zoneId.in)) {
+        parts.push(zoneId.in.length ? Prisma.sql`AND ${column} IN (${Prisma.join(zoneId.in)})` : Prisma.sql`AND FALSE`);
+    } else if (zoneId) parts.push(Prisma.sql`AND ${column} = ${zoneId}`);
     const scope = currentAdminScope();
     if (scope) {
         parts.push(scope.zoneIds?.length

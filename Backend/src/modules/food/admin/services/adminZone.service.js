@@ -3,6 +3,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { resolveZoneCity } from './adminCity.service.js';
 import { invalidateActiveZonesCache } from '../../landing/controllers/zonePublic.controller.js';
+import { invalidateZoneTree } from '../../shared/zoneHierarchy.js';
 
 /**
  * Service-zone CRUD, extracted from the 6,258-line admin.service.js.
@@ -19,6 +20,93 @@ const normalizeRing = (coordinates) =>
         longitude: Number(c.longitude) || 0,
     }));
 
+/**
+ * Main zones and small zones (see shared/zoneHierarchy.js).
+ *
+ * The parent a request names, checked: it must exist, be a main zone itself
+ * (one level only), and not be the zone being saved. `undefined` = not sent,
+ * null = "make this a main zone".
+ */
+async function resolveParentZone(body, selfId = null, db = prisma) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'parentZoneId')) return undefined;
+    const raw = body.parentZoneId;
+    if (raw === null || raw === '' || raw === undefined) return null;
+    if (!isId(raw)) throw new ValidationError('Choose a valid main zone');
+    const id = String(raw);
+    if (selfId && id === String(selfId)) throw new ValidationError('A zone cannot be inside itself');
+    const parent = await db.foodZone.findUnique({
+        where: { id },
+        select: { id: true, name: true, parentZoneId: true, cityId: true, city: true },
+    });
+    if (!parent) throw new ValidationError('That main zone no longer exists');
+    if (parent.parentZoneId) {
+        throw new ValidationError(`${parent.name} is itself a small zone. Pick a main zone.`);
+    }
+    return parent;
+}
+
+/**
+ * How far a small zone may poke out of its main zone and still count as
+ * inside, in degrees (about 5 m). Two shapes drawn by hand along the same road
+ * never share an edge exactly.
+ */
+const EDGE_TOLERANCE_DEG = 0.00005;
+/** Overlap smaller than this (square degrees, roughly 100 m²) is a drawing slip, not an overlap. */
+const OVERLAP_TOLERANCE = 1e-8;
+
+/**
+ * After a write, inside the same transaction: a small zone must lie inside its
+ * main zone and not overlap the other small zones of that main zone; a main
+ * zone that was redrawn must still contain all its small zones. Throws, which
+ * rolls the write back.
+ */
+async function assertZoneShapes(tx, zoneId) {
+    const [zone] = await tx.$queryRaw`
+        SELECT "id", "name", "parentZoneId", "boundary" IS NOT NULL AS "hasShape"
+        FROM "food_zones" WHERE "id" = ${zoneId}`;
+    if (!zone || !zone.hasShape) return;
+
+    if (zone.parentZoneId) {
+        const [inside] = await tx.$queryRaw`
+            SELECT p."name",
+                   ST_Covers(ST_Buffer(p."boundary"::geometry, ${EDGE_TOLERANCE_DEG}), z."boundary"::geometry) AS "covered"
+            FROM "food_zones" z JOIN "food_zones" p ON p."id" = z."parentZoneId"
+            WHERE z."id" = ${zoneId}`;
+        if (inside && inside.covered === false) {
+            throw new ValidationError(`The small zone must be drawn inside its main zone (${inside.name}).`);
+        }
+        const overlaps = await tx.$queryRaw`
+            SELECT s."name"
+            FROM "food_zones" z
+            JOIN "food_zones" s
+              ON s."parentZoneId" = z."parentZoneId" AND s."id" <> z."id" AND s."boundary" IS NOT NULL
+            WHERE z."id" = ${zoneId}
+              AND ST_Area(ST_Intersection(s."boundary"::geometry, z."boundary"::geometry)) > ${OVERLAP_TOLERANCE}`;
+        if (overlaps.length) {
+            throw new ValidationError(
+                `Small zones of the same main zone cannot overlap. This one overlaps ${overlaps.map((o) => o.name).join(', ')}.`,
+            );
+        }
+        return;
+    }
+
+    const outside = await tx.$queryRaw`
+        SELECT s."name"
+        FROM "food_zones" s JOIN "food_zones" z ON z."id" = s."parentZoneId"
+        WHERE z."id" = ${zoneId} AND s."boundary" IS NOT NULL
+          AND NOT ST_Covers(ST_Buffer(z."boundary"::geometry, ${EDGE_TOLERANCE_DEG}), s."boundary"::geometry)`;
+    if (outside.length) {
+        throw new ValidationError(
+            `The main zone must still contain its small zones. Outside it now: ${outside.map((o) => o.name).join(', ')}.`,
+        );
+    }
+}
+
+const zoneWritten = () => {
+    invalidateZoneTree();
+    void invalidateActiveZonesCache();
+};
+
 export async function getZones(query = {}) {
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 100, 1), 1000);
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
@@ -33,6 +121,11 @@ export async function getZones(query = {}) {
         where.isActive = isActive === 'true' || isActive === '1';
     }
     if (isId(query.cityId)) where.cityId = String(query.cityId);
+    // ?kind=main -> main zones only, ?kind=small -> small zones only;
+    // ?parentZoneId= -> the small zones of one main zone.
+    if (query.kind === 'main') where.parentZoneId = null;
+    else if (query.kind === 'small') where.parentZoneId = { not: null };
+    if (isId(query.parentZoneId)) where.parentZoneId = String(query.parentZoneId);
     if (city) {
         // Exact, not contains: the filter is fed from the city list below, so a
         // loose match would make "Indore" also select "Indore Rural".
@@ -55,12 +148,30 @@ export async function getZones(query = {}) {
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
-            include: { cityRef: { select: { id: true, name: true } } },
+            include: {
+                cityRef: { select: { id: true, name: true } },
+                parentZone: { select: { id: true, name: true } },
+                _count: { select: { smallZones: true } },
+            },
         }),
         prisma.foodZone.count({ where }),
     ]);
 
-    return { zones, total, page, limit };
+    return { zones: zones.map(withKind), total, page, limit };
+}
+
+/**
+ * kind: 'main' (has small zones), 'small' (inside a main zone) or 'zone' (a
+ * plain zone with neither, which is also a main zone to everything else).
+ */
+function withKind(zone) {
+    const { _count, ...rest } = zone;
+    const smallZoneCount = _count?.smallZones ?? 0;
+    return {
+        ...rest,
+        smallZoneCount,
+        kind: rest.parentZoneId ? 'small' : smallZoneCount > 0 ? 'main' : 'zone',
+    };
 }
 
 /**
@@ -87,7 +198,15 @@ export async function getZoneCities() {
 
 export async function getZoneById(id) {
     if (!isId(id)) return null;
-    return prisma.foodZone.findUnique({ where: { id: String(id) } });
+    const zone = await prisma.foodZone.findUnique({
+        where: { id: String(id) },
+        include: {
+            parentZone: { select: { id: true, name: true, coordinates: true } },
+            smallZones: { select: { id: true, name: true, coordinates: true, isActive: true }, orderBy: { name: 'asc' } },
+            _count: { select: { smallZones: true } },
+        },
+    });
+    return zone ? withKind(zone) : null;
 }
 
 export async function createZone(body = {}) {
@@ -104,25 +223,33 @@ export async function createZone(body = {}) {
         return { error: 'At least 3 coordinates (polygon points) are required' };
     }
 
-    // Every new zone belongs to a city; the name typed is matched to one.
-    const cityRow = await resolveZoneCity(body);
+    // A small zone is in its main zone's city; anything else names its own.
+    const parent = await resolveParentZone(body);
+    const cityRow = parent?.cityId
+        ? { id: parent.cityId, name: parent.city }
+        : await resolveZoneCity(body);
     if (!cityRow) return { error: 'Choose the city this zone is in' };
 
-    const zone = await prisma.foodZone.create({
-        data: {
-            cityId: cityRow.id,
-            name,
-            zoneName: body.zoneName?.trim() || name,
-            country: body.country?.trim() || 'India',
-            serviceLocation: body.serviceLocation?.trim() || name,
-            city: cityRow.name,
-            unit: body.unit === 'miles' ? 'miles' : 'kilometer',
-            coordinates,
-            isActive: body.isActive !== false,
-        },
+    const zone = await prisma.$transaction(async (tx) => {
+        const row = await tx.foodZone.create({
+            data: {
+                cityId: cityRow.id,
+                name,
+                zoneName: body.zoneName?.trim() || name,
+                country: body.country?.trim() || 'India',
+                serviceLocation: body.serviceLocation?.trim() || name,
+                city: cityRow.name,
+                unit: body.unit === 'miles' ? 'miles' : 'kilometer',
+                coordinates,
+                isActive: body.isActive !== false,
+                parentZoneId: parent ? parent.id : null,
+            },
+        });
+        await assertZoneShapes(tx, row.id);
+        return row;
     });
 
-    void invalidateActiveZonesCache();
+    zoneWritten();
     return { zone };
 }
 
@@ -136,12 +263,33 @@ export async function updateZone(id, body = {}) {
     if (body.name !== undefined) data.name = String(body.name).trim();
     if (body.zoneName !== undefined) data.zoneName = String(body.zoneName).trim();
     if (body.country !== undefined) data.country = String(body.country).trim();
-    const cityRow = await resolveZoneCity(body);
-    if (cityRow) {
-        data.cityId = cityRow.id;
-        data.city = cityRow.name;
-    } else if (cityRow === null) {
-        throw new ValidationError('Choose the city this zone is in');
+
+    const parent = await resolveParentZone(body, existing.id);
+    if (parent !== undefined) {
+        if (parent) {
+            const hasSmallZones = await prisma.foodZone.count({ where: { parentZoneId: existing.id } });
+            if (hasSmallZones) {
+                throw new ValidationError('This zone has small zones of its own, so it cannot go inside another zone.');
+            }
+        }
+        data.parentZoneId = parent ? parent.id : null;
+    }
+    const effectiveParent = parent !== undefined ? parent : existing.parentZoneId
+        ? await prisma.foodZone.findUnique({ where: { id: existing.parentZoneId }, select: { cityId: true, city: true } })
+        : null;
+
+    if (effectiveParent?.cityId) {
+        // A small zone is always in its main zone's city.
+        data.cityId = effectiveParent.cityId;
+        data.city = effectiveParent.city;
+    } else {
+        const cityRow = await resolveZoneCity(body);
+        if (cityRow) {
+            data.cityId = cityRow.id;
+            data.city = cityRow.name;
+        } else if (cityRow === null) {
+            throw new ValidationError('Choose the city this zone is in');
+        }
     }
     if (body.codEnabled !== undefined) {
         // null is a real answer here -- "follow the platform" -- and is not the
@@ -170,19 +318,45 @@ export async function updateZone(id, body = {}) {
         data.serviceLocation = nextName;
     }
 
-    const zone = await prisma.foodZone.update({ where: { id: existing.id }, data });
-    void invalidateActiveZonesCache();
+    const zone = await prisma.$transaction(async (tx) => {
+        const row = await tx.foodZone.update({ where: { id: existing.id }, data });
+        await assertZoneShapes(tx, row.id);
+        return row;
+    });
+
+    // A main zone's city moves its small zones with it.
+    if (!zone.parentZoneId && data.cityId) {
+        await prisma.foodZone.updateMany({
+            where: { parentZoneId: zone.id },
+            data: { cityId: data.cityId, city: data.city },
+        });
+    }
+
+    zoneWritten();
     return { zone };
 }
 
 export async function deleteZone(id) {
     if (!isId(id)) return null;
 
+    const smallZones = await prisma.foodZone.count({ where: { parentZoneId: String(id) } });
+    if (smallZones) {
+        throw new ValidationError(
+            `This main zone has ${smallZones} small zone${smallZones === 1 ? '' : 's'}. Delete or move them first.`,
+        );
+    }
+
     // deleteMany, so a zone that has already gone returns null rather than
     // throwing P2025 out of the controller.
     const { count } = await prisma.foodZone.deleteMany({ where: { id: String(id) } });
     if (!count) return null;
 
-    void invalidateActiveZonesCache();
+    // Riders lose the deleted zone from the zones they serve.
+    await prisma.$executeRaw`
+        UPDATE "food_delivery_partners"
+        SET "serviceZoneIds" = array_remove("serviceZoneIds", ${String(id)})
+        WHERE ${String(id)} = ANY("serviceZoneIds")`;
+
+    zoneWritten();
     return { id: String(id) };
 }

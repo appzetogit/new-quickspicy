@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { currentAdminScope } from '../../../../core/roles/adminScope.context.js';
 import { createdAtIn, fromPaise, num, pageOf, resolveDayWindow, resolveZoneFilter, toPaise } from './reportDays.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * Online payments received: money that came in through Razorpay.
@@ -65,7 +66,7 @@ const statusLabel = (order) => {
  * `window` is { gte, lte } (or null for all time), `zoneId` an id or null.
  */
 export async function getOnlinePaymentsSummary({ window = null, zoneId = null } = {}) {
-    const where = onlineOrderWhere(window, zoneId);
+    const where = onlineOrderWhere(window, await zoneMatch(zoneId));
     const withTopups = topupsVisible(zoneId);
     const [split, whole, refunds, topups] = await Promise.all([
         prisma.foodOrder.aggregate({
@@ -128,7 +129,7 @@ export async function getOnlinePaymentsReport(query = {}) {
     const [orders, topups] = await Promise.all([
         showOrders
             ? prisma.foodOrder.findMany({
-                where: onlineOrderWhere(window, zoneId),
+                where: onlineOrderWhere(window, await zoneMatch(zoneId)),
                 orderBy: { createdAt: 'desc' },
                 take,
                 select: {

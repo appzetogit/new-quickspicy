@@ -325,6 +325,9 @@ export default function CodPayments() {
                             {zone?.name || "Unnamed zone"}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5">{zone?.city || "No city set"}</p>
+                          {zone?.parentZoneName ? (
+                            <p className="text-xs text-emerald-700 mt-0.5">Small zone in {zone.parentZoneName}</p>
+                          ) : null}
                         </div>
 
                         <div className="xl:w-72">
@@ -342,7 +345,7 @@ export default function CodPayments() {
                                     : "bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                               >
-                                {mode.label}
+                                {mode.value === FOLLOW && zone?.parentZoneId ? "Follow main zone" : mode.label}
                               </button>
                             ))}
                           </div>
@@ -387,7 +390,7 @@ export default function CodPayments() {
                                     : "bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                               >
-                                {mode.label}
+                                {mode.value === FOLLOW && zone?.parentZoneId ? "Follow main zone" : mode.label}
                               </button>
                             ))}
                           </div>

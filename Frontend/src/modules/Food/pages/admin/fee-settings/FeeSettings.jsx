@@ -543,7 +543,7 @@ export default function FeeSettings() {
               <option value="">All zones (default)</option>
               {zones.map((zone) => (
                 <option key={zone.id || zone._id} value={zone.id || zone._id}>
-                  {zone.name || zone.zoneName}
+                  {zone.name || zone.zoneName}{zone.parentZone?.name ? ` (small zone in ${zone.parentZone.name}; blanks follow it)` : ""}
                 </option>
               ))}
             </select>

@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { uploadImageBufferDetailed } from '../../../../services/cloudinary.service.js';
+import { withMainZones, loadZoneTree } from '../../shared/zoneHierarchy.js';
 
 /**
  * The platform's own identity: company details, the three apps' logos, their
@@ -188,7 +189,8 @@ export const getServiceStatus = async (zoneIds = []) => {
     const pause = pausePayload(await prisma.foodBusinessSettings.findFirst({
         select: { ordersPaused: true, ordersPausedZoneIds: true, ordersPausedMessage: true, ordersPausedUntil: true },
     }));
-    const zones = (Array.isArray(zoneIds) ? zoneIds : [zoneIds]).filter(Boolean).map(String);
+    // Pausing a main zone pauses its small zones.
+    const zones = await withMainZones(zoneIds);
     const hit = pause.active && (!pause.zoneIds.length || zones.some((z) => pause.zoneIds.includes(z)));
     return {
         paused: hit,
@@ -210,8 +212,11 @@ const zonePauseDetail = async (zoneIds, homeZoneId, pause) => {
         select: { id: true, name: true, zoneName: true },
     });
     const nameOf = new Map(rows.map((z) => [z.id, z.zoneName || z.name || '']));
+    const tree = await loadZoneTree(zoneIds.find(Boolean) || null);
     return zoneIds.map((zoneId) => {
-        const hit = pause.active && (!pause.zoneIds.length || pause.zoneIds.includes(zoneId));
+        const parent = tree.get(zoneId)?.parentZoneId;
+        const hit = pause.active && (!pause.zoneIds.length || pause.zoneIds.includes(zoneId)
+            || Boolean(parent && pause.zoneIds.includes(parent)));
         return {
             zoneId,
             name: nameOf.get(zoneId) || '',
@@ -227,8 +232,8 @@ const zonePauseDetail = async (zoneIds, homeZoneId, pause) => {
  * The service status for a signed-in restaurant or rider, by their zone(s).
  *
  * Existing fields ({ paused, servicePaused, message, resumeAt, scope }) are
- * about the home zone, as before. Riders also serve their active cohort's
- * zones, so the status adds:
+ * about the home zone, as before. Riders also serve their small zones (serviceZoneIds),
+ * so the status adds:
  *  - zones: [{ zoneId, name, home, paused, message, resumeAt }] for every
  *    zone served (home first);
  *  - pausedZones: ids of the paused ones;
@@ -247,16 +252,10 @@ export const getServiceStatusForAccount = async (role, id) => {
     } else if (role === 'DELIVERY_PARTNER') {
         const rider = await prisma.foodDeliveryPartner.findUnique({
             where: { id: String(id) },
-            select: { zoneId: true, cohortId: true },
+            select: { zoneId: true, serviceZoneIds: true },
         });
         homeZoneId = rider?.zoneId || null;
-        if (rider?.cohortId) {
-            const cohort = await prisma.foodRiderCohort.findUnique({
-                where: { id: rider.cohortId },
-                select: { zoneIds: true, isActive: true },
-            });
-            if (cohort?.isActive) extraZoneIds = cohort.zoneIds || [];
-        }
+        extraZoneIds = rider?.serviceZoneIds || [];
     }
     const zoneIds = [...new Set([homeZoneId, ...extraZoneIds].filter((z) => z && ID_RE.test(String(z))).map(String))];
 
@@ -295,7 +294,8 @@ export const assertOrderingNotPaused = async (zoneIds = []) => {
         select: { ordersPaused: true, ordersPausedZoneIds: true, ordersPausedMessage: true, ordersPausedUntil: true },
     }));
     if (!pause.active) return;
-    const zones = (Array.isArray(zoneIds) ? zoneIds : [zoneIds]).filter(Boolean).map(String);
+    // Pausing a main zone pauses its small zones.
+    const zones = await withMainZones(zoneIds);
     const hit = !pause.zoneIds.length || zones.some((z) => pause.zoneIds.includes(z));
     if (hit) throw new ValidationError(pause.message || DEFAULT_PAUSE_MESSAGE);
 };

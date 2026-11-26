@@ -30,7 +30,22 @@ New admin endpoints, for the admin panel or any admin tool. All are under
 - DELETE takes `:id` out of its group. A group left with a single restaurant is dissolved.
 - Customers see the other outlets at `GET /food/restaurant/restaurants/:id/outlets`. List cards carry `outletCount`.
 
-## Rider cohorts and service areas — `delivery_management`
+## Main zones and small zones — `zone_setup` / `delivery_management`
+
+A zone with `parentZoneId` is a **small zone** inside a **main zone** (one level only). Customers order anywhere in the main zone. A small zone only decides which riders get an order: the restaurant's small zone, and only riders who serve it (never widened). Settings left blank on a small zone (COD, online payment, delivery/platform fee, surge, dispatch mode, home settings) follow the main zone, then the platform. Pausing a main zone pauses its small zones; coupons, banners, categories and incentive offers set on a main zone also cover its small zones; report zone filters on a main zone include its small zones.
+
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| GET | `/zones` | `?kind=main|small`, `?parentZoneId=` | each zone adds `parentZoneId`, `parentZone: { id, name }`, `smallZoneCount`, `kind: "main"|"small"|"zone"` |
+| POST / PUT | `/zones`, `/zones/:id` | `parentZoneId` (null = main zone) | 400 if the small zone is outside its main zone, overlaps a sibling, or the main zone would no longer contain its small zones |
+| DELETE | `/zones/:id` | — | 400 while the main zone still has small zones |
+| PATCH | `/delivery/:id/service-area` | `{ zoneId?, serviceZoneIds? }` | `{ rider: { id, name, zoneId, serviceZoneIds } }` — all in one main zone |
+
+Add / Edit Deliveryman take `zoneId` (home zone) and `serviceZoneIds` (JSON list in multipart) the same way.
+
+## Rider cohorts (retired) — `delivery_management`
+
+Replaced by main/small zones in Nov 2026. The screen is gone and dispatch no longer reads cohorts; active cohorts' zones were copied into their riders' `serviceZoneIds`, and incentive offers aimed at cohorts now aim at those zones. The endpoints below still answer for old data.
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
@@ -39,7 +54,6 @@ New admin endpoints, for the admin panel or any admin tool. All are under
 | PATCH | `/delivery/cohorts/:id` | any of the above | `{ cohort }` |
 | DELETE | `/delivery/cohorts/:id` | — | `{ deleted: true, ridersReleased }` |
 | POST | `/delivery/cohorts/:id/riders` | `{ riderIds: ["…"] }` (max 500) | `{ cohortId, ridersUpdated }` |
-| PATCH | `/delivery/:id/service-area` | `{ zoneId?, cohortId? }` (`null` clears) | `{ rider: { id, name, zoneId, cohortId } }` |
 
 - A rider has one home zone and at most one cohort; adding riders to a cohort moves them out of any other.
 - Deleting a cohort leaves its riders with no cohort; it never deletes riders.
@@ -54,7 +68,7 @@ New admin endpoints, for the admin panel or any admin tool. All are under
 | PATCH | `/dispatch/zones/:zoneId` | `{ ridersFromZoneOnly: true\|false }` and/or `{ dispatchMode: null\|"auto"\|"manual" }` | `{ zoneId, ridersFromZoneOnly?, dispatchMode?, effectiveMode? }` |
 
 - Off (the default), a zone's orders go to the nearest free rider, as before.
-- On, auto dispatch only offers the zone's orders to riders who **serve** it: their home zone is that zone, or their cohort (if active) lists it. Others are skipped as if busy.
+- On, auto dispatch only offers the zone's orders to riders who **serve** it: their home zone or `serviceZoneIds` include it (for a main zone, any of its small zones counts). Others are skipped as if busy. **Small zones are always on**, whatever this switch says; `ridersFromZoneOnly` is reported `true` for them, with `parentZoneId` / `parentZoneName`.
 - In the manual picker (`GET /orders/:id/eligible-riders`) each rider has `servesZone`. Assigning a rider who doesn't serve a restricted zone needs `force: true` and a `reason`, like a rider outside the zone.
 - A body with only `ridersFromZoneOnly` leaves the dispatch mode alone.
 

@@ -1,5 +1,6 @@
 import { prisma } from '../../../../config/prisma.js';
 import { num, reportFilters } from './reportFilters.helpers.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * Cancellation & refund report.
@@ -71,7 +72,8 @@ export function refundSummary(order) {
 const MAX_ORDERS = 20000;
 
 export async function getCancellationReport(query = {}) {
-    const { createdAt, zoneId, restaurantId } = reportFilters(query);
+    const { createdAt, zoneId: pickedZone, restaurantId } = reportFilters(query);
+    const zoneId = await zoneMatch(pickedZone);
     const listLimit = Math.min(Math.max(parseInt(query.limit, 10) || 500, 1), 2000);
     const actorFilter = ACTORS.includes(query.actor) ? query.actor : null;
 

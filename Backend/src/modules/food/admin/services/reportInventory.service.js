@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { num, reportFilters } from './reportFilters.helpers.js';
 import { fromFoodTypeColumn } from '../../shared/foodType.util.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * Inventory & stock: what each restaurant can sell right now.
@@ -26,7 +27,8 @@ const outOfStockWhere = (now) => ({
 });
 
 export async function getInventoryReport(query = {}) {
-    const { zoneId, restaurantId } = reportFilters(query);
+    const { zoneId: pickedZone, restaurantId } = reportFilters(query);
+    const zoneId = await zoneMatch(pickedZone);
     const search = String(query.search || '').trim().slice(0, 60);
     const now = new Date();
 

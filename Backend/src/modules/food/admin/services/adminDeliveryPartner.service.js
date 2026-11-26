@@ -3,7 +3,7 @@ import { BRAND_IMAGE_URL } from '../../../../config/brand.js';
 import { isId } from '../../../../utils/helpers.js';
 import { NotFoundError, ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
-import { resolveCohortId } from './adminRiderCohort.service.js';
+import { resolveRiderZones } from './adminRiderCohort.service.js';
 import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
 
 /**
@@ -194,7 +194,7 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         zone: doc.zone?.name || doc.city || doc.state || doc.address || '',
         zoneId: doc.zoneId || null,
         zoneName: doc.zone?.name || '',
-        cohortId: doc.cohortId || null,
+        serviceZoneIds: doc.serviceZoneIds || [],
         /// 'gig' (paid per order) | 'salaried'.
         payType: doc.payType || 'gig',
         city: doc.city || '',
@@ -707,17 +707,11 @@ async function editableRiderFields(partner, body = {}) {
     const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
     const text = (key) => String(body[key] ?? '').trim();
 
-    if (has('zoneId')) {
-        const zoneId = text('zoneId');
-        if (zoneId) {
-            if (!isId(zoneId)) throw new ValidationError('Choose a valid zone');
-            const zone = await prisma.foodZone.findUnique({ where: { id: zoneId }, select: { id: true } });
-            if (!zone) throw new ValidationError('Choose a valid zone');
-        }
-        data.zoneId = zoneId || null;
-    }
-    // Optional cohort: adds its zones to the ones the rider may serve ('' clears it).
-    if (has('cohortId')) data.cohortId = await resolveCohortId(body.cohortId ?? null);
+    // Home zone plus the other small zones of their main zone.
+    Object.assign(data, await resolveRiderZones(body, {
+        zoneId: partner.zoneId || null,
+        serviceZoneIds: partner.serviceZoneIds || [],
+    }));
     // Gig (per order) or salaried (first N orders a day covered by salary).
     if (has('payType')) {
         const payType = text('payType').toLowerCase();

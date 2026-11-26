@@ -9,6 +9,7 @@ import {
 import { findZoneForPoint } from '../../shared/zone.service.js';
 import { attachOutletTimingsToRestaurants } from '../../restaurant/services/outletTimings.service.js';
 import { withOpenStatus } from '../../restaurant/helpers/restaurantAvailability.helper.js';
+import { withMainZones } from '../../shared/zoneHierarchy.js';
 
 /**
  * Banners that open a restaurant.
@@ -157,13 +158,15 @@ export const withoutOfflineRestaurants = async (banners = []) => {
  * when the request said nothing about where the customer is.
  */
 export const resolveBannerZoneId = async ({ zoneId, lat, lng } = {}) => {
-    if (isId(zoneId)) return String(zoneId);
+    // A customer in a small zone also sees their main zone's banners, so a
+    // found zone comes back as [zone, its main zone].
+    if (isId(zoneId)) return withMainZones([String(zoneId)]);
     if (lat === undefined || lat === null || lat === '' || lng === undefined || lng === null || lng === '') return undefined;
     const latitude = Number(lat);
     const longitude = Number(lng);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
     const zone = await findZoneForPoint(latitude, longitude);
-    return zone?.id || null;
+    return zone?.id ? withMainZones([zone.id]) : null;
 };
 
 /**
@@ -178,6 +181,9 @@ export const resolveBannerZoneId = async ({ zoneId, lat, lng } = {}) => {
  */
 export const bannerZoneWhere = (zoneId) => {
     if (zoneId === undefined) return {};
+    if (Array.isArray(zoneId)) {
+        return zoneId.length ? { OR: [{ zoneId: null }, { zoneId: { in: zoneId } }] } : { zoneId: null };
+    }
     return zoneId ? { OR: [{ zoneId: null }, { zoneId }] } : { zoneId: null };
 };
 

@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { dayRange } from '../../../../utils/timezone.js';
+import { zoneMatch } from '../../shared/zoneHierarchy.js';
 
 /**
  * Delivery performance report and the dashboard's "Live delivery agents" tile.
@@ -129,7 +130,7 @@ const summarise = (timings) => {
 export async function deliveryPerformanceReport(q = {}) {
     const now = new Date();
     const { start, end, explicit } = resolveRange(q, now);
-    const zoneId = isId(q.zoneId) ? String(q.zoneId) : null;
+    const zoneId = isId(q.zoneId) ? await zoneMatch(String(q.zoneId)) : null;
     const riderId = isId(q.deliveryPartnerId || q.riderId) ? String(q.deliveryPartnerId || q.riderId) : null;
     const fixedLate = Number(q.lateAfterMinutes);
     const lateAfterMinutes = Number.isFinite(fixedLate) && fixedLate > 0 ? Math.round(fixedLate) : null;
@@ -271,7 +272,7 @@ export async function countLiveDeliveryAgents(zoneId = null, now = new Date()) {
         status: 'approved',
         availabilityStatus: 'online',
         deletedAt: null,
-        ...(isId(zoneId) ? { zoneId: String(zoneId) } : {}),
+        ...(isId(zoneId) ? { zoneId: await zoneMatch(String(zoneId)) } : {}),
     };
     const freshSince = new Date(now.getTime() - LIVE_LOCATION_MINUTES * MIN);
     const [online, live] = await Promise.all([

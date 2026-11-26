@@ -5,7 +5,7 @@ import { registerDeliveryPartner } from '../../delivery/services/delivery.servic
 import { findDeliveryPartnerByPhone } from '../../../../core/auth/onboardingGate.js';
 import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
-import { resolveCohortId } from '../services/adminRiderCohort.service.js';
+import { resolveRiderZones } from '../services/adminRiderCohort.service.js';
 
 /** Multipart sends booleans as strings. Missing means yes: approved at once. */
 const wantsApproved = (value) => !['false', '0', 'no', 'off'].includes(String(value ?? 'true').trim().toLowerCase());
@@ -72,15 +72,11 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
             throw new ValidationError('A delivery partner with this phone already exists');
         }
 
-        let zoneId = null;
-        if (body.zoneId) {
-            if (!isId(body.zoneId)) throw new ValidationError('Choose a valid zone');
-            const zone = await prisma.foodZone.findUnique({ where: { id: String(body.zoneId) }, select: { id: true } });
-            if (!zone) throw new ValidationError('Choose a valid zone');
-            zoneId = zone.id;
-        }
-        // Optional cohort, checked before the rider is created ('' or missing: none).
-        const cohortId = (await resolveCohortId(body.cohortId)) || null;
+        // Home zone plus the other small zones of their main zone, checked
+        // before the rider is created.
+        const zones = await resolveRiderZones(body, {});
+        const zoneId = zones.zoneId || null;
+        const serviceZoneIds = zones.serviceZoneIds || [];
         // Gig (paid per order, the default) or salaried.
         const payType = String(body.payType || 'gig').trim().toLowerCase();
         if (!['gig', 'salaried'].includes(payType)) throw new ValidationError('Payment type must be gig or salaried');
@@ -97,10 +93,10 @@ export async function createDeliveryPartnerByAdmin(req, res, next) {
             body,
             { createdByAdmin: true, adminId: req.user?.userId || null, approve, zoneId },
         );
-        if (cohortId || payType !== 'gig') {
+        if (serviceZoneIds.length || payType !== 'gig') {
             await prisma.foodDeliveryPartner.update({
                 where: { id: partner.id },
-                data: { ...(cohortId ? { cohortId } : {}), ...(payType !== 'gig' ? { payType } : {}) },
+                data: { ...(serviceZoneIds.length ? { serviceZoneIds } : {}), ...(payType !== 'gig' ? { payType } : {}) },
             });
         }
         res.status(201).json({

@@ -15,6 +15,7 @@ import { resolveOrderCartItems } from '../helpers/order-cart-items.helper.js';
 import { checkOfferEligibility, computeOfferDiscount, isZoneRestricted } from '../../shared/offerRules.js';
 import { getTipSettings } from '../../admin/services/tip.service.js';
 import { assertItemQuantities, loadOrderLimits } from '../../shared/orderLimits.js';
+import { zoneChain, withMainZones, mainZoneIdOf } from '../../shared/zoneHierarchy.js';
 
 /**
  * Whether a tip given at checkout is allowed. Pure, so it is tested without a
@@ -412,12 +413,17 @@ const FEE_QUERY = {
  * the two, and a zone that genuinely wants no delivery fee can set it to 0.
  */
 export async function loadActiveFeeSettings(zoneId = null) {
-  const zoned = isId(zoneId)
-    ? await prisma.foodFeeSettings.findFirst({
-        where: { isActive: true, zoneId: String(zoneId) },
-        ...FEE_QUERY,
-      })
-    : null;
+  // A small zone's blanks follow its main zone, then the platform default.
+  const [ownZoneId, mainZoneId] = await zoneChain(zoneId);
+  const zoneRow = (id) =>
+    id
+      ? prisma.foodFeeSettings.findFirst({ where: { isActive: true, zoneId: String(id) }, ...FEE_QUERY })
+      : null;
+  const [ownRow, mainRow] = await Promise.all([zoneRow(ownZoneId), zoneRow(mainZoneId)]);
+  const zoned = ownRow || mainRow;
+  // What the zone row's blanks fall back to: the main zone's row (itself
+  // inheriting from the platform), or the platform when there is no main row.
+  const parentRow = ownRow && mainRow ? mainRow : null;
 
   const global =
     (await prisma.foodFeeSettings.findFirst({
@@ -434,22 +440,29 @@ export async function loadActiveFeeSettings(zoneId = null) {
     return { deliveryFee: 0, deliveryFeeRanges: [], platformFee: 0, gstRate: 0, zoneId: null };
   }
 
-  const inherit = (field) =>
-    feeDoc[field] === null || feeDoc[field] === undefined ? global?.[field] ?? null : feeDoc[field];
+  const blank = (v) => v === null || v === undefined;
+  const inherit = (field) => {
+    if (!blank(feeDoc[field])) return feeDoc[field];
+    if (parentRow && !blank(parentRow[field])) return parentRow[field];
+    return global?.[field] ?? null;
+  };
 
   // One read per request, the same way the bands are read: the rules are few
-  // and the alternative is a query inside a pure pricing function.
+  // and the alternative is a query inside a pure pricing function. Surge set
+  // on the main zone applies in its small zones too.
+  const surgeZoneIds = [ownZoneId, mainZoneId].filter(Boolean).map(String);
   const surgeRules = await prisma.foodSurgeRule.findMany({
     where: {
       isActive: true,
-      OR: [{ zoneId: null }, ...(isId(zoneId) ? [{ zoneId: String(zoneId) }] : [])],
+      OR: [{ zoneId: null }, ...(surgeZoneIds.length ? [{ zoneId: { in: surgeZoneIds } }] : [])],
     },
     select: { surgeFee: true, startAt: true, endAt: true, isActive: true },
   });
 
-  const ownRanges = toFeeRanges(feeDoc.deliveryFeeBands);
   // No bands of its own means the zone did not override the ladder either.
-  const ranges = ownRanges.length > 0 ? ownRanges : toFeeRanges(global?.deliveryFeeBands);
+  const ranges = [feeDoc.deliveryFeeBands, parentRow?.deliveryFeeBands, global?.deliveryFeeBands]
+    .map(toFeeRanges)
+    .find((r) => r.length > 0) || [];
 
   return {
     ...feeDoc,
@@ -795,6 +808,7 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
       priorOrdersHere,
       zoneId: couponZoneId,
       cityId: couponCityId,
+      mainZoneId: couponZoneId ? await mainZoneIdOf(couponZoneId) : null,
     });
 
     if (verdict.ok) {

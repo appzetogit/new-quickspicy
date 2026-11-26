@@ -136,19 +136,16 @@ test('slabs sort and key separately; targeting needs every set filter to match',
 test('a zone set to its own riders skips riders who do not serve it', async () => {
     const a = await zone('A');
     const b = await zone('B');
-    const serving = await cohort('Serves A', [a.id]);
-    const off = await cohort('Off', [a.id], false);
     const home = await rider({ zoneId: a.id });
-    const viaCohort = await rider({ zoneId: b.id, cohortId: serving.id });
+    const alsoServesA = await rider({ zoneId: b.id, serviceZoneIds: [a.id] });
     const outsider = await rider({ zoneId: b.id });
-    const inactiveCohort = await rider({ zoneId: b.id, cohortId: off.id });
-    const ids = [home.id, viaCohort.id, outsider.id, inactiveCohort.id];
+    const ids = [home.id, alsoServesA.id, outsider.id];
 
     assert.equal((await ridersOutsideZone(a.id, ids)).size, 0, 'unrestricted zone: distance only');
 
     await setZoneRidersFromZoneOnly(a.id, true);
     const outside = await ridersOutsideZone(a.id, ids);
-    assert.deepEqual([...outside].sort(), [outsider.id, inactiveCohort.id].sort());
+    assert.deepEqual([...outside], [outsider.id]);
 
     const modes = await listZoneDispatchModes();
     assert.equal(modes.zones.find((z) => z.id === a.id).ridersFromZoneOnly, true);
@@ -158,26 +155,26 @@ test('a zone set to its own riders skips riders who do not serve it', async () =
 
 // ─── Incentives ──────────────────────────────────────────────────────────────
 
-test('a weekly tiered cohort incentive credits each slab once, this week only', async () => {
+test('a weekly tiered zone incentive credits each slab once, this week only', async () => {
     const z = await zone('Inc');
-    const c = await cohort('Weekly', [z.id]);
-    const inCohort = await rider({ zoneId: z.id, cohortId: c.id });
-    const notInCohort = await rider({ zoneId: z.id });
-    const lastWeekOnly = await rider({ zoneId: z.id, cohortId: c.id });
+    const elsewhere = await zone('Inc other');
+    const inCohort = await rider({ zoneId: z.id });
+    const notInCohort = await rider({ zoneId: elsewhere.id });
+    const lastWeekOnly = await rider({ zoneId: z.id });
 
     const offer = await createEarningAddon({
         title: `${tag} Weekly slabs`, criteria: 'orders', requiredOrders: 0, earningAmount: 0,
         startDate: new Date(Date.now() - 30 * DAY), endDate: new Date(Date.now() + 30 * DAY),
-        recurrence: 'weekly', autoCredit: true, cohortIds: [c.id],
+        recurrence: 'weekly', autoCredit: true, zoneIds: [z.id],
         tiers: [{ requiredOrders: 4, earningAmount: 150 }, { requiredOrders: 2, earningAmount: 50 }],
     });
     created.addons.push(offer.id);
     assert.equal(offer.recurrence, 'weekly');
     assert.deepEqual(offer.tiers.map((t) => t.requiredOrders), [2, 4]);
 
-    await delivered(inCohort.id, 4);
-    await delivered(notInCohort.id, 4);
-    await delivered(lastWeekOnly.id, 4, { deliveredAt: new Date(istWeekStart().getTime() - DAY) });
+    await delivered(inCohort.id, 4, { zoneId: z.id });
+    await delivered(notInCohort.id, 4, { zoneId: z.id });
+    await delivered(lastWeekOnly.id, 4, { zoneId: z.id, deliveredAt: new Date(istWeekStart().getTime() - DAY) });
 
     for (const r of [inCohort, notInCohort, lastWeekOnly]) await checkEarningAddonCompletions(r.id);
     await checkEarningAddonCompletions(inCohort.id); // again: nothing new

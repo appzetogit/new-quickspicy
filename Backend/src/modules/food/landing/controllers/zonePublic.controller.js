@@ -95,7 +95,11 @@ export const detectZonePublicController = async (req, res, next) => {
             ? {
                 success: true,
                 message: 'Zone detected',
-                data: { status: 'IN_SERVICE', zoneId: zone.id, zone, ...pauseFields },
+                // zoneId is the tightest zone (a small zone when inside one);
+                // mainZoneId is the main zone the customer is in.
+                data: {
+                    status: 'IN_SERVICE', zoneId: zone.id, mainZoneId: zone.parentZoneId || zone.id, zone, ...pauseFields,
+                },
             }
             : {
                 success: true,
