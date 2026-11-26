@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import Cropper from "react-easy-crop"
 import { Loader2 } from "lucide-react"
 
@@ -88,8 +89,21 @@ export default function ImageCropDialog({ file, aspect = 1, title = "Crop image"
 
   const ratioLabel = aspect === 1 ? "square" : `${Math.round(aspect * 3)}:3`
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
+  // Opened from inside another popup (Add / Edit Food). That popup makes the
+  // rest of the page unclickable (pointer-events: none on <body>) and treats a
+  // press anywhere outside it as "close", so this window lived on the page but
+  // took no clicks: "Use this crop" did nothing and no dish photo was added.
+  // It is drawn straight into <body>, takes clicks again, and keeps its presses
+  // from reaching the popup underneath.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
+      style={{ pointerEvents: "auto" }}
+      onPointerDown={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
       <div className="w-full max-w-2xl rounded-xl bg-white p-4 space-y-3">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
@@ -134,6 +148,7 @@ export default function ImageCropDialog({ file, aspect = 1, title = "Crop image"
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1371,7 +1371,12 @@ export default function FoodsList() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl p-0 overflow-hidden">
+        <DialogContent
+          className="max-w-2xl p-0 overflow-hidden"
+          // A photo being cropped sits outside this popup; working in it is not "clicking outside".
+          onInteractOutside={(e) => { if (cropQueue.length) e.preventDefault() }}
+          onEscapeKeyDown={(e) => { if (cropQueue.length) e.preventDefault() }}
+        >
           <DialogHeader className="px-6 py-4 border-b border-slate-200 bg-slate-50">
             <DialogTitle className="text-lg font-semibold text-slate-900">
               {foodFormMode === "edit" ? "Edit Food" : "Add Food"}
