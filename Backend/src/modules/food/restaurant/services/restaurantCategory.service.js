@@ -11,6 +11,7 @@ import {
     zoneVisibilityFilter,
 } from '../../shared/categoryWorkflow.js';
 import { restaurantsInReach } from '../../shared/deliveryRadius.js';
+import { findZoneForPoint } from '../../shared/zone.service.js';
 import { verticalFilterFromQuery, categoryVerticalWhere } from '../../shared/verticals.js';
 import { languageFromQuery, pickText } from '../../shared/language.js';
 import { withMainZones } from '../../shared/zoneHierarchy.js';
@@ -32,13 +33,21 @@ const getRestaurantContext = async (restaurantId) => {
 
     const restaurant = await prisma.foodRestaurant.findUnique({
         where: { id: String(restaurantId) },
-        select: { id: true, zoneId: true, pureVegRestaurant: true },
+        select: { id: true, zoneId: true, pureVegRestaurant: true, latitude: true, longitude: true },
     });
     if (!restaurant) throw new ValidationError('Restaurant not found');
 
+    // A restaurant saved without a zone still sits inside one: without this it
+    // only ever saw zone-less categories, never the ones made for its area.
+    let zoneId = restaurant.zoneId ? String(restaurant.zoneId) : '';
+    if (!zoneId && restaurant.latitude != null && restaurant.longitude != null) {
+        const zone = await findZoneForPoint(restaurant.latitude, restaurant.longitude).catch(() => null);
+        if (zone?.id) zoneId = String(zone.id);
+    }
+
     return {
         restaurantId: restaurant.id,
-        zoneId: restaurant.zoneId ? String(restaurant.zoneId) : '',
+        zoneId,
         pureVegRestaurant: restaurant.pureVegRestaurant === true,
     };
 };
