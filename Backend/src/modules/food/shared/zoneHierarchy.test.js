@@ -44,7 +44,7 @@ let west;
 let east;
 
 test.before(async () => {
-    ({ zone: main } = await createZone({ name: `${tag} Main`, city: `${tag} City`, coordinates: patch.ring }));
+    ({ zone: main } = await createZone({ name: `${tag} Main`, city: `${tag} City`, createCity: true, coordinates: patch.ring }));
     zones.push(main.id);
     ({ zone: west } = await createZone({ name: `${tag} West`, parentZoneId: main.id, coordinates: rect(0.1, 0.1, 0.9, 0.45) }));
     zones.push(west.id);

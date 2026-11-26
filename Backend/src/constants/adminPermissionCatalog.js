@@ -87,7 +87,6 @@ export const ADMIN_SUBMENU_CATALOG = Object.freeze({
         entry(P('delivery-partners/join-request'), 'New Join Request'),
         entry(P('delivery-partners'), 'Deliveryman List'),
         entry(P('delivery-partners/add'), 'Add Deliveryman'),
-        entry(P('delivery-partners/cohorts'), 'Rider Cohorts'),
         entry(P('delivery-partners/live-tracking'), 'Live Tracking'),
         entry(P('delivery-partners/duty-log'), 'Duty Log'),
         entry(P('delivery-partners/reviews'), 'Deliveryman Reviews'),
@@ -210,8 +209,9 @@ export const ADMIN_SUBMENU_API_RULES = Object.freeze([
 
     // Delivery.
     rule('/delivery/join-requests', 'delivery_management', 'delivery-partners/join-request'),
-    // GET is shared with Add Deliveryman and the Deliveryman List (cohort pickers).
-    rule('/delivery/cohorts', 'delivery_management', 'delivery-partners/cohorts', ['POST', 'PUT', 'PATCH', 'DELETE']),
+    // Rider cohorts were retired (main/small zones replaced them); the old
+    // endpoints still answer, under the Deliveryman List.
+    rule('/delivery/cohorts', 'delivery_management', 'delivery-partners', ['POST', 'PUT', 'PATCH', 'DELETE']),
     rule('/delivery/reviews', 'delivery_management', 'delivery-partners/reviews'),
     rule('/delivery/bonus', 'delivery_management', 'delivery-partners/bonus'),
     rule('/delivery/bonus-transactions', 'delivery_management', 'delivery-partners/bonus'),

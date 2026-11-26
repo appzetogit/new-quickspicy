@@ -133,8 +133,8 @@ test('API paths resolve to submenus only where one screen owns them', () => {
     assert.equal(at('/orders', 'GET', {}), null, 'all orders is shared with reports and the dashboard');
     assert.equal(at('/orders/abc/accept', 'PATCH'), null, 'order actions are shared by every orders list');
     assert.equal(at('/orders/user-carts'), 'orders.user-carts');
-    assert.equal(at('/delivery/cohorts'), null, 'cohort list feeds other screens');
-    assert.equal(at('/delivery/cohorts', 'POST'), 'delivery-partners.cohorts');
+    assert.equal(at('/delivery/cohorts'), null, 'retired cohort list');
+    assert.equal(at('/delivery/cohorts', 'POST'), 'delivery-partners');
     assert.equal(at('/delivery/partners'), null);
     assert.equal(at('/delivery/earning-addon-history'), 'delivery-partners.earning-addon-history');
     assert.equal(at('/delivery/earning-addons/1', 'PATCH'), 'delivery-partners.earning-addon');
