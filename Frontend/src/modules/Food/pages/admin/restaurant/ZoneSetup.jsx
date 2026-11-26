@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { MapPin, Plus, Search, Edit, Trash2, Eye, Map, Bike } from "lucide-react"
+import { MapPin, Plus, Search, Edit, Trash2, Eye, Map as MapIcon, Bike } from "lucide-react"
 import { adminAPI } from "@food/api"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
@@ -122,7 +122,7 @@ export default function ZoneSetup() {
               onClick={() => navigate("/admin/food/zone-setup/map")}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
-              <Map className="w-5 h-5" />
+              <MapIcon className="w-5 h-5" />
               <span>View Map</span>
             </button>
             <button
