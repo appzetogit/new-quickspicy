@@ -45,9 +45,23 @@ const getRestaurantContext = async (restaurantId) => {
         if (zone?.id) zoneId = String(zone.id);
     }
 
+    // Every active zone the restaurant's location lies in. Zones can overlap
+    // (a "Palasia" zone inside "Indore"): a restaurant assigned to the wider one
+    // must still see categories made for the area it is actually in.
+    let locationZoneIds = [];
+    if (restaurant.latitude != null && restaurant.longitude != null) {
+        const rows = await prisma.$queryRaw`
+            SELECT "id" FROM "food_zones"
+            WHERE "isActive" = true AND "boundary" IS NOT NULL
+              AND ST_Contains("boundary"::geometry, ST_SetSRID(ST_MakePoint(${Number(restaurant.longitude)}, ${Number(restaurant.latitude)}), 4326))
+        `.catch(() => []);
+        locationZoneIds = rows.map((r) => String(r.id));
+    }
+
     return {
         restaurantId: restaurant.id,
         zoneId,
+        locationZoneIds,
         pureVegRestaurant: restaurant.pureVegRestaurant === true,
     };
 };
@@ -80,8 +94,12 @@ export async function listRestaurantCategories(restaurantId, query = {}) {
             ],
     };
 
-    // A customer in a small zone also sees their main zone's categories.
-    const AND = [visibility, zoneVisibilityFilter(isId(zoneIdRaw) ? await withMainZones([zoneIdRaw]) : zoneIdRaw)];
+    // A restaurant sees the categories of its zone, of every zone its location
+    // lies in, and of their main zones (a small zone's parent).
+    const zoneIds = isId(zoneIdRaw)
+        ? [zoneIdRaw, ...(zoneIdRaw === context.zoneId ? context.locationZoneIds : [])]
+        : context.locationZoneIds;
+    const AND = [visibility, zoneVisibilityFilter(zoneIds.length ? await withMainZones(zoneIds) : zoneIdRaw)];
     if (search) {
         AND.push({ name: { contains: search.slice(0, 80), mode: 'insensitive' } });
     }
