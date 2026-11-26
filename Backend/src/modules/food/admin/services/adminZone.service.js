@@ -102,6 +102,42 @@ async function assertZoneShapes(tx, zoneId) {
     }
 }
 
+/**
+ * Puts each restaurant of a main zone's family (the main zone and its small
+ * zones) in the tightest active zone of that family containing its location.
+ *
+ * A restaurant's zone is set once, at signup. Without this, drawing a small
+ * zone around existing restaurants would leave them in the main zone, so their
+ * orders would still go to every rider. Restaurants with no location, or whose
+ * location is in none of the family's zones, keep the zone they have.
+ *
+ * @returns {Promise<number>} restaurants moved
+ */
+export async function resortRestaurantsInFamily(zoneId) {
+    if (!isId(zoneId)) return 0;
+    const zone = await prisma.foodZone.findUnique({ where: { id: String(zoneId) }, select: { id: true, parentZoneId: true } });
+    if (!zone) return 0;
+    const mainId = zone.parentZoneId || zone.id;
+    const small = await prisma.foodZone.findMany({ where: { parentZoneId: mainId }, select: { id: true } });
+    const family = [mainId, ...small.map((z) => z.id)];
+
+    return prisma.$executeRaw`
+        UPDATE "food_restaurants" r
+        SET "zoneId" = pick."zid", "updatedAt" = now()
+        FROM (
+            SELECT r2."id" AS "rid",
+                   (SELECT z."id" FROM "food_zones" z
+                    WHERE z."id" = ANY(${family}) AND z."isActive" = true AND z."boundary" IS NOT NULL
+                      AND ST_Contains(z."boundary"::geometry, ST_SetSRID(ST_MakePoint(r2."longitude", r2."latitude"), 4326))
+                    ORDER BY ST_Area(z."boundary"::geometry) ASC
+                    LIMIT 1) AS "zid"
+            FROM "food_restaurants" r2
+            WHERE r2."zoneId" = ANY(${family})
+              AND r2."latitude" IS NOT NULL AND r2."longitude" IS NOT NULL
+        ) pick
+        WHERE r."id" = pick."rid" AND pick."zid" IS NOT NULL AND pick."zid" <> r."zoneId"`;
+}
+
 const zoneWritten = () => {
     invalidateZoneTree();
     void invalidateActiveZonesCache();
@@ -250,7 +286,9 @@ export async function createZone(body = {}) {
     });
 
     zoneWritten();
-    return { zone };
+    // A new small zone takes in the restaurants already inside it.
+    const restaurantsMoved = await resortRestaurantsInFamily(zone.id);
+    return { zone, restaurantsMoved };
 }
 
 export async function updateZone(id, body = {}) {
@@ -333,7 +371,13 @@ export async function updateZone(id, body = {}) {
     }
 
     zoneWritten();
-    return { zone };
+    // Restaurants follow a redrawn, moved or switched-off small zone. A zone
+    // that changed main zone re-sorts its old family too.
+    let restaurantsMoved = await resortRestaurantsInFamily(zone.id);
+    if (existing.parentZoneId && existing.parentZoneId !== zone.parentZoneId) {
+        restaurantsMoved += await resortRestaurantsInFamily(existing.parentZoneId);
+    }
+    return { zone, restaurantsMoved };
 }
 
 export async function deleteZone(id) {
@@ -344,6 +388,12 @@ export async function deleteZone(id) {
         throw new ValidationError(
             `This main zone has ${smallZones} small zone${smallZones === 1 ? '' : 's'}. Delete or move them first.`,
         );
+    }
+
+    // A small zone's restaurants go back to its main zone rather than to no zone.
+    const doomed = await prisma.foodZone.findUnique({ where: { id: String(id) }, select: { parentZoneId: true } });
+    if (doomed?.parentZoneId) {
+        await prisma.foodRestaurant.updateMany({ where: { zoneId: String(id) }, data: { zoneId: doomed.parentZoneId } });
     }
 
     // deleteMany, so a zone that has already gone returns null rather than

@@ -39,6 +39,7 @@ const rect = (a, b, c, d) => [
 const zones = [];
 const riders = [];
 const fees = [];
+const restaurants = [];
 let main;
 let west;
 let east;
@@ -53,6 +54,7 @@ test.before(async () => {
 });
 
 test.after(async () => {
+    await prisma.foodRestaurant.deleteMany({ where: { id: { in: restaurants } } });
     await prisma.foodFeeSettings.deleteMany({ where: { id: { in: fees } } });
     await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: riders } } });
     await prisma.foodZone.deleteMany({ where: { id: { in: zones } } });
@@ -196,4 +198,32 @@ test('a coupon for the main zone covers its small zones, not the other way round
     assert.equal(offerCoversZone(forMain, west.id, null, null), false, 'without the main zone it cannot tell');
     assert.equal(offerCoversZone(forWest, east.id, null, main.id), false);
     assert.equal(offerCoversZone(forWest, west.id, null, main.id), true);
+});
+
+test('drawing a small zone moves the restaurants inside it; deleting it moves them back', async () => {
+    // Between West and East: in the main zone only.
+    const r = await prisma.foodRestaurant.create({
+        data: {
+            restaurantName: `${tag} Restaurant`, ownerName: 'Owner', ownerPhone: uniquePhone('9'), status: 'approved',
+            zoneId: main.id, latitude: lat0 + 0.5, longitude: lng0 + 0.5,
+        },
+    });
+    restaurants.push(r.id);
+    const zoneOfR = async () => (await prisma.foodRestaurant.findUnique({ where: { id: r.id } })).zoneId;
+
+    const { zone: middle, restaurantsMoved } = await createZone({
+        name: `${tag} Middle`, parentZoneId: main.id, coordinates: rect(0.4, 0.46, 0.6, 0.54),
+    });
+    zones.unshift(middle.id);
+    assert.equal(restaurantsMoved, 1);
+    assert.equal(await zoneOfR(), middle.id);
+
+    // Switched off: back to the main zone.
+    await updateZone(middle.id, { isActive: false });
+    assert.equal(await zoneOfR(), main.id);
+    await updateZone(middle.id, { isActive: true });
+    assert.equal(await zoneOfR(), middle.id);
+
+    await deleteZone(middle.id);
+    assert.equal(await zoneOfR(), main.id, 'back to the main zone, not to no zone');
 });
