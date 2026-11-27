@@ -505,6 +505,8 @@ enum NotificationSource {
   SUPPORT_RESPONSE
   /// A customer's order push, kept in their inbox.
   ORDER_EVENT
+  /// Monthly subscription invoice / overdue notices to a restaurant.
+  SUBSCRIPTION_BILLING
 }
 
 enum BroadcastTargetType {

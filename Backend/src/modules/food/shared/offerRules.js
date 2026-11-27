@@ -280,7 +280,10 @@ export const checkOfferEligibility = ({
 export const computeOfferDiscount = (offer, subtotal) => {
     const total = Number(subtotal) || 0;
     if (normalizeDiscountType(offer?.discountType) === 'percentage') {
-        const raw = total * ((Number(offer.discountValue) || 0) / 100);
+        // In whole paise first: 100 * 0.57 is 56.999… in floating point, which
+        // floored to ₹56 on a 57% coupon.
+        const rawPaise = Math.round((Math.round(total * 100) * (Number(offer.discountValue) || 0)) / 100);
+        const raw = rawPaise / 100;
         const capped = Number(offer.maxDiscount) ? Math.min(raw, Number(offer.maxDiscount)) : raw;
         return Math.max(0, Math.min(total, Math.floor(capped)));
     }

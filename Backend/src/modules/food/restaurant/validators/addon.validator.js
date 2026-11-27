@@ -1,5 +1,24 @@
 import { z } from 'zod';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { toMenuPrice } from './restaurant.validator.js';
+
+/** A required add-on price, 0 allowed, capped like a dish (blank no longer becomes 0). */
+const addonPrice = (label) => z.any().transform((value, ctx) => {
+    try {
+        return toMenuPrice(value, label, { allowZero: true });
+    } catch (err) {
+        ctx.addIssue({ code: 'custom', message: err.message });
+        return z.NEVER;
+    }
+});
+
+/** Query-string booleans: 'false' and '0' are false (z.coerce.boolean read them as true). */
+const queryBoolean = z.preprocess((v) => {
+    const s = String(v ?? '').trim().toLowerCase();
+    if (v === true || s === 'true' || s === '1') return true;
+    if (v === false || s === 'false' || s === '0' || s === '') return false;
+    return v;
+}, z.boolean());
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid menu item id');
 
@@ -28,7 +47,7 @@ const variantPricesSchema = z
     .array(
         z.object({
             variantId: objectId,
-            price: z.coerce.number().min(0, 'Add-on variant price must be 0 or more'),
+            price: addonPrice('Add-on variant price'),
         }),
     )
     .max(50)
@@ -39,7 +58,7 @@ const addonContentSchema = z.object({
     name: z.string().min(1, 'Add-on name is required').max(200),
     description: z.string().max(2000).optional().default(''),
     foodType: z.enum(['veg', 'non-veg']).optional().default('veg'),
-    price: z.coerce.number().min(0, 'Price must be >= 0'),
+    price: addonPrice('Price'),
     image: z.string().max(2000).optional().default(''),
     images: z.array(z.string().max(2000)).max(10).optional().default([])
 });
@@ -53,7 +72,7 @@ const addonPayloadSchema = addonContentSchema.extend({
 
 const listSchema = z.object({
     foodId: objectId.optional(),
-    includeDeleted: z.coerce.boolean().optional(),
+    includeDeleted: queryBoolean.optional(),
     status: z.enum(['pending', 'approved', 'rejected']).optional(),
     page: z.coerce.number().int().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

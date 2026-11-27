@@ -6,6 +6,7 @@ import {
 } from '../../shared/foodType.util.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { toMenuPrice } from '../validators/restaurant.validator.js';
 import { normalizeFoodImages, normalizeFoodVideo } from '../../admin/services/foodImages.util.js';
 import {
     extractRawFoodVariants,
@@ -36,8 +37,15 @@ const STOCK_OFF_MODES = {
     'custom-date-time': 'custom_date_time',
 };
 
-const getCreateFoodPricing = (body = {}) => {
+/** Variants checked against the same ceiling as a dish (the shared normaliser only checks > 0). */
+const readVariants = (body) => {
     const variants = normalizeFoodVariantsInput(extractRawFoodVariants(body));
+    for (const v of variants) v.price = toMenuPrice(v.price, 'Variant price');
+    return variants;
+};
+
+const getCreateFoodPricing = (body = {}) => {
+    const variants = readVariants(body);
     if (variants.length > 0) {
         return {
             price: getFoodDisplayPrice({ variants }),
@@ -46,8 +54,7 @@ const getCreateFoodPricing = (body = {}) => {
         };
     }
 
-    const price = Number(body.price);
-    if (!Number.isFinite(price) || price < 0) throw new ValidationError('Price is invalid');
+    const price = toMenuPrice(body.price);
     const otherPrice = Number(body.otherPrice);
     return {
         price,
@@ -62,7 +69,7 @@ const getUpdatedFoodPricing = (existing = {}, body = {}) => {
     const update = {};
 
     if (variantsTouched) {
-        const variants = normalizeFoodVariantsInput(extractRawFoodVariants(body));
+        const variants = readVariants(body);
         update.variants = variants;
 
         if (variants.length > 0) {
@@ -71,14 +78,10 @@ const getUpdatedFoodPricing = (existing = {}, body = {}) => {
             return update;
         }
 
-        const nextBasePrice =
-            body.price !== undefined
-                ? Number(body.price)
-                : Number(existingHasVariants ? NaN : existing.price);
-        if (!Number.isFinite(nextBasePrice) || nextBasePrice < 0) {
+        if (body.price === undefined && existingHasVariants) {
             throw new ValidationError('Base price is required when variants are removed');
         }
-        update.price = nextBasePrice;
+        update.price = toMenuPrice(body.price !== undefined ? body.price : Number(existing.price), 'Base price');
 
         if (body.otherPrice !== undefined) {
             const otherPrice = Number(body.otherPrice);
@@ -93,9 +96,7 @@ const getUpdatedFoodPricing = (existing = {}, body = {}) => {
         if (existingHasVariants) {
             throw new ValidationError('Update variants instead of base price for foods with variants');
         }
-        const price = Number(body.price);
-        if (!Number.isFinite(price) || price < 0) throw new ValidationError('Price is invalid');
-        update.price = price;
+        update.price = toMenuPrice(body.price);
     }
 
     if (body.otherPrice !== undefined) {

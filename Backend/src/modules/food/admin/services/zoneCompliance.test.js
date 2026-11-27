@@ -13,6 +13,7 @@ import {
     updateFssaiComplianceSettings,
     listExpiringFssaiRestaurants,
     fssaiListingFilter,
+    getFssaiComplianceSettings,
 } from '../../restaurant/services/fssaiExpiry.service.js';
 
 /**
@@ -264,6 +265,11 @@ test('an expired FSSAI licence blocks ordering only while the switch is on', asy
         select: { id: true },
     });
     assert.deepEqual(visible.map((r) => r.id), [valid.id]);
+
+    // Never configured: the block is on (an expired licence must not sell).
+    await prisma.foodPlatformSetting.deleteMany({ where: { key: FSSAI_SETTINGS_KEY } });
+    assert.equal((await getFssaiComplianceSettings({ fresh: true })).blockExpired, true);
+    assert.equal((await getFssaiOrderingBlock(expired.id)).blocked, true);
 });
 
 test('licences within 30 days show as expiring, with days left', async () => {

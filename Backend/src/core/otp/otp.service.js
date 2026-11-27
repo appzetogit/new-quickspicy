@@ -257,3 +257,35 @@ export const verifyOtp = async (phone, otp) => {
     return { valid: true };
 };
 
+
+/**
+ * Proof that a phone passed OTP and may now sign up. The OTP row is kept,
+ * its code replaced by a marker no one can type (codes are digits), valid for
+ * SIGNUP_PROOF_TTL_MS. Server-side, so the registration form needs no new field.
+ */
+export const SIGNUP_VERIFIED_MARKER = 'VERIFIED';
+// Long enough to fill the onboarding form (documents, photos, fee payment).
+const SIGNUP_PROOF_TTL_MS = 6 * 60 * 60 * 1000;
+
+export const markPhoneVerifiedForSignup = async (phone) => {
+    const expiresAt = new Date(Date.now() + SIGNUP_PROOF_TTL_MS);
+    const data = { otp: SIGNUP_VERIFIED_MARKER, expiresAt, purgeAt: expiresAt, attempts: 0 };
+    await prisma.foodOtp.upsert({ where: { phone }, create: { phone, ...data }, update: data });
+};
+
+/** The phone variants a proof may have been stored under ("98..", "+91 98.."). */
+const signupPhoneCandidates = (phone) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    return [...new Set([String(phone || '').trim(), digits, digits.slice(-10)].filter(Boolean))];
+};
+
+export const hasSignupVerification = async (phone) => Boolean(await prisma.foodOtp.findFirst({
+    where: { phone: { in: signupPhoneCandidates(phone) }, otp: SIGNUP_VERIFIED_MARKER, expiresAt: { gt: new Date() } },
+    select: { id: true },
+}));
+
+export const consumeSignupVerification = async (phone) => {
+    await prisma.foodOtp.deleteMany({
+        where: { phone: { in: signupPhoneCandidates(phone) }, otp: SIGNUP_VERIFIED_MARKER },
+    });
+};

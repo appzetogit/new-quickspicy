@@ -10,6 +10,7 @@ const NATIVE_LAST_ROUTE_KEY = 'native_last_route'
 const FoodApp = lazy(() => import('../modules/Food/routes'))
 const AuthApp = lazy(() => import('../modules/auth/routes'))
 import ProtectedRoute from '@food/components/ProtectedRoute'
+import AdminPageLoader from '@food/components/admin/AdminPageLoader'
 
 const PageLoader = () => <AppShellSkeleton />
 
@@ -99,15 +100,12 @@ const AppRoutes = () => {
       {/* Food Module */}
       <Route path="/food/*" element={<FoodAppWrapper />} />
 
-      {/* Global Admin Portal - AdminRouter handles its own protection for sub-routes */}
-      <Route path="/admin/*" element={<AdminRouter />} />
-
       {/* NEW Delivery V2 (Parallel testing) */}
       {/* Global Admin Portal - wrap lazy router in Suspense to avoid blank/crash on direct admin URLs */}
       <Route
         path="/admin/*"
         element={
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<AdminPageLoader fullScreen />}>
             <AdminRouter />
           </Suspense>
         }

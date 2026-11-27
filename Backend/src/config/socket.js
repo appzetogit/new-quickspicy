@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { logger } from '../utils/logger.js';
 import { verifyAccessToken } from '../core/auth/token.util.js';
 import { getFirebaseDB } from './firebase.js';
-import { createRiderFixTracker } from '../modules/food/delivery/services/riderFix.js';
+import { createRiderFixTracker, toFix } from '../modules/food/delivery/services/riderFix.js';
 import { saveRiderPosition } from '../modules/food/delivery/services/riderPosition.service.js';
 
 // One for the process, so a rider who reconnects is judged against where they
@@ -17,9 +17,9 @@ let io = null;
  * so a GPS fix every 2 s does not query the database each time.
  */
 const RIDER_ORDERS_TTL_MS = 20000;
-async function activeOrderIdsForRider(socket, riderId) {
+async function activeOrderIdsForRider(socket, riderId, { fresh = false } = {}) {
     const cached = socket.data?.activeOrders;
-    if (cached && Date.now() - cached.at < RIDER_ORDERS_TTL_MS) return cached.ids;
+    if (!fresh && cached && Date.now() - cached.at < RIDER_ORDERS_TTL_MS) return cached.ids;
     const { prisma } = await import('./prisma.js');
     const { TERMINAL_ORDER_STATUSES } = await import('../modules/food/orders/services/order.helpers.js');
     const rows = await prisma.foodOrder.findMany({
@@ -28,12 +28,34 @@ async function activeOrderIdsForRider(socket, riderId) {
             dispatchStatus: 'accepted',
             orderStatus: { notIn: TERMINAL_ORDER_STATUSES },
         },
-        select: { id: true },
+        select: { id: true, orderId: true, order_id: true, userId: true, restaurantId: true },
         take: 10,
     });
     const ids = rows.map((row) => row.id);
-    socket.data = { ...(socket.data || {}), activeOrders: { ids, at: Date.now() } };
+    // Any spelling of the order id the app may send -> the order's parties.
+    const parties = new Map();
+    for (const row of rows) {
+        for (const key of [row.id, row.orderId, row.order_id].filter(Boolean)) parties.set(String(key), row);
+    }
+    socket.data = { ...(socket.data || {}), activeOrders: { ids, parties, at: Date.now() } };
     return ids;
+}
+
+/**
+ * The live trip an update-location names, or null. A rider's position goes
+ * to a customer only while that rider is carrying their order: not for an
+ * order merely offered to them, and not after it is delivered or cancelled.
+ * A miss re-reads once, so a trip accepted a moment ago is not dropped for 20 s.
+ */
+async function liveTripForRider(socket, riderId, orderId) {
+    const key = String(orderId);
+    await activeOrderIdsForRider(socket, riderId);
+    let trip = socket.data?.activeOrders?.parties?.get(key);
+    if (!trip) {
+        await activeOrderIdsForRider(socket, riderId, { fresh: true });
+        trip = socket.data?.activeOrders?.parties?.get(key);
+    }
+    return trip || null;
 }
 
 function logDeliverySocket(message, extra = {}) {
@@ -305,10 +327,19 @@ export const initSocket = async (server) => {
             if (socket.user?.role !== 'DELIVERY_PARTNER') return;
             if (!data || !data.orderId) return;
 
-            const lat = Number(data.lat);
-            const lng = Number(data.lng);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+            // Missing, out-of-range and 0,0 fixes are not positions.
+            const fix = toFix(data.lat, data.lng);
+            if (!fix) return;
+            const { lat, lng } = fix;
+
+            let trip;
+            try {
+                trip = await liveTripForRider(socket, userId, data.orderId);
+            } catch (err) {
+                logger.warn(`update-location trip lookup failed: ${err?.message || err}`);
+                return;
+            }
+            if (!trip) return;
 
             const heading = Number.isFinite(Number(data.heading)) ? Number(data.heading) : 0;
             const speed = Number.isFinite(Number(data.speed)) ? Number(data.speed) : 0;
@@ -359,14 +390,10 @@ export const initSocket = async (server) => {
             const trackingRoom = roomNames.tracking(data.orderId);
             socket.to(trackingRoom).emit('location-update', payload);
 
-            // Also emit to the specific user room if userId is provided
-            if (data.userId) {
-                socket.to(roomNames.user(data.userId)).emit('location-update', payload);
-            }
-
-            if (data.restaurantId) {
-                socket.to(roomNames.restaurant(data.restaurantId)).emit('location-update', payload);
-            }
+            // The order's own customer and restaurant -- never ids taken from
+            // the client, which could name anybody's room.
+            if (trip.userId) socket.to(roomNames.user(trip.userId)).emit('location-update', payload);
+            if (trip.restaurantId) socket.to(roomNames.restaurant(trip.restaurantId)).emit('location-update', payload);
 
             // ─── Scalable Persistence (BullMQ + Redis "Hot" Buffering) ───
             try {

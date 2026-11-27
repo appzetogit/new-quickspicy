@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { toDeliveryRadiusKm } from '../../admin/services/adminRestaurantWrite.helpers.js';
+import { parseDayBound, istDateKey } from '../../../../utils/timezone.js';
 
 const phoneSchema = z
     .string()
@@ -18,6 +19,51 @@ const requiredBooleanSchema = z.preprocess((value) => {
 }, z.boolean({ required_error: 'Please select whether the restaurant is pure veg' }));
 
 const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+export const PAN_REGEX = panRegex;
+export const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+export const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+/**
+ * An FSSAI expiry as stored: the end of that day in India. It must be today or
+ * later by the India calendar, not the server's, so a licence is not refused
+ * (or let through) for the five and a half hours the two disagree.
+ * Blank returns null.
+ */
+export const toFssaiExpiry = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const date = parseDayBound(raw, 'end');
+    if (!date) throw new ValidationError('FSSAI expiry date is invalid');
+    if (istDateKey(date) < istDateKey()) throw new ValidationError('FSSAI expiry date must be today or a later date');
+    return date;
+};
+
+/** Highest price a dish, variant or add-on may carry (the column holds far more). */
+export const MAX_MENU_PRICE = 100000;
+
+/**
+ * A menu price: present, a real number, at most MAX_MENU_PRICE. Dishes must
+ * cost something; an add-on may be free (0) but must say so. Blank and null
+ * used to become 0, and 1e13 overflowed the column into a 500.
+ */
+export const toMenuPrice = (value, label = 'Price', { allowZero = false } = {}) => {
+    const blank = value === undefined || value === null || String(value).trim() === '';
+    const n = Number(value);
+    if (blank || !Number.isFinite(n) || n < 0 || (!allowZero && n === 0)) {
+        throw new ValidationError(allowZero ? `${label} must be 0 or more` : `${label} must be greater than 0`);
+    }
+    if (n > MAX_MENU_PRICE) {
+        throw new ValidationError(`${label} cannot be more than ₹${MAX_MENU_PRICE.toLocaleString('en-IN')}`);
+    }
+    return Math.round(n * 100) / 100;
+};
+
+/** A non-blank time must be a real one; blank stays allowed. */
+export const assertValidTimeOrBlank = (value, label) => {
+    if (String(value ?? '').trim() && !normalizeTimeValue(value)) {
+        throw new ValidationError(`${label} is not a valid time. Use HH:MM between 00:00 and 23:59`);
+    }
+};
 
 const normalizeTimeValue = (value) => {
     const raw = String(value || '').trim();
@@ -191,6 +237,21 @@ export const validateRestaurantRegisterDto = (body) => {
     }
 
     const data = result.data;
+    assertValidTimeOrBlank(data.openingTime, 'Opening time');
+    assertValidTimeOrBlank(data.closingTime, 'Closing time');
+    if (data.fssaiExpiry) toFssaiExpiry(data.fssaiExpiry);
+    if (data.ifscCode && !IFSC_REGEX.test(data.ifscCode.trim().toUpperCase())) {
+        throw new ValidationError('IFSC looks wrong. It is 11 characters, like SBIN0001234.');
+    }
+    if (data.accountNumber && !/^\d{9,18}$/.test(data.accountNumber.replace(/[\s-]/g, ''))) {
+        throw new ValidationError('Account number must be 9 to 18 digits');
+    }
+    if (data.gstRegistered && data.gstNumber && !GSTIN_REGEX.test(data.gstNumber.trim().toUpperCase())) {
+        throw new ValidationError('GSTIN must be 15 characters, e.g. 22ABCDE1234F1Z5');
+    }
+    for (const key of ['subscriptionAmount', 'subscriptionPaidAmount', 'subscriptionDueAmount', 'onboardingFeeAmount']) {
+        if (data[key] < 0) throw new ValidationError(`${key} cannot be negative`);
+    }
     const openingMinutes = timeToMinutes(data.openingTime);
     const closingMinutes = timeToMinutes(data.closingTime);
     if (openingMinutes !== null && closingMinutes !== null) {

@@ -5,10 +5,11 @@ import { isId } from '../../../../utils/helpers.js';
 import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
 import { normalizeMediaUrlForStorage } from '../../../../services/storage.service.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
+import { hasSignupVerification, consumeSignupVerification } from '../../../../core/otp/otp.service.js';
+import { PAN_REGEX, GSTIN_REGEX, toFssaiExpiry, assertValidTimeOrBlank } from '../validators/restaurant.validator.js';
 import { findZoneForPoint } from '../../shared/zone.service.js';
 import { mainZoneIdOf } from '../../shared/zoneHierarchy.js';
 import { fssaiListingFilter } from './fssaiExpiry.service.js';
-import { parseDayBound } from '../../../../utils/timezone.js';
 import { extractBankChange, requestBankChange, getPendingBankChange } from './bankChange.service.js';
 import { splitHeld, requestProfileChange, getOpenProfileChange, pendingChangesOf } from './profileChange.service.js';
 import { restaurantIdsMatchingCuisine } from '../../shared/restaurantQuery.util.js';
@@ -457,6 +458,7 @@ const toRestaurantProfile = (doc) => {
         upiId: doc.upiId || '',
         upiQrImage: doc.upiQrImage ? { url: doc.upiQrImage } : null,
         pureVegRestaurant: Boolean(doc.pureVegRestaurant),
+        packagingCharge: Number(doc.packagingCharge) || 0,
         profileImage: doc.profileImage ? { url: doc.profileImage } : null,
         menuImages,
         coverImages,
@@ -557,6 +559,7 @@ const PROFILE_SELECT = {
     subscriptionPaidAmount: true, subscriptionPlan: true, subscriptionStatus: true,
     subscriptionValidTill: true, updatedAt: true, upiId: true, upiQrImage: true,
     zoneId: true,
+    packagingCharge: true,
     // The location-change approval flow reads these.
     pendingLatitude: true, pendingLongitude: true, pendingZoneId: true,
     locationUpdateStatus: true, locationUpdateRequestedAt: true,
@@ -831,6 +834,11 @@ export const registerRestaurant = async (payload, files) => {
     if (!ownerPhoneLast10) {
         throw new ValidationError('Owner phone is invalid');
     }
+    // Only a number that just passed OTP (verify-otp answered needsRegistration)
+    // can be signed up; otherwise anyone could register any phone.
+    if (!(await hasSignupVerification(ownerPhone))) {
+        throw new ValidationError('Please verify your phone number with OTP before registering');
+    }
 
     const restaurantNameNormalized = normalizeName(restaurantName);
     if (!restaurantNameNormalized) {
@@ -1038,7 +1046,7 @@ export const registerRestaurant = async (payload, files) => {
                     fssaiNumber,
                     // The form sends a bare day ("2027-10-31"); Prisma needs a Date and threw,
                     // so every sign-up that filled in the FSSAI expiry failed with a 500.
-                    fssaiExpiry: fssaiExpiry ? (parseDayBound(fssaiExpiry, 'end') || null) : null,
+                    fssaiExpiry: toFssaiExpiry(fssaiExpiry),
                     accountNumber,
                     ifscCode,
                     accountHolderName,
@@ -1084,6 +1092,7 @@ export const registerRestaurant = async (payload, files) => {
 
             return created;
         });
+        await consumeSignupVerification(ownerPhone).catch(() => {});
 
         try {
             const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
@@ -1147,8 +1156,11 @@ const enrichRestaurantProfileWithAvailability = async (profile, doc) => {
     };
 };
 
-export const updateRestaurantAcceptingOrders = async (restaurantId, isAcceptingOrders) => {
+export const updateRestaurantAcceptingOrders = async (restaurantId, rawIsAcceptingOrders) => {
     if (!isId(restaurantId)) throw new ValidationError('Invalid restaurant id');
+    // Required: an empty body used to read as false and take the restaurant offline.
+    const isAcceptingOrders = { true: true, false: false }[String(rawIsAcceptingOrders).trim().toLowerCase()];
+    if (isAcceptingOrders === undefined) throw new ValidationError('isAcceptingOrders must be true or false');
 
     // An admin took it offline (say its app was not working): only an admin
     // puts it back.
@@ -1419,9 +1431,11 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
     }
 
     if (body.openingTime !== undefined) {
+        assertValidTimeOrBlank(body.openingTime, 'Opening time');
         update.openingTime = normalizeRestaurantTime(body.openingTime) || '';
     }
     if (body.closingTime !== undefined) {
+        assertValidTimeOrBlank(body.closingTime, 'Closing time');
         update.closingTime = normalizeRestaurantTime(body.closingTime) || '';
     }
     if (body.openDays !== undefined) {
@@ -1483,6 +1497,9 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
 
     if (body.panNumber !== undefined) {
         update.panNumber = String(body.panNumber || '').trim().toUpperCase();
+        if (update.panNumber && !PAN_REGEX.test(update.panNumber)) {
+            throw new ValidationError('Invalid PAN format. It looks like ABCDE1234F');
+        }
     }
     if (body.nameOnPan !== undefined) {
         update.nameOnPan = String(body.nameOnPan || '').trim();
@@ -1516,6 +1533,9 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
     }
     if (body.gstNumber !== undefined) {
         update.gstNumber = String(body.gstNumber || '').trim().toUpperCase();
+        if (update.gstNumber && !GSTIN_REGEX.test(update.gstNumber)) {
+            throw new ValidationError('GSTIN must be 15 characters, e.g. 22ABCDE1234F1Z5');
+        }
     }
     if (body.gstLegalName !== undefined) {
         update.gstLegalName = String(body.gstLegalName || '').trim();
@@ -1535,16 +1555,7 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
         update.fssaiNumber = String(body.fssaiNumber || '').trim();
     }
     if (body.fssaiExpiry !== undefined) {
-        const rawExpiry = String(body.fssaiExpiry || '').trim();
-        if (!rawExpiry) {
-            update.fssaiExpiry = null;
-        } else {
-            const parsedExpiry = new Date(rawExpiry);
-            if (Number.isNaN(parsedExpiry.getTime())) {
-                throw new ValidationError('FSSAI expiry date is invalid');
-            }
-            update.fssaiExpiry = parsedExpiry;
-        }
+        update.fssaiExpiry = toFssaiExpiry(body.fssaiExpiry);
     }
     if (body.fssaiImage !== undefined) {
         update.fssaiImage = toUrl(body.fssaiImage) || '';

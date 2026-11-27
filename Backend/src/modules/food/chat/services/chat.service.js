@@ -379,6 +379,11 @@ export async function sendMessage(sender, dto) {
             conversationId,
             orderId: orderId ? String(orderId) : '',
             peerRole: PEER_ROLE_NAMES[sender.role] || String(sender.role || '').toLowerCase(),
+            // The role and id to open the thread with (ChatScreen peerRole /
+            // peerId): a rider's tap on a restaurant's message must open the
+            // restaurant thread, not the customer one.
+            peerRoleCode: String(sender.role || ''),
+            peerId: sender.role === 'ADMIN' ? '' : String(sender.id || ''),
         },
     };
     if (peerRole === 'ADMIN') {

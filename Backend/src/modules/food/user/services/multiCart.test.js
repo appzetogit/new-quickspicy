@@ -236,3 +236,21 @@ test('clear all, share a chosen cart, and import replaces only that restaurant\'
     assert.deepEqual(await clearUserCarts(receiver.id), { deleted: 2 });
     assert.equal((await listUserCarts(receiver.id)).count, 0);
 });
+
+test('a pending restaurant\'s dish cannot be added; replace-cart quantities must be 1-99; discount never makes the total negative', async () => {
+    const user = await makeUser();
+    const pending = await makeRestaurant('Pending R', { status: 'pending' });
+    const dish = await makeFood(pending, 'Qzmc Pending Dish', 120);
+    await assert.rejects(() => addUserCartItem(user.id, pending.id, { itemId: dish.id }), /not taking orders/);
+    await assert.rejects(() => replaceUserCart(user.id, pending.id, [line(dish, pending)]), /not taking orders/);
+
+    const open = await makeRestaurant('Qty R');
+    const food = await makeFood(open, 'Qzmc Qty Dish', 100);
+    for (const quantity of [0, -2, 100000, 1.5]) {
+        await assert.rejects(() => replaceUserCart(user.id, open.id, [line(food, open, quantity)]), /Quantity/, `quantity ${quantity}`);
+    }
+    const { cart } = await replaceUserCart(user.id, open.id, [line(food, open, 2)], { subtotal: 200, discount: 500 });
+    assert.equal(cart.items[0].quantity, 2);
+    assert.equal(cart.pricing.discount, 200);
+    assert.equal(cart.pricing.total, 0);
+});

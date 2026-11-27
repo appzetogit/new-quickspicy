@@ -3,7 +3,7 @@ import { registerDeliveryPartner, updateDeliveryPartnerProfile, updateDeliveryPa
 import { createDeliveryCashDepositOrder, getDeliveryPartnerWalletEnhanced, requestDeliveryWithdrawal, verifyDeliveryCashDepositPayment } from '../services/deliveryFinance.service.js';
 import { getDeliveryCashLimitSettings, getDeliveryEmergencyHelp } from '../../admin/services/admin.service.js';
 import { prisma } from '../../../../config/prisma.js';
-import { validateDeliveryRegisterDto, validateDeliveryProfileUpdateDto, validateDeliveryBankDetailsDto } from '../validators/delivery.validator.js';
+import { validateRiderSelfRegisterDto, validateDeliveryProfileUpdateDto, validateDeliveryBankDetailsDto } from '../validators/delivery.validator.js';
 import { sendResponse } from '../../../../utils/response.js';
 import { getDeliveryReferralStats } from '../services/deliveryReferral.service.js';
 import {
@@ -14,7 +14,7 @@ import {
 
 export const registerDeliveryPartnerController = async (req, res, next) => {
     try {
-        const validated = validateDeliveryRegisterDto(req.body);
+        const validated = validateRiderSelfRegisterDto(req.body);
         // upload.any() gives req.files as an array — reshape to { fieldname: [file] }
         // so the existing named lookups (files.profilePhoto[0]) keep working, and
         // admin-defined document fields are picked up by their own key.

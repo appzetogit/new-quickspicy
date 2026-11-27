@@ -102,3 +102,12 @@ export const dayRange = (query = {}) => {
   if (!from && !to) return null;
   return { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
 };
+
+/** The calendar day in India as "YYYY-MM-DD", whatever the server's own timezone. */
+export const istDateKey = (date = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date instanceof Date ? date : new Date(date));
+
+/** 00:00 IST of the India day `date` falls on (IST has no DST: fixed +05:30). */
+export const istStartOfDay = (date = new Date()) => new Date(`${istDateKey(date)}T00:00:00.000+05:30`);

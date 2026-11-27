@@ -6,7 +6,8 @@ import { Input } from "@food/components/ui/input"
 import { Label } from "@food/components/ui/label"
 import AdminAuthHero from "@food/components/admin/auth/AdminAuthHero"
 import { ArrowLeft, Shield, Eye, EyeOff, Loader2 } from "lucide-react"
-import brandLogo from "@food/assets/quickspicy-logo.png"
+// The square rider mark: the full logo (with wordmark + tagline) is unreadable in a small tile.
+const brandLogo = "/brand/logo-mark.svg"
 import { adminAPI } from "@food/api"
 import { useCompanyName } from "@food/hooks/useCompanyName"
 import {
@@ -298,7 +299,7 @@ export default function AdminForgotPassword() {
                   <img
                     src={logoUrl || brandLogo}
                     alt={`${companyName} logo`}
-                    className="h-full w-full scale-[1.65] object-contain"
+                    className="h-full w-full object-contain p-1.5"
                     loading="lazy"
                     onError={(e) => {
                       if (e.target.src !== brandLogo) {

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import ms from "ms";
-import { createOrUpdateOtp, verifyOtp } from "../otp/otp.service.js";
+import { createOrUpdateOtp, verifyOtp, markPhoneVerifiedForSignup } from "../otp/otp.service.js";
 import { signAccessToken, signRefreshToken } from "./token.util.js";
 import { ValidationError, AuthError, NotFoundError } from "./errors.js";
 import {
@@ -31,6 +31,7 @@ import {
 // What a blocked customer or rider is told: the admin's reason and the
 // support number. Shared with auth.middleware.js.
 import { blockedAccountMessage, blockedAccountError } from "./blockedAccount.js";
+import { RESTAURANT_REJECTED_MESSAGE } from "./auth.middleware.js";
 
 const ROLES = {
   USER: "USER",
@@ -384,7 +385,9 @@ export const verifyRestaurantOtpAndLogin = async (phone, otp, fcmToken, platform
     // An OTP sent before sign-up was switched off still can't open the form.
     if (!(await isRestaurantSelfOnboardingOpen())) throw new NotFoundError(RESTAURANT_NOT_FOUND);
     // Phone has been successfully verified, but no restaurant exists yet.
-    // Frontend will use this to redirect into registration/onboarding.
+    // Frontend will use this to redirect into registration/onboarding, and
+    // /restaurant/register accepts this number only because of this mark.
+    await markPhoneVerifiedForSignup(phone);
     return {
       needsRegistration: true,
       phone,
@@ -453,8 +456,36 @@ export const verifyRestaurantOtpAndLogin = async (phone, otp, fcmToken, platform
   return {
     accessToken,
     refreshToken,
-    user: restaurant,
+    user: toRestaurantLoginUser(restaurant),
     needsRegistration: false,
+  };
+};
+
+/** Last four characters only; the owner already knows the rest. */
+const maskTail = (value) => {
+  const raw = String(value || "").replace(/\s/g, "");
+  if (!raw) return "";
+  return raw.length <= 4 ? raw : `${"X".repeat(raw.length - 4)}${raw.slice(-4)}`;
+};
+
+/**
+ * The restaurant row as the login response shows it. The apps read the tokens
+ * and then /restaurant/current; the web keeps this object for its header. It
+ * used to be the raw row: Aadhaar, PAN and bank account in full, and every
+ * device's push token, sitting in logs and browser storage.
+ */
+export const toRestaurantLoginUser = (restaurant) => {
+  const {
+    fcmTokens, fcmTokenMobile, tokenVersion, deletedPhone,
+    onboardingFeePaymentSignature, onboardingFeePaymentId,
+    aadhaarNumber, panNumber, accountNumber,
+    ...rest
+  } = restaurant;
+  return {
+    ...rest,
+    aadhaarNumber: maskTail(aadhaarNumber),
+    panNumber: maskTail(panNumber),
+    accountNumber: maskTail(accountNumber),
   };
 };
 
@@ -476,6 +507,13 @@ const normalizePhoneForDelivery = (phone) => {
   return digits.slice(-10) || null;
 };
 
+// The register form sends registrationToken back as proof this phone passed OTP.
+// Dynamic import: delivery.service sits above core/auth in the import graph.
+const riderNeedsRegistration = async (phone) => {
+  const { signRiderRegistrationToken } = await import("../../modules/food/delivery/services/delivery.service.js");
+  return { needsRegistration: true, phone, registrationToken: signRiderRegistrationToken(phone) };
+};
+
 export const verifyDeliveryOtpAndLogin = async (phone, otp, fcmToken, platform) => {
   const result = await verifyOtp(phone, otp);
   if (!result.valid) {
@@ -486,7 +524,7 @@ export const verifyDeliveryOtpAndLogin = async (phone, otp, fcmToken, platform) 
   const deliverySignupOpen = await isDeliverySelfOnboardingOpen();
   if (!normalized) {
     if (!deliverySignupOpen) throw new NotFoundError(DELIVERY_NOT_FOUND);
-    return { needsRegistration: true, phone };
+    return riderNeedsRegistration(phone);
   }
 
   const deliveryPartner = await prisma.foodDeliveryPartner.findFirst({
@@ -498,7 +536,7 @@ export const verifyDeliveryOtpAndLogin = async (phone, otp, fcmToken, platform) 
   if (!deliveryPartner) {
     // An OTP sent before sign-up was switched off still can't open the form.
     if (!deliverySignupOpen) throw new NotFoundError(DELIVERY_NOT_FOUND);
-    return { needsRegistration: true, phone };
+    return riderNeedsRegistration(phone);
   }
 
   // Update FCM token if provided - CRITICAL: do this BEFORE returning pendingApproval
@@ -601,6 +639,41 @@ export const logoutAllRestaurantDevices = async (restaurantId) => {
   return { loggedOutSessions: count };
 };
 
+/**
+ * A rider who signs out must not stay "online" (and keep getting offers) nor
+ * keep this phone's pushes. The shift is closed the way going offline closes
+ * it (updateDeliveryAvailability / closeOpenSessions in delivery.service).
+ * The sent fcmToken was already detached everywhere; without one, the mobile
+ * token goes (a rider is single-device).
+ */
+const signOutRider = async (riderId, fcmToken) => {
+  try {
+    const now = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.foodDeliveryPartner.update({
+        where: { id: riderId },
+        data: { availabilityStatus: "offline", ...(fcmToken ? {} : { fcmTokenMobile: [] }) },
+      });
+      const open = await tx.foodDeliveryPartnerSession.findMany({
+        where: { deliveryPartnerId: riderId, wentOfflineAt: null },
+        select: { id: true, wentOnlineAt: true },
+      });
+      for (const session of open) {
+        await tx.foodDeliveryPartnerSession.update({
+          where: { id: session.id },
+          data: {
+            wentOfflineAt: now,
+            durationMinutes: Math.max(0, Math.round((now - new Date(session.wentOnlineAt)) / 60000)),
+            closedBySystem: false,
+          },
+        });
+      }
+    });
+  } catch (err) {
+    logger.warn(`Could not sign rider ${riderId} out cleanly: ${err?.message || err}`);
+  }
+};
+
 export const logout = async (refreshToken, fcmToken, platform) => {
   if (!refreshToken) {
     throw new ValidationError("Refresh token is required");
@@ -615,8 +688,27 @@ export const logout = async (refreshToken, fcmToken, platform) => {
     }
   }
 
-  // 2. Invalidate the refresh token (standard logout procedure)
-  const deleted = await prisma.foodRefreshToken.deleteMany({ where: { token: refreshToken } });
+  // 2. End the session. Every refresh mints a new token and leaves the old one
+  // valid, so deleting only the presented token left its siblings working.
+  // Tokens carry the login's session id (sid): all of that session's go.
+  const stored = await prisma.foodRefreshToken.findUnique({ where: { token: refreshToken } });
+  if (!stored) return { invalidated: false };
+  const jwt = (await import("jsonwebtoken")).default;
+  const claims = jwt.decode(refreshToken) || {};
+  if (claims.role === ROLES.DELIVERY_PARTNER) await signOutRider(stored.userId, fcmToken);
+  let ids = [stored.id];
+  if (claims.sid) {
+    const siblings = await prisma.foodRefreshToken.findMany({
+      where: { userId: stored.userId },
+      select: { id: true, token: true },
+    });
+    ids = siblings.filter((t) => jwt.decode(t.token)?.sid === claims.sid).map((t) => t.id);
+  } else if (SINGLE_DEVICE_ROLES.has(claims.role)) {
+    // Issued before sessions had an id; a single-device account has one session.
+    ids = (await prisma.foodRefreshToken.findMany({ where: { userId: stored.userId }, select: { id: true } }))
+      .map((t) => t.id);
+  }
+  const deleted = await prisma.foodRefreshToken.deleteMany({ where: { id: { in: ids } } });
   return { invalidated: deleted.count > 0 };
 };
 
@@ -1070,9 +1162,12 @@ export const refreshAccessToken = async (token) => {
   if (sessionDelegate) {
     const owner = await sessionDelegate().findUnique({
       where: { id: String(payload.userId) },
-      select: { tokenVersion: true, deletedAt: true },
+      select: { tokenVersion: true, deletedAt: true, ...(payload.role === "RESTAURANT" ? { status: true } : {}) },
     });
     if (!owner || owner.deletedAt) throw new AuthError("This account has been deleted");
+    if (payload.role === "RESTAURANT" && owner.status === "rejected") {
+      throw new AuthError(RESTAURANT_REJECTED_MESSAGE);
+    }
     const stored = Number(owner?.tokenVersion) || 0;
     if (tokenVersion !== undefined && Number(tokenVersion) !== stored) {
       await takeRiderOfflineOnRefusedSession(jwt.default, token);
@@ -1097,7 +1192,7 @@ export const refreshAccessToken = async (token) => {
   // mid-shift (often right as they tapped Accept). The old token is left valid
   // until its own expiry, so an app that does not store the new one, or two
   // requests refreshing at once, are not logged out by this.
-  const refreshToken = signRefreshToken(claims);
+  const refreshToken = signRefreshToken({ ...claims, ...(payload.sid ? { sid: payload.sid } : {}) });
   await prisma.foodRefreshToken.create({
     data: {
       userId: String(payload.userId),

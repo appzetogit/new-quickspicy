@@ -110,6 +110,11 @@ test('a percentage discount stops at its cap, and flat never exceeds the cart', 
     assert.equal(computeOfferDiscount(offer({ discountType: 'flat_price', discountValue: 500 }), 300), 300);
 });
 
+test('a percentage discount is not a rupee short from floating point (57% of 100 is 57)', () => {
+    assert.equal(computeOfferDiscount(offer({ discountValue: 57, maxDiscount: null }), 100), 57);
+    assert.equal(computeOfferDiscount(offer({ discountValue: 29, maxDiscount: null }), 100), 29);
+});
+
 // ---- refusals, and the reason each gives -----------------------------------
 
 test('an unknown code', () => {

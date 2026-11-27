@@ -4,6 +4,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { fromRestaurantLocation, toRestaurant } from '../../restaurant/restaurant.mapper.js';
 import { logger } from '../../../../utils/logger.js';
+import { notifyApplicationDecision } from './decisionNotify.js';
 
 /**
  * Restaurant approval and lifecycle, extracted from admin.service.js.
@@ -213,9 +214,8 @@ export async function approveRestaurant(id) {
     const updated = await prisma.foodRestaurant.update({ where: { id: existing.id }, data });
 
     try {
-        const { notifyOwnersSafely } = await import('../../../../core/notifications/firebase.service.js');
-        await notifyOwnersSafely(
-            [{ ownerType: 'RESTAURANT', ownerId: updated.id }],
+        await notifyApplicationDecision(
+            { ownerType: 'RESTAURANT', ownerId: updated.id },
             {
                 title: 'Congratulations!',
                 body: `Your restaurant "${updated.restaurantName}" has been approved.`,
@@ -267,9 +267,8 @@ export async function rejectRestaurant(id, reason) {
     });
 
     try {
-        const { notifyOwnersSafely } = await import('../../../../core/notifications/firebase.service.js');
-        await notifyOwnersSafely(
-            [{ ownerType: 'RESTAURANT', ownerId: updated.id }],
+        await notifyApplicationDecision(
+            { ownerType: 'RESTAURANT', ownerId: updated.id },
             {
                 title: 'Update on Registration',
                 body: `Your restaurant registration for "${updated.restaurantName}" has been rejected. Reason: ${rejectionReason || 'Incomplete documents'}.`,

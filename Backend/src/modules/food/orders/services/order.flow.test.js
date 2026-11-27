@@ -10,6 +10,7 @@ import {
     getOrderById,
     cancelOrder,
     listOrdersUser,
+    updateOrderStatusRestaurant,
 } from './order.service.js';
 
 /**
@@ -94,6 +95,8 @@ test.before(async () => {
 });
 
 test.after(async () => {
+    await prisma.foodOffer.deleteMany({ where: { id: { in: created.offers || [] } } });
+    await prisma.foodNotification.deleteMany({ where: { ownerType: 'USER', ownerId: { in: created.users } } });
     const orders = await prisma.foodOrder.findMany({
         where: { restaurantId: { in: created.restaurants } }, select: { id: true },
     });
@@ -224,4 +227,70 @@ test('an order for a dish that is not on the menu is refused', async () => {
     );
     await assert.rejects(() => createOrder(userId, { ...cartOf(1), items: [] }));
     await assert.rejects(() => createOrder(userId, { ...cartOf(1), restaurantId: 'not-an-id' }));
+});
+
+// ---- zone: the restaurant's, never the app's ---------------------------------------
+
+test('a client zoneId (even one that does not exist) neither fails the order nor changes its zone or price', async () => {
+    const restaurant = await prisma.foodRestaurant.findUnique({ where: { id: restaurantId }, select: { zoneId: true } });
+    const bogus = { ...cartOf(1), zoneId: 'f'.repeat(24) };
+    const quote = await calculateOrder(userId, bogus);
+    const { order } = await createOrder(userId, bogus);
+    created.orders.push(order._id || order.id);
+    const row = await prisma.foodOrder.findUnique({ where: { id: order._id || order.id } });
+    assert.equal(row.zoneId, restaurant.zoneId);
+    assert.equal(Number(order.pricing.total), Number(quote.pricing.total));
+});
+
+// ---- coupons: one use per order, given back on cancel --------------------------------
+
+const makeCoupon = async (data = {}) => {
+    created.offers = created.offers || [];
+    const offer = await prisma.foodOffer.create({
+        data: { couponCode: uniqueTag('QC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20), discountType: 'flat_price', discountValue: 50, ...data },
+    });
+    created.offers.push(offer.id);
+    return offer;
+};
+
+test('cancelling an order gives the coupon use back (user and restaurant cancel)', async () => {
+    const offer = await makeCoupon({ usageLimit: 5, perUserLimit: 1 });
+    const withCoupon = { ...cartOf(1), pricing: { couponCode: offer.couponCode } };
+
+    const { order } = await createOrder(userId, withCoupon);
+    created.orders.push(order._id || order.id);
+    assert.equal((await prisma.foodOffer.findUnique({ where: { id: offer.id } })).usedCount, 1);
+    await assert.rejects(() => createOrder(userId, withCoupon), /maximum|used/i, 'per-user limit 1 holds');
+
+    await cancelOrder(order._id || order.id, userId, 'changed my mind');
+    assert.equal((await prisma.foodOffer.findUnique({ where: { id: offer.id } })).usedCount, 0);
+    const usage = await prisma.foodOfferUsage.findFirst({ where: { offerId: offer.id, userId } });
+    assert.equal(usage.count, 0);
+
+    const { order: again } = await createOrder(userId, withCoupon);
+    created.orders.push(again._id || again.id);
+    await prisma.foodOrder.update({ where: { id: again._id || again.id }, data: { acceptanceDeadlineAt: null } });
+    await updateOrderStatusRestaurant(again._id || again.id, restaurantId, 'cancelled_by_restaurant', 'Out of paneer');
+    assert.equal((await prisma.foodOffer.findUnique({ where: { id: offer.id } })).usedCount, 0);
+
+    // The rejection reason reaches the customer's inbox, not only the push.
+    let rows = [];
+    for (let i = 0; i < 20 && !rows.length; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        rows = await prisma.foodNotification.findMany({
+            where: { ownerType: 'USER', ownerId: userId, message: 'Out of paneer' },
+        });
+    }
+    assert.equal(rows.length, 1);
+});
+
+test('two orders racing for the last use of a limit-1 coupon: only one goes through', async () => {
+    const offer = await makeCoupon({ usageLimit: 1 });
+    const other = await prisma.foodUser.create({ data: { name: `${tag} Racer`, phone: uniquePhone('5') } });
+    created.users.push(other.id);
+    const results = await Promise.allSettled([userId, other.id].map((uid) =>
+        createOrder(uid, { ...cartOf(1), pricing: { couponCode: offer.couponCode } })));
+    for (const r of results) if (r.status === 'fulfilled') created.orders.push(r.value.order._id || r.value.order.id);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal((await prisma.foodOffer.findUnique({ where: { id: offer.id } })).usedCount, 1);
 });

@@ -73,12 +73,14 @@ const normalizePricingSnapshot = (pricing = null) => {
     const deliveryFee = toNonNegativeNumber(pricing.deliveryFee, 0);
     const deliveryFeeGst = resolveStoredDeliveryFeeGst(deliveryFee, pricing.deliveryFeeGst);
     const platformFee = toNonNegativeNumber(pricing.platformFee, 0);
-    const discount = toNonNegativeNumber(pricing.discount, 0);
+    // A discount never exceeds the items it is taken off, so the total never
+    // goes below zero.
+    const discount = Math.min(subtotal, toNonNegativeNumber(pricing.discount, 0));
     const deliveryMode = pricing.deliveryMode === 'quick' ? 'quick' : 'basic';
     const quickDeliveryFee = toNonNegativeNumber(pricing.quickDeliveryFee, 0);
     const total = toNonNegativeNumber(
         pricing.total,
-        subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + tax - discount,
+        Math.max(0, subtotal + packagingFee + deliveryFee + deliveryFeeGst + platformFee + tax - discount),
     );
     const savings = toNonNegativeNumber(pricing.savings, 0);
 
@@ -222,6 +224,8 @@ export async function getLatestCartRow(userId) {
 
 /** Replace one restaurant's cart wholesale; an empty list deletes it. */
 async function writeCart(userId, restaurantId, rawItems, rawPricing, restaurantNameHint = '') {
+    // Same 1–99 rule as adding one dish: 0 or -3 used to become 1 and 100000 was kept.
+    for (const item of Array.isArray(rawItems) ? rawItems : []) toQuantity(item?.quantity ?? 1);
     const items = normalizeCartItems(rawItems);
     if (items.length === 0) {
         // deleteMany, not delete: emptying a cart that was never saved is a
@@ -230,9 +234,13 @@ async function writeCart(userId, restaurantId, rawItems, rawPricing, restaurantN
         return null;
     }
 
+    const restaurant = isId(restaurantId)
+        ? await prisma.foodRestaurant.findUnique({ where: { id: String(restaurantId) }, select: { restaurantName: true, status: true } })
+        : null;
+    if (restaurant && restaurant.status !== 'approved') throw new ValidationError('This restaurant is not taking orders');
     // The user app sends only the restaurant id, so the name was saved blank
     // and the admin User Carts list showed an empty restaurant column.
-    const restaurantName = String(restaurantNameHint || '').trim() || (await restaurantNameFor(restaurantId));
+    const restaurantName = String(restaurantNameHint || '').trim() || restaurant?.restaurantName || '';
     const data = {
         restaurantName,
         // A cart is replaced wholesale and never queried across users, so
@@ -404,9 +412,11 @@ async function priceDishForCart(restaurantId, itemId, variantId = '') {
     if (!isId(itemId)) throw new ValidationError('Invalid dish');
     const food = await prisma.foodItem.findFirst({
         where: { id: String(itemId), restaurantId },
-        include: { variants: true },
+        include: { variants: true, restaurant: { select: { status: true } } },
     });
     if (!food || food.approvalStatus !== 'approved') throw new NotFoundError('Dish not found at this restaurant');
+    // A restaurant still awaiting approval (or rejected/suspended) cannot be ordered from.
+    if (food.restaurant?.status !== 'approved') throw new ValidationError('This restaurant is not taking orders');
     if (!food.isAvailable) throw new ValidationError(`${food.name} is not available right now`);
 
     const [priced] = await applyAppPricing([food]);

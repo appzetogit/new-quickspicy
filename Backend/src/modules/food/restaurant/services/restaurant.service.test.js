@@ -305,6 +305,15 @@ test('going online clears the manual offline override', async () => {
     assert.equal(row.outsideHoursOverride, false);
 });
 
+test('an empty online/offline request is refused, not read as offline', async () => {
+    const r = await makeRestaurant({ isAcceptingOrders: true });
+    await assert.rejects(() => updateRestaurantAcceptingOrders(r.id, undefined), /true or false/);
+    await assert.rejects(() => updateRestaurantAcceptingOrders(r.id, 'maybe'), /true or false/);
+    const row = await prisma.foodRestaurant.findUnique({ where: { id: r.id } });
+    assert.equal(row.isAcceptingOrders, true);
+    assert.equal((await updateRestaurantAcceptingOrders(r.id, 'false')).isAcceptingOrders, false);
+});
+
 test('the profile does not leak auth fields', async () => {
     const r = await makeRestaurant();
     const profile = await getCurrentRestaurantProfile(r.id);

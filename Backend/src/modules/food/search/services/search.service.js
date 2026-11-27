@@ -158,7 +158,12 @@ export const searchUnified = async (query = {}, options = {}) => {
                 approvalStatus: 'approved',
                 isAvailable: true,
                 restaurantId: { in: reachIds },
-                name: { contains: term, mode: 'insensitive' },
+                // The app's category chips search by the category's name, so a
+                // dish in "fresh category" must match on its category too.
+                OR: [
+                    { name: { contains: term, mode: 'insensitive' } },
+                    { categoryName: { contains: term, mode: 'insensitive' } },
+                ],
                 ...(dishTypeWhere || {}),
             },
             select: FOOD_MATCH_SELECT,

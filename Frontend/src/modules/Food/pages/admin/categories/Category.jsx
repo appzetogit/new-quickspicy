@@ -40,12 +40,13 @@ const scopeBadgeClass = (scope) => {
   return "bg-slate-100 text-slate-700 border-slate-200"
 }
 
-const zoneLabel = (zone) => {
+// Categories carry only the zone id; the name comes from the zones list.
+const zoneLabel = (zone, zones = []) => {
   if (!zone) return "Global"
   if (typeof zone === "string") {
     const value = zone.trim()
-    if (/^[a-f0-9]{24}$/i.test(value)) return `Zone ID ${value.slice(-6)}`
-    return value
+    const match = zones.find((z) => String(z?._id || z?.id || "") === value)
+    return match?.name || match?.zoneName || match?.serviceLocation || "Zone"
   }
   return zone?.name || zone?.zoneName || zone?.serviceLocation || "Zone"
 }
@@ -318,7 +319,7 @@ export default function Category() {
         category?.name || "N/A",
         category?.foodTypeScope || "Both",
         category?.isGlobal ? "Global" : "Private",
-        zoneLabel(category?.zoneId),
+        zoneLabel(category?.zoneId, zones),
         category?.approvalStatus || "pending",
       ])
 
@@ -501,7 +502,7 @@ export default function Category() {
                   const creatorName = category?.createdByRestaurant?.name || category?.restaurant?.name || "Admin"
                   const approvalStatus = category?.approvalStatus || "pending"
                   const isRestaurantCategory = Boolean(category?.createdByRestaurantId || category?.restaurantId)
-                  const zoneText = zoneLabel(category?.zoneId)
+                  const zoneText = zoneLabel(category?.zoneId, zones)
 
                   return (
                     <tr key={categoryId || `category-${category?.name || "item"}`} className="align-top hover:bg-slate-50/80">

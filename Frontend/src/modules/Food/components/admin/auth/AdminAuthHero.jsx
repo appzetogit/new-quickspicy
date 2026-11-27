@@ -1,7 +1,8 @@
 import { motion, useReducedMotion } from "framer-motion"
 import { Shield, BarChart3 } from "lucide-react"
 import { useCompanyName } from "@food/hooks/useCompanyName"
-import brandLogo from "@food/assets/quickspicy-logo.png"
+// The square rider mark: the full logo (with wordmark + tagline) is unreadable in a small tile.
+const brandLogo = "/brand/logo-mark.svg"
 
 export default function AdminAuthHero({ themeColor, logoUrl }) {
   const companyName = useCompanyName()
@@ -40,11 +41,11 @@ export default function AdminAuthHero({ themeColor, logoUrl }) {
 
       <div className="relative z-10 flex h-full flex-col justify-between p-8 xl:p-10">
         <div className="absolute right-8 top-8 xl:right-10 xl:top-10">
-          <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-sm">
+          <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-white/15">
             <img
               src={logoUrl}
               alt={`${companyName} logo`}
-              className="h-full w-full scale-[1.65] object-contain"
+              className="h-full w-full object-contain p-1.5"
               loading="lazy"
               onError={(e) => {
                 if (e.target.src !== brandLogo) {

@@ -3,7 +3,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { invalidateCache } from '../../../../middleware/cache.js';
 import { getRestaurantLocalTimeParts } from '../../../../utils/timezone.js';
-import { normalizeDaySlots, readSlots } from '../helpers/daySlots.helper.js';
+import { normalizeDaySlots, readSlots, parseTimeToMinutes } from '../helpers/daySlots.helper.js';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -67,6 +67,32 @@ export async function getOutletTimingsForRestaurant(restaurantId) {
     return { outletTimings: toClientShape(doc) };
 }
 
+/**
+ * Rejects a time that is not HH:MM within 00:00–23:59. They used to be dropped
+ * silently: 25:99 fell back to the default hours, and a day whose every window
+ * was invalid read as open all day.
+ */
+const assertValidDayTimes = (day, src) => {
+    if (src.isOpen === false) return;
+    const blank = (v) => v === undefined || v === null || String(v).trim() === '';
+    const check = (v) => {
+        if (parseTimeToMinutes(v) === null) {
+            throw new ValidationError(`${day}: "${v}" is not a valid time. Use HH:MM between 00:00 and 23:59`);
+        }
+    };
+    if (Array.isArray(src.slots)) {
+        for (const slot of src.slots) {
+            const open = slot?.open ?? slot?.openingTime;
+            const close = slot?.close ?? slot?.closingTime;
+            if (blank(open) || blank(close)) throw new ValidationError(`${day}: every time slot needs an opening and a closing time`);
+            check(open);
+            check(close);
+        }
+    }
+    if (!blank(src.openingTime)) check(src.openingTime);
+    if (!blank(src.closingTime)) check(src.closingTime);
+};
+
 export async function upsertOutletTimingsForRestaurant(restaurantId, outletTimings) {
     if (!isId(restaurantId)) {
         throw new ValidationError('Invalid restaurant id');
@@ -77,6 +103,7 @@ export async function upsertOutletTimingsForRestaurant(restaurantId, outletTimin
 
     const timings = DAY_NAMES.map((day) => {
         const src = outletTimings[day] && typeof outletTimings[day] === 'object' ? outletTimings[day] : {};
+        assertValidDayTimes(day, src);
         // Writes slots and mirrors the first into openingTime/closingTime, so
         // the stored row stays readable by everything that predates slots.
         return normalizeDaySlots(src, { day });

@@ -16,17 +16,37 @@ import { checkOfferEligibility, computeOfferDiscount, isZoneRestricted } from '.
 import { getTipSettings } from '../../admin/services/tip.service.js';
 import { assertItemQuantities, loadOrderLimits } from '../../shared/orderLimits.js';
 import { zoneChain, withMainZones, mainZoneIdOf } from '../../shared/zoneHierarchy.js';
+import { findZoneForPoint } from '../../shared/zone.service.js';
+
+/**
+ * The zone an order belongs to: the restaurant's, else the zone the restaurant
+ * (or failing that, the drop) stands in. Never a zone the app sends -- that let
+ * a client pick the fee row, the rider pay and the zone's payment rules, and
+ * made the quote and the charged total differ. Quote and order both use this.
+ */
+export async function resolveOrderZoneId(restaurant, deliveryAddress) {
+  return restaurant?.zoneId
+    || (await findZoneForPoint(restaurant?.latitude, restaurant?.longitude))?.id
+    || (await findZoneForPoint(deliveryAddress?.latitude, deliveryAddress?.longitude))?.id
+    || null;
+}
 
 /**
  * Whether a tip given at checkout is allowed. Pure, so it is tested without a
  * database; the after-delivery path applies the same two rules.
  */
+/** The most a checkout tip can be when the admin has set no ceiling. */
+export const DEFAULT_MAX_CHECKOUT_TIP = 1000;
+
 export const checkCheckoutTip = (amount, settings = {}) => {
   const tip = Number(amount) || 0;
+  // 1e400 arrives from JSON as Infinity, which used to sail through.
+  if (!Number.isFinite(tip)) return { ok: false, message: 'Enter a valid tip amount' };
   if (tip <= 0) return { ok: true };
   if (settings.tipsEnabled === false) return { ok: false, message: 'Tipping is switched off' };
-  const ceiling = Number(settings.tipMaxAmount);
-  if (Number.isFinite(ceiling) && ceiling > 0 && tip > ceiling) {
+  const setCeiling = Number(settings.tipMaxAmount);
+  const ceiling = Number.isFinite(setCeiling) && setCeiling > 0 ? setCeiling : DEFAULT_MAX_CHECKOUT_TIP;
+  if (tip > ceiling) {
     return { ok: false, message: `The most you can tip is \u20b9${ceiling}` };
   }
   return { ok: true };
@@ -583,13 +603,15 @@ export function resolveUserDeliveryFee(
 
 export function calculateRiderEarning(feeSettings = {}, distanceKm) {
   const distance = Number(distanceKm);
-  if (!Number.isFinite(distance) || distance < 0) return 0;
 
   // A floor under the whole calculation: a one-kilometre trip priced per km
   // earned a rider almost nothing, and no rider accepts that.
   const rawFloor = Number(feeSettings?.riderMinPayPerTrip);
   const floor = Number.isFinite(rawFloor) && rawFloor > 0 ? Math.round(rawFloor) : 0;
   const atLeastFloor = (amount) => Math.max(floor, amount);
+  // Distance unknown (no coordinates): the trip is still done, so the minimum
+  // pay applies -- it used to pay 0.
+  if (distanceKm == null || distanceKm === '' || !Number.isFinite(distance) || distance < 0) return floor;
 
   const ranges = Array.isArray(feeSettings.deliveryFeeRanges)
     ? feeSettings.deliveryFeeRanges
@@ -699,10 +721,10 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
     ),
   );
 
-  // Zone comes from the restaurant, matching how an order records its zone
-  // (order.service.js falls back to restaurant.zoneId), so the quote a
-  // customer sees and the price they are charged resolve the same fee row.
-  const pricingZoneId = dto?.zoneId || restaurant?.zoneId || null;
+  // Zone comes from the restaurant (resolveOrderZoneId), exactly as the order
+  // records it, so the quote a customer sees and the price they are charged
+  // resolve the same fee row. A client-sent zoneId is ignored.
+  const pricingZoneId = await resolveOrderZoneId(restaurant, deliveryAddress);
   const feeSettings = await loadActiveFeeSettings(pricingZoneId);
 
   const packagingFee = resolvePackagingFee(restaurant, subtotal);
@@ -792,7 +814,7 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
     // A zone/city-limited coupon goes by the restaurant's zone (the zone the
     // order is filed under), and only falls back to the client's zoneId when
     // the restaurant has none -- the client cannot move a restaurant's area.
-    const couponZoneId = restaurant?.zoneId || dto?.zoneId || null;
+    const couponZoneId = pricingZoneId;
     const couponCityId = offer && isZoneRestricted(offer) && isId(couponZoneId)
       ? (await prisma.foodZone.findUnique({ where: { id: String(couponZoneId) }, select: { cityId: true } }))?.cityId || null
       : null;
@@ -833,7 +855,7 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
   // The tip is the customer's money for the rider: added to what they pay, and
   // never folded into a fee, so it cannot be mistaken for platform income.
   const tipAmount = Math.max(0, round2(Number(dto?.tipAmount) || 0));
-  if (tipAmount > 0) {
+  if (tipAmount !== 0) {
     // The same rules the after-delivery tip enforces. Settings are only read
     // when a tip is actually being added, so an untipped cart costs nothing.
     const verdict = checkCheckoutTip(tipAmount, await getTipSettings());
@@ -907,6 +929,8 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
   return {
     items,
     priceChanges,
+    // The zone this order is priced (and will be filed) under.
+    zoneId: pricingZoneId,
     pricing: {
       ...pricing,
       deliveryFeeBreakdown: {

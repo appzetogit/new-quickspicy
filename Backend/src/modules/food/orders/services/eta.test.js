@@ -47,3 +47,35 @@ test('after pickup it is the rider\'s drive to the customer', () => {
 test('no drive time, no ETA', () => {
     assert.equal(etaMinutesFor({ status: 'preparing', prepMinutes: 20, placedAt, now: placedAt }), null);
 });
+
+test('prep time in hours and minutes, in the ways restaurants write it', () => {
+    assert.equal(parsePrepMinutes('1 hr 30 min'), 90);
+    assert.equal(parsePrepMinutes('1h'), 60);
+    assert.equal(parsePrepMinutes('1h30m'), 90);
+    assert.equal(parsePrepMinutes('1.5 hours'), 90);
+    assert.equal(parsePrepMinutes('2 hrs'), 120);
+    assert.equal(parsePrepMinutes('45 mins'), 45);
+    assert.equal(parsePrepMinutes('30-45'), 45);
+    assert.equal(parsePrepMinutes('1-2 hours'), 120);
+    assert.equal(parsePrepMinutes('90 minutes'), 90);
+});
+
+test('no Google route: the drive is estimated from distance, not 1 minute', async () => {
+    const { driveMinutes, estimateDriveMinutes } = await import('./eta.service.js');
+    // ~5.6 km apart in Indore; no Maps key in tests, so fetchDrivingRoute returns no duration.
+    const a = { lat: 22.7196, lng: 75.8577 };
+    const b = { lat: 22.7700, lng: 75.8577 };
+    const expected = estimateDriveMinutes(a, b);
+    assert.ok(expected > 10, `expected a real estimate, got ${expected}`);
+    assert.equal(await driveMinutes(a, b), expected);
+});
+
+test('0,0 and out-of-range positions are not positions', async () => {
+    const { toFix } = await import('../../delivery/services/riderFix.js');
+    assert.equal(toFix(0, 0), null);
+    assert.equal(toFix(null, null), null);
+    assert.equal(toFix('', ''), null);
+    assert.equal(toFix(91, 10), null);
+    assert.equal(toFix(10, 181), null);
+    assert.deepEqual(toFix('22.7', '75.8'), { lat: 22.7, lng: 75.8 });
+});

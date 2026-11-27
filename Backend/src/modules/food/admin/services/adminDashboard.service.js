@@ -469,7 +469,11 @@ export async function getSidebarBadges() {
             // matched nothing and both badges have always read zero. Counted
             // against the real statuses now — orders awaiting action, and
             // orders waiting on a QR payment.
-            prisma.foodOrder.count({ where: { orderStatus: { in: PENDING_ORDER_STATUSES } } }),
+            // The badge sits on the Pending Orders tab, so it counts what that
+            // tab lists (admin order list, status=pending): placed or accepted,
+            // not started. Counting preparing/picked-up orders too left the
+            // badge on 1 while the tab was empty.
+            prisma.foodOrder.count({ where: { orderStatus: { in: ['created', 'confirmed'] } } }),
             prisma.foodOrder.count({ where: { paymentStatus: 'pending_qr' } }),
             prisma.foodRestaurantWithdrawal.count({ where: { status: 'pending' } }),
             prisma.foodDeliveryWithdrawal.count({ where: { status: 'pending' } }),

@@ -32,40 +32,69 @@ const walletKey = (deliveryPartnerId) => ({
  */
 export const getRiderCashInHand = async (deliveryPartnerId, { wallet } = {}) => {
     const partnerId = String(deliveryPartnerId);
-    const [cashCollectedAgg, cashDepositsAgg, walletDoc, changeByRider] = await Promise.all([
+    const byRider = await getRidersCashInHand([partnerId], {
+        wallets: wallet !== undefined ? [wallet].filter(Boolean) : undefined,
+    });
+    return byRider.get(partnerId);
+};
+
+/**
+ * getRiderCashInHand for many riders in four queries, keyed by rider id.
+ * The cash-limit checks (accepting, dispatch, manual assign) read this: they
+ * used to read only the wallet row's cashInHand, which nothing but a manual
+ * admin adjustment ever wrote, so COD cash never counted and the limit never
+ * stopped anyone. Delivered COD orders are the record of cash collected and
+ * deposits the record of cash handed in, so nothing is added to the wallet
+ * row on delivery -- that would count the same cash twice.
+ *
+ * Pass `wallets` (rows already loaded) to skip that query.
+ */
+export const getRidersCashInHand = async (deliveryPartnerIds, { wallets } = {}) => {
+    const ids = [...new Set((deliveryPartnerIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return new Map();
+    const [collectedRows, depositRows, walletRows, changeByRider] = await Promise.all([
         // Gross cash collected (COD orders). The wallet part of a wallet + cash
         // order was never in the rider's hand, so it is taken off.
-        prisma.foodOrder.aggregate({
+        prisma.foodOrder.groupBy({
+            by: ['dispatchDeliveryPartnerId'],
             where: {
-                dispatchDeliveryPartnerId: partnerId,
+                dispatchDeliveryPartnerId: { in: ids },
                 orderStatus: 'delivered',
                 paymentMethod: 'cash',
             },
             _sum: { total: true, walletAmount: true, onlineAmount: true },
         }),
         // Cash deposits (deduct from cash-in-hand)
-        prisma.foodDeliveryCashDeposit.aggregate({
-            where: { deliveryPartnerId: partnerId, status: 'Completed' },
+        prisma.foodDeliveryCashDeposit.groupBy({
+            by: ['deliveryPartnerId'],
+            where: { deliveryPartnerId: { in: ids }, status: 'Completed' },
             _sum: { amount: true },
         }),
-        wallet !== undefined ? wallet : prisma.wallet.findUnique({ where: walletKey(partnerId) }),
-        approvedChangeByRider([partnerId]),
+        wallets !== undefined
+            ? wallets
+            : prisma.wallet.findMany({ where: { entityType: 'deliveryBoy', entityId: { in: ids } } }),
+        approvedChangeByRider(ids),
     ]);
-    // Change the rider kept for a customer (credited to the customer's wallet
-    // once approved) is cash they hold for the company too.
-    const changeKeptForCustomers = num(changeByRider?.get?.(partnerId));
-    const collected = Math.max(0,
-        num(cashCollectedAgg?._sum?.total)
-        - num(cashCollectedAgg?._sum?.walletAmount)
-        - num(cashCollectedAgg?._sum?.onlineAmount)) + changeKeptForCustomers;
-    const deposited = num(cashDepositsAgg?._sum?.amount);
-    const computed = Math.max(0, collected - deposited);
-    return {
-        cashInHand: Math.max(computed, num(walletDoc?.cashInHand)),
-        collected,
-        deposited,
-        changeKeptForCustomers,
-    };
+    const collectedBy = new Map(collectedRows.map((r) => [String(r.dispatchDeliveryPartnerId), r._sum]));
+    const depositedBy = new Map(depositRows.map((r) => [String(r.deliveryPartnerId), num(r._sum?.amount)]));
+    const walletBy = new Map((walletRows || []).map((w) => [String(w.entityId), w]));
+
+    return new Map(ids.map((partnerId) => {
+        const sums = collectedBy.get(partnerId);
+        // Change the rider kept for a customer (credited to the customer's wallet
+        // once approved) is cash they hold for the company too.
+        const changeKeptForCustomers = num(changeByRider?.get?.(partnerId));
+        const collected = Math.max(0,
+            num(sums?.total) - num(sums?.walletAmount) - num(sums?.onlineAmount)) + changeKeptForCustomers;
+        const deposited = depositedBy.get(partnerId) || 0;
+        const computed = Math.max(0, collected - deposited);
+        return [partnerId, {
+            cashInHand: Math.max(computed, num(walletBy.get(partnerId)?.cashInHand)),
+            collected,
+            deposited,
+            changeKeptForCustomers,
+        }];
+    }));
 };
 
 /**

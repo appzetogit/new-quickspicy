@@ -1,4 +1,3 @@
-import { findZoneForPoint } from '../../shared/zone.service.js';
 import { notifyCustomer, notifyCustomerForStatus } from './customerNotify.service.js';
 import { normalizeRecipientFields } from '../validators/order.validator.js';
 import { prisma } from '../../../../config/prisma.js';
@@ -19,6 +18,7 @@ import {
 import { getBalance, recordTransaction } from '../../../../core/payments/transaction.service.js';
 import { assertCodAllowedForTotal, loadOrderLimits } from '../../shared/orderLimits.js';
 import { refreshOrderEta } from './eta.service.js';
+import { getFssaiOrderingBlock, FSSAI_ACCEPT_BLOCK_MESSAGE } from '../../restaurant/services/fssaiExpiry.service.js';
 import { recomputePartnerRating, recomputeRestaurantRating } from './rating.service.js';
 import {
   refundOrder,
@@ -38,6 +38,7 @@ import {
   loadActiveFeeSettings,
   loadRestaurantForOrdering,
   assertRestaurantOpenForOrdering,
+  resolveOrderZoneId,
 } from './order-pricing.service.js';
 import { normalizeDeliveryAddress } from '../../shared/geo.utils.js';
 import * as dispatchService from './order-dispatch.service.js';
@@ -149,6 +150,16 @@ function buildAcceptanceDeadline(date = new Date(), windowSeconds = ORDER_ACCEPT
  * deleted order silently erases its own wallet history.
  */
 async function purgeOrderWith(tx, id) {
+  // An order removed before it was ever delivered or cancelled (an unpaid
+  // online order, a placement that failed half way, an admin delete) gives its
+  // coupon use back. A cancelled one already did; a delivered one keeps it.
+  const doomed = await tx.foodOrder.findUnique({
+    where: { id },
+    select: { id: true, userId: true, couponCode: true, discount: true, orderStatus: true },
+  });
+  if (doomed && doomed.orderStatus !== "delivered" && !String(doomed.orderStatus).startsWith("cancelled")) {
+    await releaseCouponUsageWith(tx, doomed);
+  }
   await tx.foodSupportTicket.updateMany({ where: { orderId: id }, data: { orderId: null } });
   await tx.transaction.updateMany({ where: { orderId: id }, data: { orderId: null } });
   await tx.foodChatMessage.updateMany({ where: { orderId: id }, data: { orderId: null } });
@@ -464,6 +475,7 @@ async function expireUnacceptedOrders(where = {}) {
     const updated = toOrder(
       await prisma.foodOrder.findUnique({ where: { id: doc.id }, include: orderInclude }),
     );
+    await releaseCouponUsageForOrder(updated);
 
     try {
       const refund = await applyCancellationRefund(updated, { cancelledBy: 'auto_cancel' });
@@ -576,15 +588,7 @@ export async function calculateOrder(userId, dto) {
   // checkout can hide what would be refused. Same zone as createOrder: the
   // restaurant's, else the one sent.
   try {
-    let zoneId = null;
-    if (isId(dto.restaurantId)) {
-      const r = await prisma.foodRestaurant.findUnique({
-        where: { id: String(dto.restaurantId) },
-        select: { zoneId: true },
-      });
-      zoneId = r?.zoneId || null;
-    }
-    if (!zoneId) zoneId = dto.zoneId || null;
+    const zoneId = result?.zoneId || null;
     const { resolvePaymentAvailability } = await import("./onlinePaymentAvailability.service.js");
     result.paymentAvailability = await resolvePaymentAvailability({
       userId,
@@ -599,42 +603,76 @@ export async function calculateOrder(userId, dto) {
 
 // ----- Coupons -----
 
-async function incrementCouponUsageForOrder(order, userId) {
-  const couponCode = order?.couponCode
-    ? String(order.couponCode).trim().toUpperCase()
-    : "";
-  if (!couponCode) return;
-  // A stored code with no applied discount means the coupon was rejected at
-  // pricing time — don't consume the user's/offer's usage allowance for it.
-  if (!(Number(order?.discount) > 0)) return;
+const orderCouponCode = (order) =>
+  order?.couponCode ? String(order.couponCode).trim().toUpperCase() : "";
 
-  try {
-    const offer = await prisma.foodOffer.findUnique({ where: { couponCode } });
+/**
+ * Take one use of the order's coupon, for the offer and for this customer,
+ * before the order is written. The offer row is locked, so two orders racing
+ * for the last use of a limit-1 coupon cannot both pass: the second is refused
+ * with a message instead of going through at the discounted price. A stored
+ * code with no discount (rejected at pricing) takes nothing.
+ *
+ * The use is handed back by releaseCouponUsageWith when the order is cancelled
+ * or an unpaid order is removed.
+ */
+async function claimCouponUsage(pricing, userId) {
+  const couponCode = orderCouponCode(pricing);
+  if (!couponCode || !(Number(pricing?.discount) > 0)) return;
+  await prisma.$transaction(async (tx) => {
+    const [offer] = await tx.$queryRaw`
+      SELECT "id", "usageLimit", "usedCount", "perUserLimit"
+      FROM "food_offers" WHERE "couponCode" = ${couponCode} FOR UPDATE`;
     if (!offer) return;
-
-    // Conditional increment so concurrent orders cannot push usedCount past usageLimit.
-    const { count } = await prisma.foodOffer.updateMany({
-      where: {
-        id: offer.id,
-        OR: [{ usageLimit: null }, { usageLimit: 0 }, { usedCount: { lt: offer.usageLimit ?? 0 } }],
-      },
-      data: { usedCount: { increment: 1 } },
-    });
-    if (count === 0 && Number(offer.usageLimit) > 0) {
-      // Payment is already processed at this point, so honour the discount but flag the overflow.
-      logger.warn(
-        `Coupon ${couponCode} reached usage limit before increment for order ${order?.id}; discount honored.`,
-      );
+    if (Number(offer.usageLimit) > 0 && Number(offer.usedCount) >= Number(offer.usageLimit)) {
+      throw new ValidationError("This coupon has just been fully used. Remove the coupon or review your cart to continue.");
     }
-
-    await prisma.foodOfferUsage.upsert({
+    const usage = await tx.foodOfferUsage.findUnique({
+      where: { offerId_userId: { offerId: offer.id, userId: String(userId) } },
+      select: { count: true },
+    });
+    if (Number(offer.perUserLimit) > 0 && Number(usage?.count || 0) >= Number(offer.perUserLimit)) {
+      throw new ValidationError("You have already used this coupon the maximum number of times. Remove the coupon to continue.");
+    }
+    await tx.foodOffer.update({ where: { id: offer.id }, data: { usedCount: { increment: 1 } } });
+    await tx.foodOfferUsage.upsert({
       where: { offerId_userId: { offerId: offer.id, userId: String(userId) } },
       create: { offerId: offer.id, userId: String(userId), count: 1, lastUsedAt: new Date() },
       update: { count: { increment: 1 }, lastUsedAt: new Date() },
     });
+  });
+}
+
+/**
+ * Give back the coupon use an order took (cancelled, or an unpaid order
+ * removed), so the customer can use it again and the offer's limit counts only
+ * real orders. Never below zero. `client` is prisma or a transaction.
+ */
+async function releaseCouponUsageWith(client, order) {
+  const couponCode = orderCouponCode(order);
+  if (!couponCode || !(Number(order?.discount ?? order?.pricing?.discount) > 0)) return;
+  const userId = String(order?.userId?._id || order?.userId?.id || order?.userId || "");
+  try {
+    const offer = await client.foodOffer.findUnique({ where: { couponCode }, select: { id: true } });
+    if (!offer) return;
+    await client.foodOffer.updateMany({
+      where: { id: offer.id, usedCount: { gt: 0 } },
+      data: { usedCount: { decrement: 1 } },
+    });
+    if (userId) {
+      await client.foodOfferUsage.updateMany({
+        where: { offerId: offer.id, userId, count: { gt: 0 } },
+        data: { count: { decrement: 1 } },
+      });
+    }
   } catch (err) {
-    logger.error(`Coupon usage update failed: ${err.message}`);
+    logger.error(`Coupon usage release failed for order ${order?.id}: ${err?.message || err}`);
   }
+}
+
+/** For the cancel paths: hands the coupon back once the order is cancelled. */
+export async function releaseCouponUsageForOrder(order) {
+  return releaseCouponUsageWith(prisma, order);
 }
 
 // ----- Create order -----
@@ -717,6 +755,11 @@ export async function createOrder(userId, rawDto) {
     // The order stays the account holder's: their own name and phone from the
     // account, never the body (the app puts the receiver there for older
     // servers).
+    // The order's zone, from the restaurant -- never the client's zoneId (it
+    // decided the fee row, the rider pay and COD rules, and a made-up id failed
+    // the insert with a generic error). Pricing resolves the same zone.
+    const orderZoneId = await resolveOrderZoneId(restaurant, deliveryAddress);
+
     let customer = { name: String(dto.customerName || deliveryAddress.fullName || ""), phone: String(dto.customerPhone || deliveryAddress.phone || "") };
     if (forSomeoneElse) {
       const owner = await prisma.foodUser.findUnique({
@@ -735,7 +778,7 @@ export async function createOrder(userId, rawDto) {
       const { isCodAvailable } = await import("./codAvailability.service.js");
       const cod = await isCodAvailable({
         userId,
-        zoneId: restaurant.zoneId || dto.zoneId || null, // the restaurant's zone decides; a client-sent zone is only a fallback
+        zoneId: orderZoneId,
       });
       if (!cod.allowed) throw new ValidationError(cod.message);
     }
@@ -843,7 +886,7 @@ export async function createOrder(userId, rawDto) {
     // Only new orders: verifying or reconciling a payment already started never
     // comes through here.
     if (paymentMethod === "razorpay" && onlinePaise > 0) {
-      const onlineZoneId = restaurant.zoneId || dto.zoneId || null; // never let a client-sent zone override the restaurant's
+      const onlineZoneId = orderZoneId;
       const { isOnlinePaymentAvailable, NO_PAYMENT_METHOD_MESSAGE } = await import("./onlinePaymentAvailability.service.js");
       const online = await isOnlinePaymentAvailable({ zoneId: onlineZoneId });
       if (!online.allowed) {
@@ -876,15 +919,8 @@ export async function createOrder(userId, rawDto) {
       normalizedPricing.roadDistanceKm = distanceKm;
     }
 
-    // Same zone the order is about to be stamped with, a few lines below. A
-    // restaurant with no zone set used to give the order none, and an order with
-    // no zone is hidden from every city view in the admin panel -- so it never
-    // showed under Pending there. Fall back to the zone the restaurant (or the
-    // customer) is standing in.
-    const orderZoneId = dto.zoneId || restaurant.zoneId
-      || (await findZoneForPoint(restaurant.latitude, restaurant.longitude))?.id
-      || (await findZoneForPoint(deliveryAddress?.latitude, deliveryAddress?.longitude))?.id
-      || null;
+    // orderZoneId (above): a restaurant with no zone set falls back to the zone
+    // it (or the customer) stands in, so the order still shows in a city view.
     const feeSettings = await loadActiveFeeSettings(orderZoneId);
     // The tip belongs to the rider, so it is added to what they are owed. It is
     // also kept on the order in its own column, so a payout can always show how
@@ -929,63 +965,72 @@ export async function createOrder(userId, rawDto) {
     const initialStatus = isAwaitingOnlinePayment ? "pending_payment" : "created";
     const acceptanceWindowSeconds = await getOrderAcceptanceWindowSeconds();
 
-    const created = await createOrderRow({
-      ...fromOrder({ pricing: normalizedPricing, payment, deliveryAddress }),
-      userId: requireId(userId, 'User ID'),
-      restaurantId,
-      zoneId: dto.zoneId ? requireId(dto.zoneId, 'Zone ID') : orderZoneId,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      isForSomeoneElse: forSomeoneElse,
-      recipientName: forSomeoneElse ? dto.recipient.name : "",
-      recipientPhone: forSomeoneElse ? dto.recipient.phone : "",
-      orderStatus: initialStatus,
-      walletAmount: walletPaise / 100,
-      onlineAmount: onlinePaise / 100,
-      acceptanceWindowSeconds,
-      acceptanceDeadlineAt:
-        initialStatus === "created" ? buildAcceptanceDeadline(new Date(), acceptanceWindowSeconds) : null,
-      dispatchStatus: "unassigned",
-      note: String(dto.note || ""),
-      deliveryInstructions: String(dto.deliveryInstructions || ""),
-      sendCutlery: dto.sendCutlery !== false,
-      deliveryFleet: String(dto.deliveryFleet || "standard"),
-      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
-      riderEarning: Number(riderEarning) || 0,
-      tipAmount,
-      platformProfit: Number(platformProfit) || 0,
-      priceMarkupAmount,
-      items: {
-        create: resolvedItems.map((item) => ({
-          itemId: String(item.itemId),
-          name: item.name,
-          variantId: item.variantId || '',
-          variantName: item.variantName || '',
-          variantPrice: Number(item.variantPrice) || 0,
-          price: Number(item.price) || 0,
-          otherPrice: Number(item.otherPrice) || 0,
-          basePrice: item.basePrice === undefined ? null : Number(item.basePrice) || 0,
-          baseVariantPrice: item.baseVariantPrice === undefined ? null : Number(item.baseVariantPrice) || 0,
-          markupPercent: Number(item.markupPercent) || 0,
-          priceRuleId: item.priceRuleId || null,
-          quantity: Number(item.quantity) || 1,
-          isVeg: Boolean(item.isVeg),
-          foodType: item.foodType || (item.isVeg ? 'Veg' : 'NonVeg'),
-          image: item.image || '',
-          notes: item.notes || '',
-          addons: item.addons || [],
-        })),
-      },
-      statusHistory: {
-        create: [{
-          at: new Date(),
-          byRole: "SYSTEM",
-          from: "",
-          to: initialStatus,
-          note: initialStatus === "pending_payment" ? "Order created, awaiting payment" : "Order placed",
-        }],
-      },
-    });
+    // Taken now, before the row exists; every later failure removes the order
+    // through purgeOrderWith, which hands the use back.
+    await claimCouponUsage(normalizedPricing, userId);
+    let created;
+    try {
+      created = await createOrderRow({
+        ...fromOrder({ pricing: normalizedPricing, payment, deliveryAddress }),
+        userId: requireId(userId, 'User ID'),
+        restaurantId,
+        zoneId: orderZoneId,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        isForSomeoneElse: forSomeoneElse,
+        recipientName: forSomeoneElse ? dto.recipient.name : "",
+        recipientPhone: forSomeoneElse ? dto.recipient.phone : "",
+        orderStatus: initialStatus,
+        walletAmount: walletPaise / 100,
+        onlineAmount: onlinePaise / 100,
+        acceptanceWindowSeconds,
+        acceptanceDeadlineAt:
+          initialStatus === "created" ? buildAcceptanceDeadline(new Date(), acceptanceWindowSeconds) : null,
+        dispatchStatus: "unassigned",
+        note: String(dto.note || ""),
+        deliveryInstructions: String(dto.deliveryInstructions || ""),
+        sendCutlery: dto.sendCutlery !== false,
+        deliveryFleet: String(dto.deliveryFleet || "standard"),
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        riderEarning: Number(riderEarning) || 0,
+        tipAmount,
+        platformProfit: Number(platformProfit) || 0,
+        priceMarkupAmount,
+        items: {
+          create: resolvedItems.map((item) => ({
+            itemId: String(item.itemId),
+            name: item.name,
+            variantId: item.variantId || '',
+            variantName: item.variantName || '',
+            variantPrice: Number(item.variantPrice) || 0,
+            price: Number(item.price) || 0,
+            otherPrice: Number(item.otherPrice) || 0,
+            basePrice: item.basePrice === undefined ? null : Number(item.basePrice) || 0,
+            baseVariantPrice: item.baseVariantPrice === undefined ? null : Number(item.baseVariantPrice) || 0,
+            markupPercent: Number(item.markupPercent) || 0,
+            priceRuleId: item.priceRuleId || null,
+            quantity: Number(item.quantity) || 1,
+            isVeg: Boolean(item.isVeg),
+            foodType: item.foodType || (item.isVeg ? 'Veg' : 'NonVeg'),
+            image: item.image || '',
+            notes: item.notes || '',
+            addons: item.addons || [],
+          })),
+        },
+        statusHistory: {
+          create: [{
+            at: new Date(),
+            byRole: "SYSTEM",
+            from: "",
+            to: initialStatus,
+            note: initialStatus === "pending_payment" ? "Order created, awaiting payment" : "Order placed",
+          }],
+        },
+      });
+    } catch (err) {
+      await releaseCouponUsageWith(prisma, { ...normalizedPricing, userId });
+      throw err;
+    }
 
     let order = toOrder(created);
     let razorpayPayload = null;
@@ -1118,7 +1163,6 @@ export async function createOrder(userId, rawDto) {
     }
 
     if (!isAwaitingOnlinePayment) {
-      await incrementCouponUsageForOrder(order, userId);
       // Funnel: a cash or wallet order is as good as paid once placed.
       trackOrderPayment(order.id);
     }
@@ -1280,7 +1324,7 @@ export async function finalizeOrderPayment(orderId, { source = "SYSTEM", userId 
     logger.error(`[CRITICAL] Initial transaction failed for order ${orderId}: ${err.message}`);
   }
 
-  await incrementCouponUsageForOrder(updated, updated.userId);
+  // The coupon use was taken when the order was created (claimCouponUsage).
 
   await foodTransactionService.updateTransactionStatus(orderId, 'captured', {
     status: 'captured',
@@ -1516,7 +1560,10 @@ export async function getOrderById(
     // before pickup it is null and customer screens fell back to the restaurant's
     // coordinates. The assigned partner's last ping is a real position.
     const partner = row.deliveryPartner;
-    if (!out.deliveryState?.currentLocation && partner?.id) {
+    // Only while the rider is on this order: not before accept, nor after
+    // delivery/cancel, when their position is none of the customer's business.
+    if (!out.deliveryState?.currentLocation && partner?.id
+        && deliveryService.isRiderLocationVisibleToCustomer(row)) {
       const pLat = Number(partner.lastLat);
       const pLng = Number(partner.lastLng);
       if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
@@ -1794,6 +1841,7 @@ export async function cancelOrder(orderId, userId, reason) {
     data: { orderStatus: "cancelled_by_user" },
   });
   if (!cancelled) throw new ValidationError(CUSTOMER_CANCEL_WINDOW_MESSAGE);
+  await releaseCouponUsageForOrder(order);
 
   let refund;
   try {
@@ -2224,6 +2272,34 @@ export function restaurantStatusRefusal(from, to) {
   return `This order is already ${now}, so it can't be marked ${wanted}.`;
 }
 
+/**
+ * The only moves a restaurant can make, one step at a time, as its app does:
+ * accept, start preparing, mark ready -- and reject/cancel until the rider has
+ * the food. Picked up and delivered belong to the rider (or support).
+ */
+export const RESTAURANT_NEXT_STATUSES = {
+  created: ["confirmed", "cancelled_by_restaurant"],
+  confirmed: ["preparing", "cancelled_by_restaurant"],
+  preparing: ["ready_for_pickup", "cancelled_by_restaurant"],
+  ready_for_pickup: ["cancelled_by_restaurant"],
+};
+
+/** Why a restaurant cannot make this move, or null when it can. */
+export function restaurantTransitionRefusal(from, to) {
+  const current = String(from || "");
+  const target = String(to || "");
+  if ((RESTAURANT_NEXT_STATUSES[current] || []).includes(target)) return null;
+  if (["picked_up", "reached_drop", "delivered"].includes(target)) {
+    return "Only the delivery partner can mark an order picked up or delivered.";
+  }
+  const steps = Object.keys(RESTAURANT_NEXT_STATUSES);
+  if (steps.includes(current) && steps.indexOf(target) > steps.indexOf(current)) {
+    const next = RESTAURANT_NEXT_STATUSES[current][0];
+    return `This order is ${STATUS_WORDS[current]}; mark it ${STATUS_WORDS[next]} first.`;
+  }
+  return restaurantStatusRefusal(current, target);
+}
+
 /** What the second phone is told when the order was answered on another one. */
 export function answeredElsewhereMessage(status) {
   const now = String(status || "");
@@ -2267,6 +2343,11 @@ export async function updateOrderStatusRestaurant(orderId, restaurantId, orderSt
 
   const targetStatus = String(orderStatus || "").toLowerCase();
   if (targetStatus === "preparing" || targetStatus === "confirmed") {
+    // An expired FSSAI licence may not accept a new order (orders it already
+    // accepted can still be finished).
+    if (String(order.orderStatus) === "created" && (await getFssaiOrderingBlock(restaurantId)).blocked) {
+      throw new ValidationError(FSSAI_ACCEPT_BLOCK_MESSAGE);
+    }
     const now = new Date();
     const deadline = order.acceptanceDeadlineAt ? new Date(order.acceptanceDeadlineAt) : null;
     if (deadline && deadline.getTime() <= now.getTime()) {
@@ -2287,9 +2368,8 @@ export async function updateOrderStatusRestaurant(orderId, restaurantId, orderSt
   if (String(from) === String(orderStatus)) {
     return toRestaurantView(normalizeOrderForClient(order));
   }
-  if (!isStatusAdvance(from, orderStatus)) {
-    throw new ValidationError(restaurantStatusRefusal(from, orderStatus));
-  }
+  const refusal = restaurantTransitionRefusal(from, orderStatus);
+  if (refusal) throw new ValidationError(refusal);
 
   const normalizedPaymentMethod = String(order.paymentMethod || "cash").toLowerCase();
   const prevPaymentStatus = String(order.paymentStatus || "cod_pending").toLowerCase();
@@ -2316,6 +2396,7 @@ export async function updateOrderStatusRestaurant(orderId, restaurantId, orderSt
     const now = await prisma.foodOrder.findUnique({ where: { id: order.id }, select: { orderStatus: true } });
     throw new ConflictError(answeredElsewhereMessage(now?.orderStatus));
   }
+  if (String(orderStatus).includes("cancel")) await releaseCouponUsageForOrder(order);
   let updated = toOrder(await prisma.foodOrder.findUnique({ where: { id: order.id }, include: orderInclude }));
 
   // Every phone the restaurant is signed in on hears the answer, so the ones
@@ -2942,6 +3023,7 @@ export async function updateOrderStatusAdmin(orderId, orderStatus, note = "", ad
   });
 
   if (String(orderStatus).includes("cancel")) {
+    await releaseCouponUsageForOrder(order);
     await syncCancelledTransaction(order.id, String(orderStatus), {
       note: `Order cancelled by admin${note ? `: ${note}` : ''}`,
       byRole: 'ADMIN',

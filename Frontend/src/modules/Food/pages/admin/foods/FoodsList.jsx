@@ -63,6 +63,14 @@ const FOOD_FALLBACK_IMAGE =
     </svg>`
   )
 
+// Whether a category (by its foodTypeScope) can hold a dish of this type --
+// the same rule the API enforces. An unset type fits any category.
+const categoryFitsFoodType = (category, foodType) => {
+  const scope = String(category?.foodTypeScope || "Both").replace(/[^a-z]/gi, "").toLowerCase()
+  if (!foodType || scope === "both") return true
+  return scope === String(foodType).replace(/[^a-z]/gi, "").toLowerCase()
+}
+
 export default function FoodsList() {
   // Images waiting to be cropped, one dialog at a time.
   const [cropQueue, setCropQueue] = useState([])
@@ -474,6 +482,8 @@ export default function FoodsList() {
     setFoodForm({
       ...createFoodForm(),
       restaurantId: selectedRestaurant !== "all" ? selectedRestaurant : "",
+      // A pure-veg restaurant's dishes can only be Veg.
+      ...(restaurantOptions.some((r) => r.id === selectedRestaurant && r.pureVeg) ? { foodType: "Veg" } : {}),
     })
     setSelectedImageFile(null)
     setImagePreviewUrl("")
@@ -555,6 +565,7 @@ export default function FoodsList() {
                 id: String(c.id || c._id || c.name),
                 name: String(c.name || "").trim(),
                 restaurantId: c.restaurantId ? String(c.restaurantId) : "",
+                foodTypeScope: c.foodTypeScope || "Both",
               }))
               .filter((c) => c.name)
           : []
@@ -612,8 +623,14 @@ export default function FoodsList() {
       toast.error("Food name is required")
       return
     }
+    // Egg is accepted only so an existing Egg dish can still be saved; new
+    // dishes are Veg or Non-Veg, as in the restaurant app.
     if (!["Veg", "Egg", "Non-Veg"].includes(foodForm.foodType)) {
-      toast.error("Choose Veg, Egg or Non-Veg")
+      toast.error("Choose Veg or Non-Veg")
+      return
+    }
+    if (selectedRestaurantIsPureVeg && foodForm.foodType !== "Veg") {
+      toast.error("This is a pure veg restaurant: the dish must be Veg")
       return
     }
 
@@ -1448,6 +1465,8 @@ export default function FoodsList() {
                         // Categories every restaurant can use, plus the
                         // chosen restaurant's own -- never another one's.
                         .filter((c) => !c.restaurantId || c.restaurantId === String(foodForm.restaurantId || ""))
+                        // Pure veg: veg categories only. Otherwise the ones the chosen type fits.
+                        .filter((c) => categoryFitsFoodType(c, selectedRestaurantIsPureVeg ? "Veg" : foodForm.foodType))
                         .filter((c) => {
                           const q = String(categorySearch || "").trim().toLowerCase()
                           if (!q) return true
@@ -1517,13 +1536,22 @@ export default function FoodsList() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Food Type</label>
                 <select
                   value={foodForm.foodType}
-                  onChange={(e) => setFoodForm((prev) => ({ ...prev, foodType: e.target.value }))}
+                  onChange={(e) => {
+                    const foodType = e.target.value
+                    setFoodForm((prev) => {
+                      // Drop a chosen category the new type cannot go in.
+                      const current = categoryOptions.find((c) => c.id === String(prev.categoryId || ""))
+                      const keep = !current || categoryFitsFoodType(current, foodType)
+                      return { ...prev, foodType, ...(keep ? {} : { categoryId: "", categoryName: "" }) }
+                    })
+                  }}
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                 >
-                  <option value="" disabled>Choose Veg, Egg or Non-Veg</option>
+                  <option value="" disabled>Choose Veg or Non-Veg</option>
                   <option value="Veg">Veg</option>
-                  <option value="Egg" disabled={selectedRestaurantIsPureVeg}>Egg</option>
                   <option value="Non-Veg" disabled={selectedRestaurantIsPureVeg}>Non-Veg</option>
+                  {/* The restaurant app has no Egg type; shown only for a dish that already is Egg. */}
+                  {foodForm.foodType === "Egg" ? <option value="Egg" disabled={selectedRestaurantIsPureVeg}>Egg</option> : null}
                 </select>
                 {selectedRestaurantIsPureVeg ? (
                   <p className="mt-1 text-xs text-emerald-700">Pure veg restaurant: every dish is Veg (no egg).</p>

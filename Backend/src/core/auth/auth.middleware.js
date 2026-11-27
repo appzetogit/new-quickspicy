@@ -4,6 +4,10 @@ import { prisma } from '../../config/prisma.js';
 import { isId } from '../../utils/helpers.js';
 import { blockedAccountMessage } from './blockedAccount.js';
 
+/** The login screen's words, so the app shows its rejected state. */
+export const RESTAURANT_REJECTED_MESSAGE =
+    'Your restaurant registration has been rejected. Please contact support.';
+
 export const requireAdmin = (req, res, next) => {
     if (req.user?.role !== 'ADMIN') {
         return sendError(res, 403, 'Admin access required');
@@ -68,6 +72,7 @@ export const authMiddleware = (req, res, next) => {
                 tokenVersion: true,
                 deletedAt: true,
                 ...(decoded.role === 'USER' ? { isActive: true, banReason: true } : {}),
+                ...(decoded.role === 'RESTAURANT' ? { status: true } : {}),
             },
         })
         .then(async (doc) => {
@@ -85,6 +90,13 @@ export const authMiddleware = (req, res, next) => {
                     isBlocked: true,
                     banReason: doc.banReason || null,
                 });
+            }
+
+            // A rejected (or switched-off) restaurant cannot sign in, so a session
+            // it already had must stop working too. A restaurant back in
+            // `pending` for a profile review keeps working, as at login.
+            if (decoded.role === 'RESTAURANT' && doc.status === 'rejected') {
+                return sendError(res, 401, RESTAURANT_REJECTED_MESSAGE);
             }
 
             // A token minted before the latest login belongs to a device that has

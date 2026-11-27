@@ -16,10 +16,13 @@ const createAddressSchema = z.object({
     label: labelSchema.optional(),
     // "Save as": the customer's own name for it ("Mom's house"), with label Other.
     customLabel: z.string().trim().max(40, 'Address name can be at most 40 characters').nullable().optional(),
-    street: z.string().min(1, 'Street is required').max(200).transform((s) => s.trim()),
+    // Trimmed before the check: "   " is not a street.
+    street: z.string().trim().min(1, 'Street is required').max(200),
     additionalDetails: z.string().max(500).optional().or(z.literal('')).transform((s) => String(s || '').trim()),
-    city: z.string().min(1, 'City is required').max(100).transform((s) => s.trim()),
-    state: z.string().min(1, 'State is required').max(100).transform((s) => s.trim()),
+    // Trimmed before the check: "   " is not a city.
+    city: z.string().trim().min(1, 'City is required').max(100),
+    // Trimmed before the check: "   " is not a state.
+    state: z.string().trim().min(1, 'State is required').max(100),
     zipCode: z.string().max(20).optional().or(z.literal('')).transform((s) => String(s || '').trim()),
     phone: z.string().max(20).optional().or(z.literal('')).transform((s) => String(s || '').trim()),
     latitude: z.number().finite().min(-90).max(90),

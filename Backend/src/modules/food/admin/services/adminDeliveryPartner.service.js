@@ -3,6 +3,7 @@ import { BRAND_IMAGE_URL } from '../../../../config/brand.js';
 import { isId } from '../../../../utils/helpers.js';
 import { NotFoundError, ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
+import { notifyApplicationDecision } from './decisionNotify.js';
 import { resolveRiderZones } from './adminRiderCohort.service.js';
 import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
 
@@ -177,6 +178,18 @@ const serializeDocuments = (doc) => {
     return { ...present, ...(custom.length ? { custom } : {}) };
 };
 
+/** Bank details sit under documents because that is where the dialogs read them. */
+const withBankDetails = (documents, doc) => {
+    const bank = {
+        accountHolderName: doc.bankAccountHolderName || '',
+        accountNumber: doc.bankAccountNumber || '',
+        ifscCode: doc.bankIfscCode || '',
+        bankName: doc.bankName || '',
+    };
+    if (!Object.values(bank).some(Boolean)) return documents;
+    return { ...(documents || {}), bankDetails: bank };
+};
+
 const partnerZone = { zone: { select: { name: true } } };
 
 const serializePartner = (doc, stats = {}, sl = 0) => {
@@ -234,7 +247,28 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         hasPushToken:
             (doc.fcmTokenMobile || []).length > 0 || (doc.fcmTokens || []).length > 0,
         // Signed per response by the media middleware, so these urls expire.
-        documents: serializeDocuments(doc),
+        documents: withBankDetails(serializeDocuments(doc), doc),
+        // The rest of what the registration form collects, in the nested shapes
+        // the admin detail dialogs (rider list + join requests) render. Flat
+        // columns above stay for the list/edit screens.
+        countryCode: doc.countryCode || '',
+        address: doc.address || '',
+        state: doc.state || '',
+        location:
+            doc.address || doc.city || doc.state
+                ? { addressLine1: doc.address || '', city: doc.city || '', state: doc.state || '' }
+                : null,
+        vehicle:
+            doc.vehicleType || doc.vehicleName || doc.vehicleNumber
+                ? { type: doc.vehicleType || '', model: doc.vehicleName || '', number: doc.vehicleNumber || '' }
+                : null,
+        upiQrCode: doc.upiQrCode || null,
+        customFields: doc.customFields && typeof doc.customFields === 'object' ? doc.customFields : {},
+        referralCode: doc.referralCode || '',
+        referredById: doc.referredById || null,
+        rejectionReason: doc.rejectionReason || null,
+        approvedAt: doc.approvedAt || null,
+        createdAt: doc.createdAt || null,
         profilePhoto: doc.profilePhoto || null,
         profileImage: doc.profilePhoto ? { url: doc.profilePhoto } : null,
         totalOrders: stats.totalOrders || 0,
@@ -530,7 +564,28 @@ export async function getDeliveryJoinRequests(query = {}) {
         status: doc.status === 'rejected' ? 'denied' : doc.status,
         rejectionReason: doc.rejectionReason || undefined,
         // Signed per response by the media middleware, so these urls expire.
-        documents: serializeDocuments(doc),
+        documents: withBankDetails(serializeDocuments(doc), doc),
+        // The rest of what the registration form collects, in the nested shapes
+        // the admin detail dialogs (rider list + join requests) render. Flat
+        // columns above stay for the list/edit screens.
+        countryCode: doc.countryCode || '',
+        address: doc.address || '',
+        state: doc.state || '',
+        location:
+            doc.address || doc.city || doc.state
+                ? { addressLine1: doc.address || '', city: doc.city || '', state: doc.state || '' }
+                : null,
+        vehicle:
+            doc.vehicleType || doc.vehicleName || doc.vehicleNumber
+                ? { type: doc.vehicleType || '', model: doc.vehicleName || '', number: doc.vehicleNumber || '' }
+                : null,
+        upiQrCode: doc.upiQrCode || null,
+        customFields: doc.customFields && typeof doc.customFields === 'object' ? doc.customFields : {},
+        referralCode: doc.referralCode || '',
+        referredById: doc.referredById || null,
+        rejectionReason: doc.rejectionReason || null,
+        approvedAt: doc.approvedAt || null,
+        createdAt: doc.createdAt || null,
         profilePhoto: doc.profilePhoto || null,
         profileImage: doc.profilePhoto ? { url: doc.profilePhoto } : null,
     }));
@@ -569,8 +624,7 @@ export async function approveDeliveryPartner(id) {
     if (!partner) return null;
 
     try {
-        const { notifyOwnerSafely } = await import('../../../../core/notifications/firebase.service.js');
-        await notifyOwnerSafely(
+        await notifyApplicationDecision(
             { ownerType: 'DELIVERY_PARTNER', ownerId: partner.id },
             {
                 title: 'Welcome Aboard!',
@@ -607,8 +661,7 @@ export async function rejectDeliveryPartner(id, reason) {
     if (!partner) return null;
 
     try {
-        const { notifyOwnerSafely } = await import('../../../../core/notifications/firebase.service.js');
-        await notifyOwnerSafely(
+        await notifyApplicationDecision(
             { ownerType: 'DELIVERY_PARTNER', ownerId: partner.id },
             {
                 title: 'Onboarding Update',

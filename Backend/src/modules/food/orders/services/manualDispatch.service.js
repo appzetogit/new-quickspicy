@@ -390,7 +390,7 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
     getRiderActiveOrderCounts(ids),
     getDispatchSettings(),
     orderCollectsCash(order) ? getCashBlockedPartnerIds(ids) : new Set(),
-    prisma.wallet.findMany({ where: { entityType: 'deliveryBoy', entityId: { in: ids } }, select: { entityId: true, cashInHand: true } }),
+    import('../../delivery/services/deliveryFinance.service.js').then((m) => m.getRidersCashInHand(ids)),
     prisma.foodOrder.groupBy({
       by: ['dispatchDeliveryPartnerId'],
       where: { dispatchDeliveryPartnerId: { in: ids }, orderStatus: 'delivered', deliveredAt: { gte: startOfTodayIst() } },
@@ -400,7 +400,7 @@ export async function listEligibleRiders(orderId, { includeOffline = false, sear
     // "riders from this zone only". Empty for every other zone.
     ridersOutsideZone(zoneId || row.restaurant?.zoneId, ids),
   ]);
-  const cash = new Map(wallets.map((w) => [w.entityId, Number(w.cashInHand) || 0]));
+  const cash = new Map([...wallets].map(([id, c]) => [id, c.cashInHand]));
   const today = new Map(todayCounts.map((c) => [c.dispatchDeliveryPartnerId, c._count._all]));
   const declined = new Set(
     (row.dispatchOffers || []).filter((o) => ['rejected', 'timeout'].includes(o.action)).map((o) => o.partnerId),

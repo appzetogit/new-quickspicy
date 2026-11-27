@@ -6,10 +6,10 @@ const orderItemSchema = z.object({
     name: z.string().min(1, 'Item name required'),
     variantId: z.string().optional(),
     variantName: z.string().optional(),
-    variantPrice: z.number().min(0).optional(),
-    price: z.number().min(0),
-    otherPrice: z.number().min(0).optional(),
-    quantity: z.number().int().min(1),
+    variantPrice: z.number().finite().min(0).optional(),
+    price: z.number().finite().min(0),
+    otherPrice: z.number().finite().min(0).optional(),
+    quantity: z.number().finite().int().min(1),
     isVeg: z.boolean().optional().default(true),
     image: z.string().optional(),
     notes: z.string().optional(),
@@ -52,19 +52,19 @@ const addressSchema = z.object({
     location: z
         .object({
             type: z.literal('Point').optional(),
-            coordinates: z.tuple([z.number(), z.number()]).optional()
+            coordinates: z.tuple([z.number().finite(), z.number().finite()]).optional()
         })
         .optional()
 });
 
 const pricingSchema = z.object({
-    subtotal: z.number().min(0),
-    tax: z.number().min(0).optional(),
-    packagingFee: z.number().min(0).optional(),
-    deliveryFee: z.number().min(0).optional(),
-    platformFee: z.number().min(0).optional(),
-    discount: z.number().min(0).optional(),
-    total: z.number().min(0),
+    subtotal: z.number().finite().min(0),
+    tax: z.number().finite().min(0).optional(),
+    packagingFee: z.number().finite().min(0).optional(),
+    deliveryFee: z.number().finite().min(0).optional(),
+    platformFee: z.number().finite().min(0).optional(),
+    discount: z.number().finite().min(0).optional(),
+    total: z.number().finite().min(0),
     currency: z.string().optional(),
     couponCode: z.string().nullable().optional()
 });
@@ -78,14 +78,14 @@ export function validateCalculateOrderDto(body) {
         couponCode: z.string().optional(),
         // Zod drops keys a schema does not name. Without this line the tip
         // was silently removed before pricing ever saw it.
-        tipAmount: z.number().min(0, 'Tip cannot be negative').optional(),
+        tipAmount: z.number().finite().min(0, 'Tip cannot be negative').optional(),
         deliveryFleet: z.string().optional(),
         deliveryMode: z.enum(['basic', 'quick']).optional(),
         deliveryAddress: z
             .object({
                 location: z
                     .object({
-                        coordinates: z.tuple([z.number(), z.number()]).optional()
+                        coordinates: z.tuple([z.number().finite(), z.number().finite()]).optional()
                     })
                     .optional()
             })
@@ -131,7 +131,7 @@ export function validateCreateOrderDto(body) {
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         pricing: pricingSchema,
-        tipAmount: z.number().min(0, 'Tip cannot be negative').optional(),
+        tipAmount: z.number().finite().min(0, 'Tip cannot be negative').optional(),
         deliveryFleet: z.string().optional(),
         note: z.string().optional(),
         deliveryInstructions: z.string().optional(),
@@ -248,10 +248,10 @@ export function validateAssignDeliveryDto(body) {
 export function validateDispatchSettingsDto(body) {
     const schema = z.object({
         dispatchMode: z.enum(['auto', 'manual']),
-        manualAcceptWindowSeconds: z.number().int().min(30).max(900).optional(),
-        manualQueueAlertMinutes: z.number().int().min(1).max(120).optional(),
-        riderAcceptWindowSeconds: z.number().int().min(15).max(300).optional(),
-        maxActiveOrdersPerRider: z.number().int().min(1).max(5).optional()
+        manualAcceptWindowSeconds: z.number().finite().int().min(30).max(900).optional(),
+        manualQueueAlertMinutes: z.number().finite().int().min(1).max(120).optional(),
+        riderAcceptWindowSeconds: z.number().finite().int().min(15).max(300).optional(),
+        maxActiveOrdersPerRider: z.number().finite().int().min(1).max(5).optional()
     });
     const result = schema.safeParse(body);
     if (!result.success) {
@@ -264,8 +264,8 @@ export function validateOrderRatingsDto(body) {
     const schema = z.object({
         // Each can be sent on its own: the delivered screen rates only the
         // rider, the order sheet rates the food. At least one is required.
-        restaurantRating: z.number().int().min(1).max(5).optional(),
-        deliveryPartnerRating: z.number().int().min(1).max(5).optional(),
+        restaurantRating: z.number().finite().int().min(1).max(5).optional(),
+        deliveryPartnerRating: z.number().finite().int().min(1).max(5).optional(),
         restaurantComment: z.string().max(500).optional(),
         deliveryPartnerComment: z.string().max(500).optional(),
         // Per-dish ratings. Optional, so a customer can rate the restaurant
@@ -274,7 +274,7 @@ export function validateOrderRatingsDto(body) {
             .array(
                 z.object({
                     itemId: z.string().min(1),
-                    rating: z.number().min(1).max(5),
+                    rating: z.number().finite().min(1).max(5),
                     comment: z.string().max(500).optional()
                 })
             )
@@ -293,7 +293,7 @@ export function validateOrderRatingsDto(body) {
 /** Delivery partner rating the customer after handover. */
 export function validateCustomerRatingDto(body) {
     const schema = z.object({
-        rating: z.number().min(1).max(5),
+        rating: z.number().finite().min(1).max(5),
         comment: z.string().max(500).optional()
     });
     const result = schema.safeParse(body || {});

@@ -125,12 +125,28 @@ test('an accepted order cannot be cancelled by the customer, even in the first m
 
 // ---- Mark ready for pickup -------------------------------------------------------
 
-test('ready for pickup works from accepted and from preparing', async () => {
-    for (const from of ['confirmed', 'preparing']) {
-        const id = await placeOrder();
-        await prisma.foodOrder.update({ where: { id }, data: { orderStatus: from, acceptanceDeadlineAt: null } });
-        const order = await updateOrderStatusRestaurant(id, restaurantId, 'ready_for_pickup');
-        assert.equal(order.orderStatus, 'ready_for_pickup', `from ${from}`);
+test('ready for pickup works from preparing; the restaurant cannot skip a step', async () => {
+    const id = await placeOrder();
+    await prisma.foodOrder.update({ where: { id }, data: { orderStatus: 'preparing', acceptanceDeadlineAt: null } });
+    const order = await updateOrderStatusRestaurant(id, restaurantId, 'ready_for_pickup');
+    assert.equal(order.orderStatus, 'ready_for_pickup');
+
+    for (const [from, to] of [['created', 'preparing'], ['created', 'ready_for_pickup'], ['confirmed', 'ready_for_pickup']]) {
+        const skip = await placeOrder();
+        await prisma.foodOrder.update({ where: { id: skip }, data: { orderStatus: from, acceptanceDeadlineAt: null } });
+        await assert.rejects(() => updateOrderStatusRestaurant(skip, restaurantId, to), /first/, `${from} -> ${to}`);
+    }
+});
+
+test('a restaurant cannot mark picked up / delivered, nor cancel once the rider has the food', async () => {
+    const id = await placeOrder();
+    await prisma.foodOrder.update({ where: { id }, data: { orderStatus: 'ready_for_pickup', acceptanceDeadlineAt: null } });
+    for (const to of ['picked_up', 'delivered']) {
+        await assert.rejects(() => updateOrderStatusRestaurant(id, restaurantId, to), /Only the delivery partner/);
+    }
+    for (const from of ['picked_up', 'reached_drop', 'delivered']) {
+        await prisma.foodOrder.update({ where: { id }, data: { orderStatus: from } });
+        await assert.rejects(() => updateOrderStatusRestaurant(id, restaurantId, 'cancelled_by_restaurant'), /can't be marked cancelled/, from);
     }
 });
 

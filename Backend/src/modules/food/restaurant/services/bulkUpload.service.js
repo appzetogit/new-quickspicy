@@ -10,6 +10,7 @@ const FOOD_TYPE_HEADER = 'Food Type (Veg/Egg/Non-Veg)*';
 const FOOD_TYPE_HEADERS = [FOOD_TYPE_HEADER, 'Food Type (Veg/Non-Veg)*'];
 import { dropMenuCache } from '../../shared/menuCache.util.js';
 import { syncFoodVariants } from '../../admin/services/foodVariant.service.js';
+import { toMenuPrice } from '../validators/restaurant.validator.js';
 import { isHostedUploadUrl, saveImageFromUrl } from '../../../../services/storage.service.js';
 import { logger } from '../../../../utils/logger.js';
 
@@ -376,6 +377,14 @@ export async function processBulkMenuUpload(restaurantId, fileBuffer, options = 
                     data.name,
                     `Category "${category.name}" allows only ${scope} items, but row has ${foodType}`,
                 );
+                return;
+            }
+
+            try {
+                if (data.variants.length) for (const v of data.variants) v.price = toMenuPrice(v.price, 'Variant price');
+                else data.price = toMenuPrice(data.price);
+            } catch (err) {
+                fail(rowNumber, data.name, err.message);
                 return;
             }
 

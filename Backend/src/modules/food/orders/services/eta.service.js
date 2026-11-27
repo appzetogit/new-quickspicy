@@ -4,6 +4,7 @@ import { logger } from '../../../../utils/logger.js';
 import { runUnscoped } from '../../../../core/roles/adminScope.context.js';
 import { fetchDrivingRoute } from '../utils/googleMaps.js';
 import { haversineKm } from '../../shared/geo.utils.js';
+import { toFix } from '../../delivery/services/riderFix.js';
 
 /**
  * The delivery ETA, worked out by the server for every live order.
@@ -35,33 +36,54 @@ export const DEFAULT_PREP_MINUTES = 15;
 const FALLBACK_KMPH = 22;
 const ROAD_FACTOR = 1.3;
 
-/** "15-20 min", "20", "1 hr" -> minutes (the upper figure), or null. */
+/**
+ * What a restaurant typed as prep time -> minutes, or null.
+ * "15-20 min" -> 20 (the upper figure), "25" -> 25, "1 hr" / "1h" -> 60,
+ * "1 hr 30 min" / "1h30m" -> 90, "1.5 hours" -> 90. Hours and minutes are
+ * read separately: "1h" was taken as 1 minute and "1 hr 30 min" as 30 hours.
+ */
 export const parsePrepMinutes = (value) => {
     const text = String(value ?? '').toLowerCase();
-    const numbers = (text.match(/\d+(\.\d+)?/g) || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
-    if (!numbers.length) return null;
-    const minutes = Math.max(...numbers) * (/\bh(ou)?rs?\b|\bhr\b/.test(text) ? 60 : 1);
+    const unit = (re) => {
+        const found = [...text.matchAll(re)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n) && n > 0);
+        return found.length ? Math.max(...found) : null;
+    };
+    const hours = unit(/(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)(?![a-z])/g);
+    const mins = unit(/(\d+(?:\.\d+)?)\s*(?:minutes|minute|mins|min|m)(?![a-z])/g);
+    let minutes;
+    if (hours != null || mins != null) {
+        minutes = (hours ?? 0) * 60 + (mins ?? 0);
+    } else {
+        const numbers = (text.match(/\d+(\.\d+)?/g) || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        if (!numbers.length) return null;
+        minutes = Math.max(...numbers);
+    }
     return minutes > 0 && minutes <= 240 ? Math.round(minutes) : null;
 };
 
-const point = (lat, lng) => {
-    const la = Number(lat);
-    const ln = Number(lng);
-    return lat != null && lng != null && Number.isFinite(la) && Number.isFinite(ln) ? { lat: la, lng: ln } : null;
-};
+/** A real position, or null -- 0,0 and out-of-range points are not (riderFix.toFix). */
+const point = (lat, lng) => toFix(lat, lng);
+
+/** Road minutes estimated from straight-line distance, for when Google has no route. */
+export function estimateDriveMinutes(from, to) {
+    if (!from || !to) return null;
+    const km = haversineKm(from.lat, from.lng, to.lat, to.lng) * ROAD_FACTOR;
+    return Number.isFinite(km) ? Math.max(1, Math.ceil((km / FALLBACK_KMPH) * 60)) : null;
+}
 
 /** Minutes to drive between two points, or null when either is unknown. */
 export async function driveMinutes(from, to) {
     if (!from || !to) return null;
     try {
         const route = await fetchDrivingRoute(from, to);
-        const seconds = Number(route?.durationSeconds);
-        if (Number.isFinite(seconds) && seconds >= 0) return Math.max(1, Math.ceil(seconds / 60));
+        // No route comes back as durationSeconds: null, and Number(null) is 0 --
+        // which made every un-routed leg "1 minute" and the ETA far too early.
+        const seconds = route?.durationSeconds == null ? NaN : Number(route.durationSeconds);
+        if (Number.isFinite(seconds) && seconds > 0) return Math.max(1, Math.ceil(seconds / 60));
     } catch {
         // Fall through to the estimate.
     }
-    const km = haversineKm(from.lat, from.lng, to.lat, to.lng) * ROAD_FACTOR;
-    return Number.isFinite(km) ? Math.max(1, Math.ceil((km / FALLBACK_KMPH) * 60)) : null;
+    return estimateDriveMinutes(from, to);
 }
 
 /**

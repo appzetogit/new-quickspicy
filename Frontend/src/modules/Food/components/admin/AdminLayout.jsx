@@ -4,30 +4,11 @@ import { useFitTablesToViewport } from "./useFitTablesToViewport"
 import AdminSidebar from "./AdminSidebar"
 import AdminNavbar from "./AdminNavbar"
 import { API_BASE_URL } from "@food/api/config"
+import AdminPageLoader from "./AdminPageLoader"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
 
-
-/**
- * Fills the content area while a route chunk loads.
- *
- * Deliberately not the shared <Loader />: that renders AppShellSkeleton, a
- * full-screen mock of the customer storefront -- header, hero, restaurant
- * grid -- which is not what is arriving and looks like the wrong app for the
- * moment it is on screen.
- */
-function AdminContentLoader() {
-  return (
-    <div
-      role="status"
-      aria-label="Loading page"
-      className="flex h-full min-h-[60vh] w-full items-center justify-center"
-    >
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-teal-700" />
-    </div>
-  );
-}
 
 export default function AdminLayout() {
   const location = useLocation();
@@ -128,7 +109,7 @@ export default function AdminLayout() {
             the content area. The chrome around it stays mounted and the
             clicked item stays highlighted while the page arrives.
           */}
-          <Suspense fallback={<AdminContentLoader />}>
+          <Suspense fallback={<AdminPageLoader />}>
             <Outlet />
           </Suspense>
         </main>

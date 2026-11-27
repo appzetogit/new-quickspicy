@@ -82,6 +82,9 @@ test.after(async () => {
     });
     await prisma.foodOrder.deleteMany({ where: { id: { in: created.orders } } });
     await prisma.foodUser.deleteMany({ where: { id: { in: created.users } } });
+    await prisma.foodNotification.deleteMany({
+        where: { ownerType: 'DELIVERY_PARTNER', ownerId: { in: created.partners } },
+    });
     await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: created.partners } } });
     await prisma.foodRestaurant.deleteMany({ where: { id: { in: created.restaurants } } });
     await prisma.$disconnect();
@@ -195,6 +198,26 @@ test('a rider location is exposed in both shapes', async () => {
     assert.equal(await getDeliveryPartnerById('not-an-id'), null);
 });
 
+test('the detail view carries every registration field the rider filled in', async () => {
+    const partner = await makePartner({
+        address: '12 MG Road', city: 'Pune', state: 'MH',
+        vehicleType: 'bike', vehicleName: 'Splendor', vehicleNumber: `MH12${stamp()}`,
+        bankAccountNumber: '0011223344', bankIfscCode: 'HDFC0000001',
+        customFields: { blood_group: 'O+' },
+    });
+    const row = await getDeliveryPartnerById(partner.id);
+    assert.deepEqual(row.location, { addressLine1: '12 MG Road', city: 'Pune', state: 'MH' });
+    assert.equal(row.vehicle.model, 'Splendor');
+    assert.equal(row.documents.bankDetails.ifscCode, 'HDFC0000001');
+    assert.deepEqual(row.customFields, { blood_group: 'O+' });
+    assert.ok(row.createdAt);
+
+    const bare = await getDeliveryPartnerById((await makePartner()).id);
+    assert.equal(bare.location, null);
+    assert.equal(bare.vehicle, null);
+    assert.equal(bare.documents, null);
+});
+
 test('the partner list searches and excludes unapproved riders', async () => {
     const unique = `Findable${stamp()}`;
     const approved = await makePartner({ name: `${unique} Approved` });
@@ -237,6 +260,13 @@ test('a rejected applicant can still be approved later', async () => {
     // would have survived the approval.
     assert.equal(approved.rejectedAt, null);
     assert.equal(approved.rejectionReason, '');
+
+    // Both decisions reach the rider's inbox, not only a push that may never arrive.
+    const inbox = await prisma.foodNotification.findMany({
+        where: { ownerType: 'DELIVERY_PARTNER', ownerId: partner.id },
+    });
+    assert.equal(inbox.length, 2);
+    assert.ok(inbox.some((n) => n.message.includes('Blurry licence')));
 });
 
 test('deciding an unknown application returns null', async () => {

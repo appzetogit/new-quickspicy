@@ -85,8 +85,10 @@ export const deliveryAddressParts = (o = {}) => {
 
 export const deliveryAddressLine = (p = {}) => {
     // The house line sometimes repeats the street when the form was filled from
-    // the map pin; print it once.
-    const house = p.house && p.street && p.street.toLowerCase().includes(p.house.toLowerCase()) ? null : p.house;
+    // the map pin; print it once. Compared as whole comma-separated parts: a
+    // substring test dropped house "12" because the street was "Sector 120".
+    const parts = (s) => `, ${String(s).toLowerCase().split(',').map((x) => x.trim()).filter(Boolean).join(', ')}, `;
+    const house = p.house && p.street && parts(p.street).includes(parts(p.house)) ? null : p.house;
     const head = [house, p.street, p.city].filter(Boolean);
     const tail = [p.state, p.pincode].filter(Boolean).join(' - ');
     return [...head, tail].filter(Boolean).join(', ');

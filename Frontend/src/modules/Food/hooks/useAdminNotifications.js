@@ -113,6 +113,22 @@ const mapFoodApprovals = (response) => {
   }));
 };
 
+const mapPendingAddons = (response) => {
+  const rows = response?.data?.data?.addons || [];
+
+  return (Array.isArray(rows) ? rows : []).map((item) => ({
+    id: `approval-addon-${String(item?._id || item?.id || "")}`,
+    title: "Add-on Approval Pending",
+    message: `${item?.draft?.name || "Add-on"} from ${item?.restaurant?.name || "Restaurant"} is waiting for review.`,
+    type: "approval",
+    category: "addon_approval",
+    path: "/admin/food/addons",
+    createdAt: item?.requestedAt || item?.createdAt,
+    timeLabel: toDateLabel(item?.requestedAt || item?.createdAt),
+    metaLabel: joinMeta(item?.restaurant?.name, item?.draft?.name),
+  }));
+};
+
 const mapUserRestaurantSupport = (response) => {
   const payload = response?.data?.data;
   const rows =
@@ -235,6 +251,7 @@ export default function useAdminNotifications(options = {}) {
         adminAPI.getDeliverySupportTickets({ page: 1, limit: 50 }),
         adminAPI.getExpiredFssaiNotifications(),
         adminAPI.getEndingSoonAlerts(),
+        adminAPI.getRestaurantAddons({ approvalStatus: "pending", page: 1, limit: 50 }),
       ]);
       const [
         restaurantsRes,
@@ -244,6 +261,7 @@ export default function useAdminNotifications(options = {}) {
         deliverySupportRes,
         fssaiExpiredRes,
         endingSoonRes,
+        addonApprovalRes,
       ] = settled.map((r) => (r.status === "fulfilled" ? r.value : null));
 
       const restaurantRows =
@@ -255,6 +273,7 @@ export default function useAdminNotifications(options = {}) {
         ...mapPendingRestaurants(restaurantRows),
         ...mapDeliveryJoinRequests(deliveryJoinRes),
         ...mapFoodApprovals(foodApprovalRes),
+        ...mapPendingAddons(addonApprovalRes),
         ...mapUserRestaurantSupport(supportRes),
         ...mapDeliverySupport(deliverySupportRes),
         ...mapExpiredFssai(fssaiExpiredRes),

@@ -30,3 +30,9 @@ export const buildPaginatedResult = ({ docs, total, page, limit }) => {
     };
 };
 
+
+/**
+ * Escapes LIKE/ILIKE wildcards so `%` and `_` in a search term match literally.
+ * Postgres' default LIKE escape character is the backslash.
+ */
+export const escapeLike = (value) => String(value ?? '').replace(/[\\%_]/g, '\\$&');

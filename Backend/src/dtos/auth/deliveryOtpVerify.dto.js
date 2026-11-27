@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import { ValidationError } from '../../core/auth/errors.js';
+import { normalizeRiderPhone, isValidOtp } from '../../modules/food/delivery/validators/delivery.validator.js';
 import { normalizePlatform } from '../../utils/platform.js';
 
 const schema = z.object({
-    phone: z
-        .string()
-        .min(8, 'Phone must be at least 8 digits')
-        .max(15, 'Phone must be at most 15 digits'),
-    otp: z
-        .string()
-        .min(4, 'OTP must be 4-6 digits')
-        .max(6, 'OTP must be 4-6 digits'),
+    // One spelling per rider: +91 / 0 / plain all normalise to 10 digits.
+    phone: z.string().transform((v, ctx) => {
+        const phone = normalizeRiderPhone(v);
+        if (!phone) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid 10-digit mobile number' });
+        return phone;
+    }),
+    otp: z.string().refine(isValidOtp, 'OTP must be 4 digits').transform((v) => v.trim()),
     fcmToken: z.string().optional().nullable(),
     platform: z.preprocess(
         (value) => normalizePlatform(value, { allowUndefined: true }),

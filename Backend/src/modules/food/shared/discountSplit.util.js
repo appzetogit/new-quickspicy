@@ -5,19 +5,6 @@
  * there on why these do not take an order or a transaction directly.
  */
 
-function calculateOfferDiscount(offer, subtotal) {
-    const safeSubtotal = Math.max(0, Number(subtotal) || 0);
-    if (!offer || safeSubtotal <= 0) return 0;
-    // Only 'percentage' is scaled; every other type — including the enum member
-    // Prisma spells flat_price — is a fixed number of rupees.
-    if (offer.discountType === 'percentage') {
-        const raw = safeSubtotal * ((Number(offer.discountValue) || 0) / 100);
-        const capped = Number(offer.maxDiscount) ? Math.min(raw, Number(offer.maxDiscount)) : raw;
-        return Math.max(0, Math.min(safeSubtotal, Math.floor(capped)));
-    }
-    return Math.max(0, Math.min(safeSubtotal, Math.floor(Number(offer.discountValue) || 0)));
-}
-
 function offerMatchesRestaurant(offer, restaurantId) {
     if (!offer || offer.restaurantScope !== 'selected') return true;
     const ids = Array.isArray(offer.restaurantIds) && offer.restaurantIds.length > 0
@@ -49,20 +36,17 @@ export function resolveDiscountSplit({ money = {}, offers, restaurantId }) {
         };
     }
 
-    // Older orders stored no split, so the offer that produced the discount has
-    // to be identified — by coupon code where there was one, otherwise by which
-    // offer would have produced exactly this amount.
+    // Older orders stored no split, so the offer that produced the discount is
+    // found by its coupon code -- and only by that. Matching "whichever offer
+    // gives this amount" charged restaurants for an unrelated offer once the
+    // real coupon had been deleted.
     const couponCode = String(money.couponCode || '').trim().toUpperCase();
-    const subtotal = Number(money.subtotal) || 0;
     const scopedOffers = (offers || []).filter((offer) => offerMatchesRestaurant(offer, restaurantId));
-    const matchedByCode = couponCode
-        ? scopedOffers.find((offer) => String(offer?.couponCode || '').trim().toUpperCase() === couponCode)
-        : null;
-    const matchingOffers = matchedByCode
-        ? [matchedByCode]
-        : scopedOffers.filter((offer) => calculateOfferDiscount(offer, subtotal) === discount);
+    const matchingOffers = couponCode
+        ? scopedOffers.filter((offer) => String(offer?.couponCode || '').trim().toUpperCase() === couponCode)
+        : [];
 
-    // Ambiguous, or nothing matched: the platform absorbs it. Guessing wrong
+    // No code, or the offer is gone: the platform absorbs it. Guessing wrong
     // here would take money off a restaurant that never agreed to the offer.
     if (matchingOffers.length !== 1) {
         return {

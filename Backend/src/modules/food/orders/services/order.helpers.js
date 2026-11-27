@@ -4,8 +4,8 @@ import { logger } from '../../../../utils/logger.js';
 import { haversineKm as geoHaversineKm, parseGeoPoint } from '../../shared/geo.utils.js';
 import {
   notifyOwnersActionableAlert,
-  sendNotificationToOwner,
-  sendNotificationToOwners,
+  notifyOwnerSafely as notifyOwnerWithInbox,
+  notifyOwnersSafely as notifyOwnersWithInbox,
 } from "../../../../core/notifications/firebase.service.js";
 import { getIO, rooms } from '../../../../config/socket.js';
 import { addOrderJob } from '../../../../queues/producers/order.producer.js';
@@ -233,6 +233,22 @@ export function sanitizeOrderForDeliveryPartner(orderDoc) {
       };
     }
   }
+  // Not the rider's business: the customer's email and the platform's margins.
+  delete out.platformProfit;
+  delete out.priceMarkupAmount;
+  if (out.amounts && typeof out.amounts === "object") {
+    const { platformNetProfit, priceMarkupAmount, ...amounts } = out.amounts;
+    out.amounts = amounts;
+  }
+  if (Array.isArray(out.items)) {
+    out.items = out.items.map(({ markupPercent, basePrice, baseVariantPrice, ...item }) => item);
+  }
+  for (const key of ["userId", "user"]) {
+    if (out[key] && typeof out[key] === "object" && "email" in out[key]) {
+      const { email, ...person } = out[key];
+      out[key] = person;
+    }
+  }
   return out;
 }
 
@@ -252,9 +268,15 @@ export function emitDeliveryDropOtpToUser(order, plainOtp) {
   }
 }
 
+/**
+ * Through firebase.service's own safe senders, which also keep a customer's
+ * visible order pushes in their inbox. Calling sendNotificationToOwners here
+ * skipped that, so a restaurant rejection or auto-cancel reached the phone but
+ * never the Notifications screen.
+ */
 export async function notifyOwnersSafely(targets, payload) {
   try {
-    await sendNotificationToOwners(targets, payload);
+    await notifyOwnersWithInbox(targets, payload);
   } catch (error) {
     logger.warn(`FCM notification failed: ${error?.message || error}`);
   }
@@ -265,7 +287,7 @@ export { notifyOwnersActionableAlert };
 
 export async function notifyOwnerSafely(target, payload) {
   try {
-    await sendNotificationToOwner({ ...target, payload });
+    await notifyOwnerWithInbox(target, payload);
   } catch (error) {
     logger.warn(`FCM notification failed: ${error?.message || error}`);
   }
@@ -448,13 +470,22 @@ export function normalizeOrderForClient(orderDoc) {
     cancelledBy = "restaurant";
   else if (String(cancellationEntry?.byRole || "").toUpperCase() === "ADMIN")
     cancelledBy = "admin";
+  // Several restaurant reject buttons send no note, which left the customer's
+  // cancelled order with a blank reason. Say at least who cancelled it.
+  const fallbackReason = {
+    customer: "Cancelled by you",
+    restaurant: "Cancelled by the restaurant",
+    admin: "Cancelled by Quick Spicy support",
+  };
 
   return {
     ...order,
     orderMongoId: mongoId,
     orderId: displayId,
     status: order?.orderStatus || order?.status || "",
-    cancellationReason,
+    cancellationReason:
+      cancellationReason ||
+      (String(order?.orderStatus || "").startsWith("cancel") ? fallbackReason[cancelledBy] || "" : ""),
     cancelledBy,
     cancelledAt: cancellationEntry?.at || null,
     deliveredAt:
@@ -748,14 +779,22 @@ export function canExposeOrderToRestaurant(orderLike) {
   return ["paid", "authorized", "captured", "settled"].includes(status);
 }
 
-/** "2x Paneer Tikka (Half), 1x Naan": quantity, x, dish, the size in brackets. */
+/**
+ * "2x Paneer Tikka (Half) + Extra Cheese, 1x Naan": quantity, x, dish, the
+ * size in brackets, then the add-ons -- the killed-app alert has only this
+ * string, so add-ons missing here meant the kitchen never saw them.
+ */
 export function formatItemsList(items) {
   if (!Array.isArray(items)) return "";
   return items
     .map((it) => {
       const variant = String(it?.variantName || it?.variant || "").trim();
-      return `${Number(it?.quantity) || 1}x ${it?.name || ""}${variant ? ` (${variant})` : ""}`;
+      const addons = (Array.isArray(it?.addons) ? it.addons : [])
+        .map((a) => String(typeof a === "string" ? a : a?.name || "").trim())
+        .filter(Boolean);
+      return `${Number(it?.quantity) || 1}x ${it?.name || ""}${variant ? ` (${variant})` : ""}${addons.length ? ` + ${addons.join(", ")}` : ""}`;
     })
+    // ", " before "<n>x" is where the app's overlay splits one item per line.
     .join(", ");
 }
 
@@ -827,6 +866,8 @@ export async function notifyRestaurantNewOrder(orderDoc) {
     // Construct rich body for the custom notification layout in Flutter
     let bodyText = `Order #${orderDoc.order_id || orderDoc._id} is waiting for review.`;
     if (itemsList) bodyText += `\nItems: ${itemsList}`;
+    const kitchenNote = str(orderDoc.note).trim().slice(0, 300);
+    if (kitchenNote) bodyText += `\nNote: ${kitchenNote}`;
     if (total > 0) bodyText += `\nTotal: ₹${total}`;
     if (customerLabel) bodyText += `\nCustomer: ${customerLabel}`;
     if (addressStr) bodyText += `\nAddress: ${addressStr}`;
@@ -863,6 +904,8 @@ export async function notifyRestaurantNewOrder(orderDoc) {
           itemCount: str(itemCount),
           itemsList: str(itemsList),
           address: str(addressStr),
+          // The customer's note to the kitchen; the app's alert shows data.note.
+          note: kitchenNote,
           total: str(total),
           paymentMethod: str(orderDoc.payment?.method),
           acceptanceDeadlineAt: str(orderDoc.acceptanceDeadlineAt?.toISOString?.() || ""),

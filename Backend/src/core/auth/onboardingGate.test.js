@@ -114,6 +114,7 @@ test('rider switch on: unknown number goes to registration', async () => {
     await requestDeliveryOtp(phone);
     const result = await verifyDeliveryOtpAndLogin(phone, await otpFor(phone));
     assert.equal(result.needsRegistration, true);
+    assert.ok(result.registrationToken, "the register form needs proof this phone passed OTP");
 });
 
 test('rider switch off: unknown number refused; existing riders unaffected', async () => {

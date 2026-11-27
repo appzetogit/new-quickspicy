@@ -60,11 +60,14 @@ export default function ImageCropDialog({ file, aspect = 1, title = "Crop image"
     setSrc("")
     setCrop({ x: 0, y: 0 })
     setZoom(1)
+    setArea(null)
     setError("")
     if (file) {
+      // Decode it first: a format the browser cannot draw (e.g. HEIC) otherwise
+      // left an empty cropper and a "Use this crop" button that never enabled.
       readAsDataUrl(file)
-        .then((url) => alive && setSrc(url))
-        .catch(() => alive && setError("Could not read this file"))
+        .then((url) => loadImage(url).then(() => alive && setSrc(url)))
+        .catch(() => alive && setError("This image could not be opened. Please use a JPG, PNG or WebP photo."))
     }
     return () => {
       alive = false
@@ -123,7 +126,7 @@ export default function ImageCropDialog({ file, aspect = 1, title = "Crop image"
               onCropComplete={onCropComplete}
               objectFit="contain"
             />
-          ) : (
+          ) : error ? null : (
             <div className="flex h-full items-center justify-center text-slate-300 text-sm">
               <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading…
             </div>

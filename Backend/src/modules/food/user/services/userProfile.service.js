@@ -2,12 +2,21 @@ import { prisma } from '../../../../config/prisma.js';
 import { AuthError, ValidationError } from '../../../../core/auth/errors.js';
 import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
 
-const parseIsoDateOrNull = (value) => {
+const parseIsoDateOrNull = (value, label = 'Date') => {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
-    const d = new Date(`${String(value)}T00:00:00.000Z`);
-    // Keep null for invalid; validation is handled by DTO, but be defensive.
-    return Number.isNaN(d.getTime()) ? null : d;
+    // A bad date is an error, not null: null used to erase the saved one.
+    // The round-trip catches 2023-02-30, which Date silently rolls into March.
+    // The app echoes back the stored value ("2000-01-31T00:00:00.000Z"); the
+    // date part is what counts.
+    const raw = String(value).trim();
+    const text = raw.slice(0, 10);
+    const d = new Date(`${text}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(raw) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== text
+        || d > new Date() || d.getUTCFullYear() < 1900) {
+        throw new ValidationError(`${label} must be a valid past date (YYYY-MM-DD)`);
+    }
+    return d;
 };
 
 const requireUser = async (userId) => {
@@ -66,9 +75,9 @@ export const updateCurrentUserProfile = async (userId, body) => {
         data.gender = mapped;
     }
 
-    const dob = parseIsoDateOrNull(body.dateOfBirth);
+    const dob = parseIsoDateOrNull(body.dateOfBirth, 'Date of birth');
     if (dob !== undefined) data.dateOfBirth = dob;
-    const ann = parseIsoDateOrNull(body.anniversary);
+    const ann = parseIsoDateOrNull(body.anniversary, 'Anniversary');
     if (ann !== undefined) data.anniversary = ann;
 
     return { user: await prisma.foodUser.update({ where: { id: user.id }, data }) };

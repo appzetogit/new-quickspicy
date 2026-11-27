@@ -9,6 +9,9 @@ export const signAccessToken = (payload) => {
 };
 
 export const signRefreshToken = (payload) => {
+    // sid names the login session. A refresh carries it forward, so logout can
+    // revoke every token the session minted, not just the one it presented.
+    payload = { ...payload, sid: payload.sid || crypto.randomUUID() };
     // jwtid makes two tokens minted in the same second differ. Without it the payload +
     // iat are identical and the unique index on food_refresh_tokens.token throws E11000
     // when a user double-taps "Verify".

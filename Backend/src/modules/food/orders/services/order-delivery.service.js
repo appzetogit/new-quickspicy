@@ -31,7 +31,8 @@ import {
   TERMINAL_ORDER_STATUSES,
   isStatusAdvance,
 } from './order.helpers.js';
-import { refreshOrderEta } from './eta.service.js';
+import { refreshOrderEta, estimateDriveMinutes } from './eta.service.js';
+import { toFix } from '../../delivery/services/riderFix.js';
 import { applySalariedPayRuleSafely } from '../../delivery/services/salariedIncentive.service.js';
 
 /**
@@ -53,7 +54,8 @@ const DELIVERY_RESTAURANT_SELECT = {
 const deliveryInclude = {
   ...orderInclude,
   restaurant: { select: DELIVERY_RESTAURANT_SELECT },
-  user: { select: { id: true, name: true, phone: true, email: true } },
+  // No email: the rider calls or meets the customer, nothing more.
+  user: { select: { id: true, name: true, phone: true } },
 };
 
 /** The cash part of an order: its total less what was paid up front (wallet, online). */
@@ -188,6 +190,37 @@ function assertOwnedBy(row, deliveryPartnerId) {
   if (String(row.dispatchDeliveryPartnerId || '') !== String(deliveryPartnerId)) {
     throw new ForbiddenError('Not your order');
   }
+}
+
+/**
+ * Every step of a trip (reached pickup, pickup, reached drop, OTP, complete,
+ * collect, running late...) is for the rider who ACCEPTED the order, while it
+ * is still live. An offer is not a trip: a rider only offered an order could
+ * confirm pickup and run it, and a cancelled order still took "reached
+ * pickup" (the restaurant was told the rider had arrived) and the drop OTP.
+ */
+function assertActiveTrip(row, deliveryPartnerId) {
+  assertOwnedBy(row, deliveryPartnerId);
+  if (row.dispatchStatus !== 'accepted') {
+    throw new ForbiddenError('Accept this order before starting the trip');
+  }
+  if (String(row.orderStatus || '').startsWith('cancelled')) {
+    throw new ValidationError('This order was cancelled');
+  }
+  if (row.orderStatus === 'delivered') throw new ValidationError('Order already delivered');
+}
+
+/** The same check by order id, for trip routes whose services live elsewhere. */
+export async function assertActiveTripFor(orderId, deliveryPartnerId) {
+  const identity = buildOrderIdentityFilter(orderId);
+  if (!identity) throw new ValidationError('Order id required');
+  const row = await prisma.foodOrder.findFirst({
+    where: identity,
+    select: { id: true, orderStatus: true, dispatchStatus: true, dispatchDeliveryPartnerId: true },
+  });
+  if (!row) throw new NotFoundError('Order not found');
+  assertActiveTrip(row, deliveryPartnerId);
+  return row;
 }
 
 export async function getCurrentTripDelivery(deliveryPartnerId) {
@@ -334,21 +367,17 @@ async function assertCashLimitAllows(deliveryPartnerId, order) {
   const method = String(order?.payment?.method || order?.paymentMethod || '').toLowerCase();
   if (method !== 'cash' && method !== 'razorpay_qr') return;
 
-  const [settings, wallet] = await Promise.all([
-    prisma.foodDeliveryCashLimit.findFirst({
-      where: { isActive: true },
-      select: { deliveryCashLimit: true },
-    }),
-    prisma.wallet.findUnique({
-      where: { entityType_entityId: { entityType: 'deliveryBoy', entityId: String(deliveryPartnerId) } },
-      select: { cashInHand: true },
-    }),
-  ]);
+  const settings = await prisma.foodDeliveryCashLimit.findFirst({
+    where: { isActive: true },
+    select: { deliveryCashLimit: true },
+  });
 
   const limit = Number(settings?.deliveryCashLimit) || 0;
   if (limit <= 0) return;
 
-  const inHand = Number(wallet?.cashInHand) || 0;
+  // COD collected less deposits -- the wallet row alone never moved on delivery.
+  const { getRiderCashInHand } = await import('../../delivery/services/deliveryFinance.service.js');
+  const inHand = (await getRiderCashInHand(deliveryPartnerId)).cashInHand;
   if (inHand >= limit) {
     throw new ValidationError(
       `You are holding Rs.${inHand} in cash, which is at your Rs.${limit} limit. ` +
@@ -496,139 +525,11 @@ export async function acceptOrderDelivery(orderId, deliveryPartnerId) {
     );
   }
 
-  void (async () => {
-    try {
-      const rest = row.restaurant;
-      const custLat = row.addrLat;
-      const custLng = row.addrLng;
-
-      if (rest?.latitude != null && rest?.longitude != null && custLat != null && custLng != null) {
-        const route = await fetchDrivingRoute(
-          { lat: Number(rest.latitude), lng: Number(rest.longitude) },
-          { lat: Number(custLat), lng: Number(custLng) },
-        );
-        const polyline = route.polyline || '';
-
-        if (route.distanceKm != null) {
-          const tripDurationMins =
-            route.durationSeconds != null ? Math.ceil(route.durationSeconds / 60) : null;
-          prisma.foodOrder
-            .update({
-              where: { id },
-              data: {
-                tripDistanceKm: route.distanceKm,
-                tripDurationMins,
-                roadDistanceKm: route.distanceKm,
-                roadDurationMins: tripDurationMins,
-              },
-            })
-            .catch(() => {});
-        }
-
-        const db = getFirebaseDB();
-        if (db) {
-          await db
-            .ref(`active_orders/${id}`)
-            .set({
-              polyline,
-              lat: Number(rest.latitude),
-              lng: Number(rest.longitude),
-              boy_lat: Number(rest.latitude),
-              boy_lng: Number(rest.longitude),
-              restaurant_lat: Number(rest.latitude),
-              restaurant_lng: Number(rest.longitude),
-              customer_lat: Number(custLat),
-              customer_lng: Number(custLng),
-              status: 'accepted',
-              last_updated: Date.now(),
-            })
-            .catch((error) => logger.error(`Firebase orderRef set error: ${error.message}`));
-        }
-      }
-    } catch (error) {
-      logger.error(`Error initializing Firebase order tracking: ${error?.message || error}`);
-    }
-
-
-    // Everyone offered this order who did not win it. Deduped: a partner can
-    // appear once per re-offer round, and pushing the same withdrawal three times
-    // is just noise.
-    const losingPartnerIds = [
-      ...new Set(
-        (row.dispatchOffers || [])
-          .map((offer) => String(offer.partnerId))
-          .filter((pid) => pid && pid !== partnerId),
-      ),
-    ];
-
-    try {
-      const io = getIO();
-      if (io) {
-        const payload = {
-          orderMongoId: id,
-          orderId: id,
-          orderStatus: row.orderStatus,
-          dispatchStatus: 'accepted',
-        };
-        io.to(rooms.delivery(partnerId)).emit('order_status_update', payload);
-        io.to(rooms.restaurant(row.restaurantId)).emit('order_status_update', payload);
-        io.to(rooms.user(row.userId)).emit('order_status_update', payload);
-
-        const claimedPayload = { orderId: id, orderMongoId: id, claimedBy: partnerId };
-        for (const pid of losingPartnerIds) {
-          io.to(rooms.delivery(pid)).emit('order_claimed', claimedPayload);
-        }
-        logger.info(
-          `[DeliveryDispatch] Broadcast order_claimed to ${losingPartnerIds.length} other partners for order ${id}`,
-        );
-      }
-
-      // The socket emit only reaches riders whose app is open. The offer itself is
-      // delivered by a data-only push the app raises from its background isolate,
-      // so the rider most likely still staring at a dead offer is exactly the one
-      // the socket cannot reach. Withdraw over the same transport it arrived on.
-      if (losingPartnerIds.length > 0) {
-        try {
-          await notifyOwnersSafely(
-            losingPartnerIds.map((pid) => ({ ownerType: 'DELIVERY_PARTNER', ownerId: pid })),
-            {
-              title: 'Order taken',
-              body: 'Another partner accepted this order.',
-              // Data-only, like the offer: this must dismiss a UI, never add one.
-              dataOnly: true,
-              data: { type: 'order_taken', orderId: id, orderMongoId: id },
-            },
-          );
-        } catch (err) {
-          logger.warn(`order_taken push failed for order ${id}: ${err.message}`);
-        }
-      }
-
-      // The customer gets "Rider {name} is assigned" from notifyCustomer.
-      void notifyCustomer(id, 'rider_assigned', { riderId: partnerId });
-      // The rider's ride to the restaurant now counts in the ETA.
-      void refreshOrderEta(id, { force: true });
-      await notifyOwnersSafely(
-        [
-          { ownerType: 'RESTAURANT', ownerId: row.restaurantId },
-          { ownerType: 'DELIVERY_PARTNER', ownerId: partnerId },
-        ],
-        {
-          title: `Order ${id} accepted`,
-          body: 'A delivery partner has accepted your order.',
-          data: {
-            type: 'delivery_accepted',
-            orderId: id,
-            orderMongoId: id,
-            dispatchStatus: 'accepted',
-            link: '/food/user/orders',
-          },
-        },
-      );
-    } catch (error) {
-      logger.error(`Error notifying delivery acceptance for ${id}: ${error?.message || error}`);
-    }
-  })();
+  // Who to tell first, tracking second: the tracking block awaits Google and
+  // Firebase, and a Firebase write that never settles (misconfigured RTDB url)
+  // used to hold back every notification queued behind it.
+  void notifyDeliveryAccepted(row, partnerId);
+  void initAcceptedOrderTracking(row);
 
   enqueueOrderEvent('delivery_accepted', {
     orderMongoId: id,
@@ -639,6 +540,159 @@ export async function acceptOrderDelivery(orderId, deliveryPartnerId) {
   });
 
   return responseOrder;
+}
+
+/**
+ * The restaurant is told which rider is coming (push + socket); the customer
+ * gets "Rider {name} is assigned" through notifyCustomer; riders who were
+ * offered the order and lost it get it withdrawn.
+ *
+ * The push used to go to the restaurant AND the accepting rider with the
+ * customer's wording ("A delivery partner has accepted your order", linking
+ * to /food/user/orders) and the order's database id as its title.
+ */
+async function notifyDeliveryAccepted(row, partnerId) {
+  const id = row.id;
+  // Everyone offered this order who did not win it. Deduped: a partner can
+  // appear once per re-offer round, and pushing the same withdrawal three times
+  // is just noise.
+  const losingPartnerIds = [
+    ...new Set(
+      (row.dispatchOffers || [])
+        .map((offer) => String(offer.partnerId))
+        .filter((pid) => pid && pid !== partnerId),
+    ),
+  ];
+
+  try {
+    const rider = await prisma.foodDeliveryPartner.findUnique({
+      where: { id: partnerId },
+      select: { name: true, phone: true },
+    });
+    const riderName = rider?.name || 'A delivery partner';
+    const orderNumber = row.order_id || id;
+
+    const io = getIO();
+    if (io) {
+      const payload = {
+        orderMongoId: id,
+        orderId: id,
+        orderStatus: row.orderStatus,
+        dispatchStatus: 'accepted',
+      };
+      io.to(rooms.delivery(partnerId)).emit('order_status_update', payload);
+      io.to(rooms.restaurant(row.restaurantId)).emit('order_status_update', {
+        ...payload,
+        deliveryPartnerId: partnerId,
+        deliveryPartnerName: rider?.name || '',
+        deliveryPartnerPhone: rider?.phone || '',
+      });
+      io.to(rooms.user(row.userId)).emit('order_status_update', payload);
+
+      const claimedPayload = { orderId: id, orderMongoId: id, claimedBy: partnerId };
+      // The winner too: their other phone, the overlay bubble and the ongoing
+      // tray copy still held the offer and kept ringing after the accept.
+      for (const pid of [...losingPartnerIds, partnerId]) {
+        io.to(rooms.delivery(pid)).emit('order_claimed', claimedPayload);
+      }
+      logger.info(
+        `[DeliveryDispatch] Broadcast order_claimed to ${losingPartnerIds.length} other partners for order ${id}`,
+      );
+    }
+
+    // The socket emit only reaches riders whose app is open. The offer itself is
+    // delivered by a data-only push the app raises from its background isolate,
+    // so the rider most likely still staring at a dead offer is exactly the one
+    // the socket cannot reach. Withdraw over the same transport it arrived on.
+    // The accepting rider gets it as well (claimedBy = them): it only closes
+    // the alert on every device and marks the offer answered in the app, so
+    // a late copy of the offer push can no longer raise it again.
+    {
+      void notifyOwnersSafely(
+        [...losingPartnerIds, partnerId].map((pid) => ({ ownerType: 'DELIVERY_PARTNER', ownerId: pid })),
+        {
+          title: 'Order taken',
+          body: 'Another partner accepted this order.',
+          // Data-only, like the offer: this must dismiss a UI, never add one.
+          dataOnly: true,
+          data: { type: 'order_taken', orderId: id, orderMongoId: id, claimedBy: partnerId },
+        },
+      ).catch((err) => logger.warn(`order_taken push failed for order ${id}: ${err.message}`));
+    }
+
+    // The customer gets "Rider {name} is assigned" from notifyCustomer.
+    void notifyCustomer(id, 'rider_assigned', { riderId: partnerId });
+    // The rider's ride to the restaurant now counts in the ETA.
+    void refreshOrderEta(id, { force: true });
+
+    await notifyOwnersSafely([{ ownerType: 'RESTAURANT', ownerId: row.restaurantId }], {
+      title: 'Rider assigned',
+      body: `${riderName} accepted order #${orderNumber} and is on the way to pick it up.`,
+      data: {
+        type: 'delivery_accepted',
+        orderId: id,
+        orderMongoId: id,
+        orderNumber: String(orderNumber),
+        dispatchStatus: 'accepted',
+        deliveryPartnerId: partnerId,
+        deliveryPartnerName: rider?.name || '',
+      },
+    });
+  } catch (error) {
+    logger.error(`Error notifying delivery acceptance for ${id}: ${error?.message || error}`);
+  }
+}
+
+/** Road distance for the trip and the Firebase tracking node. Best effort. */
+async function initAcceptedOrderTracking(row) {
+  const id = row.id;
+  try {
+    const rest = row.restaurant;
+    const restaurant = toFix(rest?.latitude, rest?.longitude);
+    const customer = toFix(row.addrLat, row.addrLng);
+    if (!restaurant || !customer) return;
+
+    const route = await fetchDrivingRoute(restaurant, customer);
+    const polyline = route.polyline || '';
+
+    if (route.distanceKm != null) {
+      const tripDurationMins =
+        route.durationSeconds != null ? Math.ceil(route.durationSeconds / 60) : null;
+      prisma.foodOrder
+        .update({
+          where: { id },
+          data: {
+            tripDistanceKm: route.distanceKm,
+            tripDurationMins,
+            roadDistanceKm: route.distanceKm,
+            roadDurationMins: tripDurationMins,
+          },
+        })
+        .catch(() => {});
+    }
+
+    const db = getFirebaseDB();
+    if (db) {
+      // Not awaited: it may never settle (see above).
+      db.ref(`active_orders/${id}`)
+        .set({
+          polyline,
+          lat: restaurant.lat,
+          lng: restaurant.lng,
+          boy_lat: restaurant.lat,
+          boy_lng: restaurant.lng,
+          restaurant_lat: restaurant.lat,
+          restaurant_lng: restaurant.lng,
+          customer_lat: customer.lat,
+          customer_lng: customer.lng,
+          status: 'accepted',
+          last_updated: Date.now(),
+        })
+        .catch((error) => logger.error(`Firebase orderRef set error: ${error.message}`));
+    }
+  } catch (error) {
+    logger.error(`Error initializing Firebase order tracking: ${error?.message || error}`);
+  }
 }
 
 export async function rejectOrderDelivery(orderId, deliveryPartnerId) {
@@ -728,9 +782,7 @@ export async function rejectOrderDelivery(orderId, deliveryPartnerId) {
 
 export async function confirmReachedPickupDelivery(orderId, deliveryPartnerId) {
   const { row, order } = await loadOrder(orderId);
-  assertOwnedBy(row, deliveryPartnerId);
-
-  if (row.orderStatus === 'delivered') throw new ValidationError('Order already delivered');
+  assertActiveTrip(row, deliveryPartnerId);
 
   const currentPhase = row.deliveryPhase || '';
   const currentStatus = row.deliveryStatus || '';
@@ -798,7 +850,7 @@ export async function confirmReachedPickupDelivery(orderId, deliveryPartnerId) {
 
 export async function confirmPickupDelivery(orderId, deliveryPartnerId, billImageUrl) {
   const { row } = await loadOrder(orderId);
-  assertOwnedBy(row, deliveryPartnerId);
+  assertActiveTrip(row, deliveryPartnerId);
 
   const from = row.orderStatus;
   const nextStatus = 'picked_up';
@@ -855,7 +907,12 @@ export async function confirmPickupDelivery(orderId, deliveryPartnerId, billImag
 
 export async function confirmReachedDropDelivery(orderId, deliveryPartnerId) {
   const { row, order } = await loadOrder(orderId);
-  assertOwnedBy(row, deliveryPartnerId);
+  assertActiveTrip(row, deliveryPartnerId);
+  // Pickup first: reaching the drop before it showed the customer the
+  // handover OTP while the food was still at the restaurant.
+  const hasPickedUp =
+    Boolean(row.pickedUpAt) || ['picked_up', 'reached_drop'].includes(String(row.orderStatus || ''));
+  if (!hasPickedUp) throw new ValidationError('Confirm pickup before marking reached drop.');
 
   if (row.dropOtpVerified) {
     emitOrderUpdate(order, deliveryPartnerId);
@@ -907,9 +964,54 @@ export async function confirmReachedDropDelivery(orderId, deliveryPartnerId) {
   return sanitizeOrderForDeliveryPartner(updated);
 }
 
+/** Wrong handover OTPs allowed per order before it locks. */
+export const MAX_DROP_OTP_ATTEMPTS = 5;
+/** History entry recording one wrong handover OTP (the attempt counter). */
+const DROP_OTP_FAILED = 'drop_otp_failed';
+const DROP_OTP_LOCKED_MESSAGE =
+  'Too many wrong OTP attempts. This order is locked: contact support to complete the handover.';
+
+/**
+ * Checks a handover OTP against the order, counting wrong ones.
+ *
+ * A 4-digit code with unlimited tries can be guessed. Each wrong try is a
+ * `drop_otp_failed` row in the order's status history (it also shows support
+ * what happened); after MAX_DROP_OTP_ATTEMPTS the order refuses every code and
+ * the rider has to call support, who can finish the order from the admin
+ * panel or clear those rows. The order row is locked while checking, so a
+ * burst of parallel guesses cannot all slip in under the limit.
+ */
+async function checkDropOtp(row, deliveryPartnerId, otp) {
+  const given = String(otp ?? '').trim();
+  // Returns rather than throws inside: a throw would roll back the failure row.
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "food_orders" WHERE "id" = ${row.id} FOR UPDATE`;
+    const failed = await tx.orderStatusHistory.count({ where: { orderId: row.id, to: DROP_OTP_FAILED } });
+    if (failed >= MAX_DROP_OTP_ATTEMPTS) return { left: 0 };
+    const expected = String(row.deliveryOtp || '').trim();
+    if (expected && /^\d{4}$/.test(given) && expected === given) return { ok: true };
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: row.id,
+        byRole: 'DELIVERY_PARTNER',
+        byId: String(deliveryPartnerId),
+        from: row.deliveryStatus || row.orderStatus,
+        to: DROP_OTP_FAILED,
+        note: `Wrong handover OTP (${failed + 1}/${MAX_DROP_OTP_ATTEMPTS})`,
+      },
+    });
+    return { left: MAX_DROP_OTP_ATTEMPTS - failed - 1 };
+  });
+  if (result.ok) return;
+  if (result.left <= 0) throw new ForbiddenError(DROP_OTP_LOCKED_MESSAGE);
+  throw new ValidationError(
+    `Invalid OTP. Ask the customer for the code shown in their app. ${result.left} attempt${result.left === 1 ? '' : 's'} left.`,
+  );
+}
+
 export async function verifyDropOtpDelivery(orderId, deliveryPartnerId, otp) {
   const { row, order } = await loadOrder(orderId);
-  assertOwnedBy(row, deliveryPartnerId);
+  assertActiveTrip(row, deliveryPartnerId);
 
   if (row.dropOtpVerified) return { order: sanitizeOrderForDeliveryPartner(order) };
 
@@ -922,10 +1024,7 @@ export async function verifyDropOtpDelivery(orderId, deliveryPartnerId, otp) {
     );
   }
 
-  const expected = String(row.deliveryOtp || '').trim();
-  if (!expected || expected !== otpStr) {
-    throw new ValidationError('Invalid OTP. Ask the customer for the code shown in their app.');
-  }
+  await checkDropOtp(row, deliveryPartnerId, otpStr);
 
   const updated = toOrder(await prisma.foodOrder.update({
     where: { id: row.id },
@@ -945,7 +1044,7 @@ export async function verifyDropOtpDelivery(orderId, deliveryPartnerId, otp) {
 
 export async function completeDelivery(orderId, deliveryPartnerId, body = {}) {
   const { row, order } = await loadOrder(orderId);
-  assertOwnedBy(row, deliveryPartnerId);
+  assertActiveTrip(row, deliveryPartnerId);
 
   const { otp, ratings } = body;
   logger.info(
@@ -962,13 +1061,9 @@ export async function completeDelivery(orderId, deliveryPartnerId, body = {}) {
 
   let otpVerifiedNow = false;
   if (otp && row.dropOtpRequired && !row.dropOtpVerified) {
-    const expected = String(row.deliveryOtp || '').trim();
-    if (expected && expected === String(otp).trim()) {
-      otpVerifiedNow = true;
-      logger.info(`[DeliveryComplete] OTP verified during completion call for ${row.id}`);
-    } else {
-      throw new ValidationError('Invalid handover OTP provided.');
-    }
+    await checkDropOtp(row, deliveryPartnerId, otp);
+    otpVerifiedNow = true;
+    logger.info(`[DeliveryComplete] OTP verified during completion call for ${row.id}`);
   }
 
   if (row.dropOtpRequired && !row.dropOtpVerified && !otp) {
@@ -1163,20 +1258,34 @@ export async function getOrderRouteForUser(orderId, userId, query = {}) {
 
   if (String(row.userId || '') !== String(userId)) throw new ForbiddenError('Not your order');
 
+  // The rider's position is the customer's only while that rider is bringing
+  // the order: not while it is merely offered, and not once it is delivered
+  // or cancelled.
+  if (!isRiderLocationVisibleToCustomer(row)) {
+    const pickedUp = Boolean(row.pickedUpAt) || ['picked_up', 'reached_drop'].includes(String(row.orderStatus || ''));
+    return {
+      polyline: '', distanceMeters: null, distanceKm: null, durationSeconds: null, durationMins: null,
+      target: pickedUp ? 'customer' : 'restaurant', origin: null, destination: null,
+    };
+  }
+
   return computeOrderRoute(row, { target: query?.target });
+}
+
+/**
+ * Whether the customer may see where the rider is: an accepted order that is
+ * not yet delivered or cancelled. Exported for every customer-facing view.
+ */
+export function isRiderLocationVisibleToCustomer(order) {
+  const dispatchStatus = order?.dispatchStatus ?? order?.dispatch?.status;
+  const status = String(order?.orderStatus || '');
+  return dispatchStatus === 'accepted' && !TERMINAL_ORDER_STATUSES.includes(status);
 }
 
 async function computeOrderRoute(row, query = {}) {
   // Origin: the rider's live position from the query, else their last known ping.
-  const qLat = Number(query.lat);
-  const qLng = Number(query.lng);
-  const hasQueryOrigin = Number.isFinite(qLat) && Number.isFinite(qLng);
-
-  let origin = hasQueryOrigin
-    ? { lat: qLat, lng: qLng }
-    : row.riderLat != null && row.riderLng != null
-      ? { lat: Number(row.riderLat), lng: Number(row.riderLng) }
-      : null;
+  // 0,0 and out-of-range points are not positions (riderFix.toFix).
+  let origin = toFix(query.lat, query.lng) || toFix(row.riderLat, row.riderLng);
 
   // Fall back to the partner's own last known position.
   //
@@ -1191,9 +1300,7 @@ async function computeOrderRoute(row, query = {}) {
       where: { id: row.dispatchDeliveryPartnerId },
       select: { lastLat: true, lastLng: true },
     });
-    const pLat = Number(partner?.lastLat);
-    const pLng = Number(partner?.lastLng);
-    if (Number.isFinite(pLat) && Number.isFinite(pLng)) origin = { lat: pLat, lng: pLng };
+    origin = toFix(partner?.lastLat, partner?.lastLng);
   }
 
   const pickedUp =
@@ -1206,12 +1313,8 @@ async function computeOrderRoute(row, query = {}) {
 
   const destination =
     target === 'customer'
-      ? row.addrLat != null && row.addrLng != null
-        ? { lat: Number(row.addrLat), lng: Number(row.addrLng) }
-        : null
-      : row.restaurant?.latitude != null && row.restaurant?.longitude != null
-        ? { lat: Number(row.restaurant.latitude), lng: Number(row.restaurant.longitude) }
-        : null;
+      ? toFix(row.addrLat, row.addrLng)
+      : toFix(row.restaurant?.latitude, row.restaurant?.longitude);
 
   const empty = {
     polyline: '',
@@ -1226,9 +1329,13 @@ async function computeOrderRoute(row, query = {}) {
   if (!origin || !destination) return empty;
 
   const route = await fetchDrivingRoute(origin, destination);
-  const durationSeconds = Number.isFinite(Number(route?.durationSeconds))
+  // No route is durationSeconds: null, and Number(null) is 0 -- every
+  // un-routed trip read "1 min" and the rider looked late. Fall back to a
+  // distance-based estimate (the same one the ETA uses).
+  const routed = route?.durationSeconds != null && Number(route.durationSeconds) > 0;
+  const durationSeconds = routed
     ? Number(route.durationSeconds)
-    : null;
+    : (estimateDriveMinutes(origin, destination) ?? 0) * 60 || null;
 
   return {
     polyline: route?.polyline || '',
@@ -1236,6 +1343,7 @@ async function computeOrderRoute(row, query = {}) {
     distanceKm: route?.distanceKm ?? null,
     durationSeconds,
     durationMins: durationSeconds != null ? Math.max(1, Math.ceil(durationSeconds / 60)) : null,
+    estimated: !routed,
     target,
     origin,
     destination,

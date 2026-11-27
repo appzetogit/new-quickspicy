@@ -5,6 +5,7 @@ import { adminAPI } from "@food/api"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@food/components/ui/dialog"
 import { zoneLabel } from "@food/utils/entityLabels"
+import RiderRegistrationExtras, { DocThumb } from "@food/components/admin/deliveryman/RiderRegistrationExtras"
 const debugLog = (...args) => {}
 const debugWarn = (...args) => {}
 const debugError = (...args) => {}
@@ -766,6 +767,7 @@ export default function JoinRequest() {
                             {viewDetails.documents.aadhar.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.aadhar.number}</p>
                             )}
+                            {viewDetails.documents.aadhar.document && <DocThumb url={viewDetails.documents.aadhar.document} label="aadhar" />}
                             {viewDetails.documents.aadhar.document && (
                               <a 
                                 href={viewDetails.documents.aadhar.document} 
@@ -788,6 +790,7 @@ export default function JoinRequest() {
                             {viewDetails.documents.pan.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.pan.number}</p>
                             )}
+                            {viewDetails.documents.pan.document && <DocThumb url={viewDetails.documents.pan.document} label="pan" />}
                             {viewDetails.documents.pan.document && (
                               <a 
                                 href={viewDetails.documents.pan.document} 
@@ -815,6 +818,7 @@ export default function JoinRequest() {
                                 Expiry: {new Date(viewDetails.documents.drivingLicense.expiryDate).toLocaleDateString('en-GB')}
                               </p>
                             )}
+                            {viewDetails.documents.drivingLicense.document && <DocThumb url={viewDetails.documents.drivingLicense.document} label="drivingLicense" />}
                             {viewDetails.documents.drivingLicense.document && (
                               <a 
                                 href={viewDetails.documents.drivingLicense.document} 
@@ -837,6 +841,7 @@ export default function JoinRequest() {
                             {viewDetails.documents.vehicleRC.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.vehicleRC.number}</p>
                             )}
+                            {viewDetails.documents.vehicleRC.document && <DocThumb url={viewDetails.documents.vehicleRC.document} label="vehicleRC" />}
                             {viewDetails.documents.vehicleRC.document && (
                               <a 
                                 href={viewDetails.documents.vehicleRC.document} 
@@ -888,6 +893,9 @@ export default function JoinRequest() {
                     </div>
                   </div>
                 )}
+
+                <RiderRegistrationExtras details={viewDetails} />
+
 
                 {/* Additional Info */}
                 <div className="grid grid-cols-2 gap-4">

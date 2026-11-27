@@ -6,6 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@food/components/ui/dialog"
 import { toast } from "sonner"
 import { zoneLabel } from "@food/utils/entityLabels"
+import RiderRegistrationExtras, { DocThumb } from "@food/components/admin/deliveryman/RiderRegistrationExtras"
 import DeliveryDutyLog from "@food/components/admin/DeliveryDutyLog"
 import RiderZonePicker, { mainZoneOfRider } from "@food/components/admin/zones/RiderZonePicker"
 const debugError = () => {}
@@ -1224,6 +1225,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                             {viewDetails.documents.aadhar.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.aadhar.number}</p>
                             )}
+                            {viewDetails.documents.aadhar.document && <DocThumb url={viewDetails.documents.aadhar.document} label="aadhar" />}
                             {viewDetails.documents.aadhar.document && (
                               <a 
                                 href={viewDetails.documents.aadhar.document} 
@@ -1246,6 +1248,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                             {viewDetails.documents.pan.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.pan.number}</p>
                             )}
+                            {viewDetails.documents.pan.document && <DocThumb url={viewDetails.documents.pan.document} label="pan" />}
                             {viewDetails.documents.pan.document && (
                               <a 
                                 href={viewDetails.documents.pan.document} 
@@ -1273,6 +1276,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                                 Expiry: {new Date(viewDetails.documents.drivingLicense.expiryDate).toLocaleDateString('en-GB')}
                               </p>
                             )}
+                            {viewDetails.documents.drivingLicense.document && <DocThumb url={viewDetails.documents.drivingLicense.document} label="drivingLicense" />}
                             {viewDetails.documents.drivingLicense.document && (
                               <a 
                                 href={viewDetails.documents.drivingLicense.document} 
@@ -1295,6 +1299,7 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                             {viewDetails.documents.vehicleRC.number && (
                               <p className="text-sm text-slate-700 mb-1">Number: {viewDetails.documents.vehicleRC.number}</p>
                             )}
+                            {viewDetails.documents.vehicleRC.document && <DocThumb url={viewDetails.documents.vehicleRC.document} label="vehicleRC" />}
                             {viewDetails.documents.vehicleRC.document && (
                               <a 
                                 href={viewDetails.documents.vehicleRC.document} 
@@ -1346,6 +1351,9 @@ availableCashLimit: deliveryman.availableCashLimit || 0,
                     </div>
                   </div>
                 )}
+
+                <RiderRegistrationExtras details={viewDetails} />
+
 
                 {/* Additional Info */}
                 <div className="grid grid-cols-2 gap-4">

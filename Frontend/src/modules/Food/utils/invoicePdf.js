@@ -33,7 +33,11 @@ export async function invoiceHtmlToPdf(html, filename = "bill.pdf") {
     if (!doc?.body) throw new Error("Bill could not be rendered")
     try { if (doc.fonts?.ready) await doc.fonts.ready } catch { /* fonts are optional */ }
 
-    const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 24
+    // The bill's own height. documentElement.scrollHeight is never less than
+    // the frame (1200px), so a one-page bill was drawn 1200px tall and its
+    // blank tail spilled onto an empty second page. In standards mode
+    // body.scrollHeight is the content alone (padding included).
+    const height = Math.ceil(doc.body.scrollHeight)
     frame.style.height = `${height}px`
 
     const canvas = await html2canvas(doc.body, {

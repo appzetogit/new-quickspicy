@@ -1,6 +1,7 @@
 import { prisma } from '../../../../config/prisma.js';
 import { notifyOwnerSafely, notifyAdminsSafely } from '../../../../core/notifications/firebase.service.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
+import { istStartOfDay } from '../../../../utils/timezone.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -8,16 +9,15 @@ const toDateLabel = (value) => {
     const date = value ? new Date(value) : null;
     if (!date || Number.isNaN(date.getTime())) return 'N/A';
     return date.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
         day: '2-digit',
         month: 'short',
         year: 'numeric'
     });
 };
 
-const startOfToday = () => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-};
+// Today in India, not the server's timezone: the licence date is an India date.
+const startOfToday = () => istStartOfDay();
 
 const nextDay = (date) => new Date(date.getTime() + DAY_MS);
 
@@ -255,7 +255,7 @@ export const syncExpiringFssaiWarnings = async (days = FSSAI_WARNING_DAYS) => {
 };
 
 // The block switch, kept in food_platform_settings ({ blockExpired }).
-// Off until an admin turns it on from the FSSAI Compliance page. Cached for a
+// On by default; an admin can turn it off from the FSSAI Compliance page. Cached for a
 // minute: the listing and pricing read it on every request.
 let settingsCache = { at: 0, value: null };
 const SETTINGS_TTL_MS = 60 * 1000;
@@ -263,7 +263,9 @@ const SETTINGS_TTL_MS = 60 * 1000;
 export const getFssaiComplianceSettings = async ({ fresh = false } = {}) => {
     if (!fresh && settingsCache.value && Date.now() - settingsCache.at < SETTINGS_TTL_MS) return settingsCache.value;
     const row = await prisma.foodPlatformSetting.findUnique({ where: { key: FSSAI_SETTINGS_KEY } }).catch(() => null);
-    const value = { blockExpired: row?.value?.blockExpired === true, warningDays: FSSAI_WARNING_DAYS };
+    // On unless an admin turned it off: an expired licence must not take
+    // orders just because nobody has opened the compliance page yet.
+    const value = { blockExpired: row?.value?.blockExpired !== false, warningDays: FSSAI_WARNING_DAYS };
     settingsCache = { at: Date.now(), value };
     return value;
 };
@@ -287,8 +289,7 @@ export const isFssaiExpiredForOrdering = (fssaiExpiry, now = new Date()) => {
     if (!fssaiExpiry) return false;
     const d = new Date(fssaiExpiry);
     if (Number.isNaN(d.getTime())) return false;
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return d.getTime() < today.getTime();
+    return d.getTime() < istStartOfDay(now).getTime();
 };
 
 /** A Prisma where-fragment that hides expired-licence restaurants, or null when the block is off. */
@@ -315,6 +316,9 @@ export const getFssaiOrderingBlock = async (restaurantOrId) => {
     const blocked = isFssaiExpiredForOrdering(expiry);
     return { blocked, reason: blocked ? FSSAI_BLOCK_MESSAGE : '' };
 };
+
+export const FSSAI_ACCEPT_BLOCK_MESSAGE =
+    'Your FSSAI food licence has expired. Renew it and upload the new licence to accept orders.';
 
 /** Pricing / place-order guard, next to the admin pause check. */
 export const assertFssaiValidForOrdering = async (restaurant) => {

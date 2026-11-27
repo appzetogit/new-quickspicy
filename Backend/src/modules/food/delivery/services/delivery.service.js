@@ -7,12 +7,19 @@ import { upsertFirebaseDeviceToken } from '../../../../core/notifications/fireba
 import { logger } from '../../../../utils/logger.js';
 import { collectDynamicRegistration } from './driverRegistrationField.service.js';
 import { saveRiderActiveOrdersPosition } from './riderPosition.service.js';
+import { toFix } from './riderFix.js';
 import { TERMINAL_ORDER_STATUSES } from '../../orders/services/order.helpers.js';
 import { offerPeriod, offerTargets, grantKey, targetMet, riderTargeted, normalizeRecurrence } from '../../shared/incentiveRules.js';
 import { onlineMinutesInWindow, riderOfferZones } from '../../admin/services/adminEarningAddon.service.js';
 import { expandZoneFamilies } from '../../shared/zoneHierarchy.js';
 import { getSalariedStatus } from './salariedIncentive.service.js';
 import { getRiderCashInHand } from './deliveryFinance.service.js';
+import jwt from 'jsonwebtoken';
+import { config } from '../../../../config/env.js';
+import { verifyOtp } from '../../../../core/otp/otp.service.js';
+import { findDeliveryPartnerByPhone } from '../../../../core/auth/onboardingGate.js';
+import { getIO, rooms } from '../../../../config/socket.js';
+import { normalizeRiderPhone } from '../validators/delivery.validator.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -27,6 +34,60 @@ const savePartnerFcmToken = async (partnerId, fcmToken, platform) => {
         });
     } catch (err) {
         logger.warn({ err, partnerId: String(partnerId) }, 'Failed to save delivery partner FCM token');
+    }
+};
+
+/**
+ * Proof that a sign-up's phone was verified by OTP, like a login.
+ *
+ * POST /register was public: anyone could create a rider on any number.
+ * verify-otp answers an unknown number with `registrationToken` (signed here,
+ * 30 min, bound to the phone); the form sends it back. A fresh `otp` for the
+ * phone is accepted as well.
+ */
+const REGISTRATION_PURPOSE = 'rider_register';
+const registrationSecret = () => `${config.jwtAccessSecret}:${REGISTRATION_PURPOSE}`;
+
+export const signRiderRegistrationToken = (phone) => {
+    const normalized = normalizeRiderPhone(phone);
+    if (!normalized) return null;
+    return jwt.sign({ purpose: REGISTRATION_PURPOSE, phone: normalized }, registrationSecret(), { expiresIn: '30m' });
+};
+
+export const assertRegistrationPhoneVerified = async ({ phone, registrationToken, otp, rawPhone }) => {
+    if (registrationToken) {
+        try {
+            const claims = jwt.verify(registrationToken, registrationSecret());
+            if (claims?.purpose === REGISTRATION_PURPOSE && claims.phone === phone) return;
+        } catch {
+            // Falls through to the error below.
+        }
+        throw new ValidationError('Your phone verification has expired. Please verify your number with OTP again.');
+    }
+    if (otp) {
+        if (!/^\d{4}$/.test(String(otp))) throw new ValidationError('OTP must be 4 digits');
+        // The OTP row is keyed by the phone exactly as the app requested it.
+        const result = await verifyOtp(String(rawPhone || phone).trim(), String(otp));
+        if (result.valid) return;
+        throw new ValidationError(result.reason || 'Invalid OTP');
+    }
+    throw new ValidationError('Verify your phone number with OTP before registering.');
+};
+
+/**
+ * Tells the admins a rider is waiting for approval: the FCM push every admin
+ * gets, plus `admin_notification` on the admin socket room so an open panel
+ * can refresh its bell straight away. Never throws.
+ */
+export const notifyAdminsOfRiderKyc = (partner, { title, body, subType }) => {
+    const data = { type: 'new_registration', subType, id: String(partner.id), partnerId: String(partner.id), link: '/admin/food/delivery-partners/join-request' };
+    void import('../../../../core/notifications/firebase.service.js')
+        .then(({ notifyAdminsSafely }) => notifyAdminsSafely({ title, body, data }))
+        .catch((e) => logger.warn(`Rider KYC admin push failed: ${e?.message || e}`));
+    try {
+        getIO()?.to(rooms.admin()).emit('admin_notification', { title, body, message: body, ...data, createdAt: new Date().toISOString() });
+    } catch (e) {
+        logger.warn(`Rider KYC admin socket emit failed: ${e?.message || e}`);
     }
 };
 
@@ -51,13 +112,25 @@ export const registerDeliveryPartner = async (payload, files, rawBody = {}, opts
     } = payload;
     const refRaw = typeof payload?.ref === 'string' ? String(payload.ref).trim() : '';
 
-    const existing = await prisma.foodDeliveryPartner.findUnique({ where: { phone } });
+    // The rider's own sign-up must prove the phone is theirs; an admin adding
+    // a rider does not.
+    if (!createdByAdmin) {
+        await assertRegistrationPhoneVerified({
+            phone,
+            registrationToken: payload.registrationToken,
+            otp: payload.otp,
+            rawPhone: rawBody?.phone,
+        });
+    }
+
+    // By the last 10 digits: "+919876543210" and "9876543210" are one rider.
+    const existing = await findDeliveryPartnerByPhone(phone);
     if (existing) {
         if (existing.status !== 'rejected') {
             throw new ValidationError('Delivery partner with this phone already exists');
         }
         // Rejected: clear the old record so they can start fresh on the same phone.
-        await prisma.foodDeliveryPartner.deleteMany({ where: { phone } });
+        await prisma.foodDeliveryPartner.deleteMany({ where: { id: existing.id } });
     }
 
     if (vehicleNumber && String(vehicleNumber).trim()) {
@@ -106,6 +179,11 @@ export const registerDeliveryPartner = async (payload, files, rawBody = {}, opts
         if (!file) continue;
         dynamicDocTasks.push(uploadImageBuffer(file.buffer, `food/delivery/${key}`).then((url) => [key, url]));
     }
+    // Vehicle RC: kept with the custom documents (no column), where the
+    // admin's document review lists it (riderDocuments.service.js).
+    if (files?.vehicleRcPhoto?.[0] && !documentKeys.includes?.('vehicleRcPhoto')) {
+        dynamicDocTasks.push(uploadImageBuffer(files.vehicleRcPhoto[0].buffer, 'food/delivery/rc').then((url) => ['vehicleRcPhoto', url]));
+    }
     for (const [k, v] of await Promise.all(dynamicDocTasks)) customDocuments[k] = v;
 
     let normalizedEmail;
@@ -152,7 +230,8 @@ export const registerDeliveryPartner = async (payload, files, rawBody = {}, opts
             status: createdByAdmin && opts.approve !== false ? 'approved' : 'pending',
             ...(createdByAdmin && opts.approve !== false ? { approvedAt: new Date() } : {}),
             ...(createdByAdmin && opts.zoneId ? { zoneId: String(opts.zoneId) } : {}),
-            ...(createdByAdmin ? bankFieldsOf(payload) : {}),
+            // Bank details from the sign-up form too (validated by the DTO).
+            ...bankFieldsOf(payload),
             referredById,
             ...images,
             ...(Object.keys(customFields).length ? { customFields } : {}),
@@ -175,16 +254,11 @@ export const registerDeliveryPartner = async (payload, files, rawBody = {}, opts
     // An admin adding a rider doesn't need telling about it.
     if (createdByAdmin) return partner;
 
-    try {
-        const { notifyAdminsSafely } = await import('../../../../core/notifications/firebase.service.js');
-        void notifyAdminsSafely({
-            title: 'New Delivery Partner Registration 🚲',
-            body: `A new delivery partner "${partner.name}" has signed up and is pending approval.`,
-            data: { type: 'new_registration', subType: 'delivery_partner', id: partner.id },
-        });
-    } catch (e) {
-        logger.warn(`Failed to notify admins of new delivery partner registration: ${e?.message || e}`);
-    }
+    notifyAdminsOfRiderKyc(partner, {
+        title: 'New Delivery Partner Registration 🚲',
+        body: `A new delivery partner "${partner.name}" (${partner.phone}) has signed up and is pending approval.`,
+        subType: 'delivery_partner',
+    });
 
     return partner;
 };
@@ -442,10 +516,14 @@ export const updateDeliveryAvailability = async (userId, payload) => {
     // Accept both field spellings clients send: status/availabilityStatus,
     // lat/lng or latitude/longitude, and numeric strings.
     const rawStatus = payload?.status ?? payload?.availabilityStatus;
-    const lat = Number(payload?.latitude ?? payload?.lat);
-    const lng = Number(payload?.longitude ?? payload?.lng);
+    const fix = toFix(payload?.latitude ?? payload?.lat, payload?.longitude ?? payload?.lng);
+    const lat = fix?.lat;
+    const lng = fix?.lng;
 
-    let validStatus = 'offline';
+    // No status = a location heartbeat: availability stays as it is. It used
+    // to default to offline, so a ping without one took a rider on a trip
+    // offline and out of dispatch.
+    let validStatus = partner.availabilityStatus === 'online' ? 'online' : 'offline';
     if (rawStatus === 'online' || rawStatus === true || rawStatus === 'true') validStatus = 'online';
     else if (rawStatus === 'offline' || rawStatus === false || rawStatus === 'false') validStatus = 'offline';
 
@@ -466,7 +544,7 @@ export const updateDeliveryAvailability = async (userId, payload) => {
     }
 
     const data = { availabilityStatus: validStatus };
-    const hasFix = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    const hasFix = Boolean(fix);
     if (hasFix) {
         // Only the plain coordinates are written; the lastLocation geography column
         // is derived by the partner_location_sync trigger.
@@ -626,6 +704,14 @@ export const getDeliveryPartnerWallet = async (deliveryPartnerId) => {
 
 // ----- Date helpers -----
 
+/** `?date=` as a Date (today when absent); a 400, not a 500, when it is not a date. */
+const parseQueryDate = (raw) => {
+    if (raw === undefined || raw === null || raw === '') return new Date();
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) throw new ValidationError('Invalid date. Use YYYY-MM-DD.');
+    return d;
+};
+
 const toStartOfDay = (d) => {
     const x = new Date(d);
     x.setHours(0, 0, 0, 0);
@@ -665,14 +751,14 @@ const computeRange = (period, date) => {
 };
 
 /**
- * A trip counts as inside the window if ANY of its timeline stamps falls in it.
- * `completedAt` was in the Mongo filter but is not a field on the order, so it
- * never matched anything — dropped rather than carried over.
+ * A trip belongs to the day it was delivered; one never delivered (pending,
+ * cancelled) to the day it was placed -- the same date the trip card shows.
+ * updatedAt was in here too, so an old trip rated or touched today turned up
+ * in today's history.
  */
 const withinRange = (start, end) => [
-    { deliveredAt: { gte: start, lte: end } },
-    { updatedAt: { gte: start, lte: end } },
-    { createdAt: { gte: start, lte: end } },
+    { orderStatus: 'delivered', deliveredAt: { gte: start, lte: end } },
+    { orderStatus: { not: 'delivered' }, createdAt: { gte: start, lte: end } },
 ];
 
 const TRIP_ORDER_BY = [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }];
@@ -696,7 +782,7 @@ export const getDeliveryPartnerEarnings = async (deliveryPartnerId, query = {}) 
     const partnerId = String(deliveryPartnerId);
 
     const period = String(query.period || 'week').toLowerCase();
-    const date = query.date ? new Date(query.date) : new Date();
+    const date = parseQueryDate(query.date);
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 1000);
 
@@ -890,7 +976,7 @@ export const getDeliveryPartnerTripHistory = async (deliveryPartnerId, query = {
     const partnerId = String(deliveryPartnerId);
 
     const period = query.period || 'daily';
-    const date = query.date ? new Date(query.date) : new Date();
+    const date = parseQueryDate(query.date);
     const statusFilter = normalizeStatusFilter(query.status);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 1000);
 
@@ -934,7 +1020,7 @@ export const getDeliveryPocketDetails = async (deliveryPartnerId, query = {}) =>
     if (!isId(deliveryPartnerId)) throw new ValidationError('Delivery partner not found');
     const partnerId = String(deliveryPartnerId);
 
-    const date = query.date ? new Date(query.date) : new Date();
+    const date = parseQueryDate(query.date);
     const { start, end } = getWeekRange(date);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 1000, 1), 2000);
 

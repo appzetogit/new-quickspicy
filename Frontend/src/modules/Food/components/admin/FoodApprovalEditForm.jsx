@@ -217,7 +217,8 @@ export default function FoodApprovalEditForm({ request, onCancel, onSaved }) {
         <div>
           <label className={labelClass}>Food type</label>
           <div className="flex gap-2">
-            {FOOD_TYPE_OPTIONS.map((opt) => (
+            {/* Veg / Non-veg as in the restaurant app; Egg only for a dish that already is Egg. */}
+            {FOOD_TYPE_OPTIONS.filter((opt) => opt.value !== "Egg" || foodType === "Egg").map((opt) => (
               <button
                 key={opt.value}
                 type="button"

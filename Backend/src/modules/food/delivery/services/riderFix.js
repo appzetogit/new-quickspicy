@@ -20,6 +20,22 @@
  * tested without a socket or a database.
  */
 
+/**
+ * A position, or null when it is not one: missing (null was read as 0,0),
+ * non-numeric, out of range, or 0,0 itself -- what a phone reports with no
+ * fix, which once put a rider in the Atlantic and an ETA at 29,110 minutes.
+ * Every place that stores or uses a rider/customer position goes through this.
+ */
+export function toFix(lat, lng) {
+    if (lat == null || lng == null || lat === '' || lng === '') return null;
+    const la = Number(lat);
+    const ln = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
+    if (Math.abs(la) > 90 || Math.abs(ln) > 180) return null;
+    if (la === 0 && ln === 0) return null;
+    return { lat: la, lng: ln };
+}
+
 /** Worse than this, a fix is not trusted while better ones are arriving. */
 export const MAX_ACCURACY_M = 50;
 /** Never trusted, however long since the last good fix: it is noise, not a place. */

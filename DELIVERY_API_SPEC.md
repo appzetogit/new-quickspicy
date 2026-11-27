@@ -664,7 +664,7 @@ Handshake with the access token (`auth.token`, `Authorization` header, or `?toke
 **Listen:**
 | Event | Meaning |
 |---|---|
-| `new_order_available` | a new order is offered to you — show the accept modal |
+| `new_order` | a new order is offered to you — show the accept modal |
 | `order_claimed` | another rider took it — dismiss the modal |
 | `order_deassigned` | the order was taken off you |
 | `order_ready` | restaurant marked ready for pickup |

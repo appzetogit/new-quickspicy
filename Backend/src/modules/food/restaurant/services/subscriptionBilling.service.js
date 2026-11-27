@@ -2,6 +2,7 @@ import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
+import { istDateKey } from '../../../../utils/timezone.js';
 import { notifyOwnerSafely } from '../../../../core/notifications/firebase.service.js';
 import {
     EARNED_ORDER,
@@ -34,10 +35,16 @@ const MONTH_LABELS = [
 
 // ---------- Billing month helpers ----------
 
+/** The India calendar month a moment falls in, whatever the server's timezone. */
 export function formatBillingMonth(date) {
-    const d = date instanceof Date ? date : new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return istDateKey(date instanceof Date ? date : new Date(date)).slice(0, 7);
 }
+
+const monthKey = (year, month) => {
+    // `month` may run past 12 or below 1; normalise it into the year.
+    const d = new Date(Date.UTC(year, month - 1, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
 
 export function parseBillingMonth(billingMonth) {
     const match = /^(\d{4})-(\d{2})$/.exec(String(billingMonth || '').trim());
@@ -55,23 +62,23 @@ export function billingMonthLabel(billingMonth) {
     return `${MONTH_LABELS[parsed.month - 1]} ${parsed.year}`;
 }
 
-/** Calendar-month window: 1st 00:00:00.000 → last day 23:59:59.999, server-local time. */
+/** Calendar-month window in India time: 1st 00:00:00.000 IST → last day 23:59:59.999 IST. */
 export function getMonthWindow(billingMonth) {
     const parsed = parseBillingMonth(billingMonth);
     if (!parsed) throw new ValidationError(`Invalid billing month: ${billingMonth}`);
-    const start = new Date(parsed.year, parsed.month - 1, 1, 0, 0, 0, 0);
-    const end = new Date(parsed.year, parsed.month, 0, 23, 59, 59, 999);
+    const start = new Date(`${monthKey(parsed.year, parsed.month)}-01T00:00:00.000+05:30`);
+    const end = new Date(new Date(`${monthKey(parsed.year, parsed.month + 1)}-01T00:00:00.000+05:30`).getTime() - 1);
     return { start, end };
 }
 
 export function previousBillingMonth(now = new Date()) {
-    return formatBillingMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const { year, month } = parseBillingMonth(formatBillingMonth(now));
+    return monthKey(year, month - 1);
 }
 
 function nextBillingMonth(billingMonth) {
     const parsed = parseBillingMonth(billingMonth);
-    // `month` is 1-based, so passing it as a 0-based index is already +1 month.
-    return formatBillingMonth(new Date(parsed.year, parsed.month, 1));
+    return monthKey(parsed.year, parsed.month + 1);
 }
 
 /** billingMonth string comparison works lexicographically for 'YYYY-MM'. */

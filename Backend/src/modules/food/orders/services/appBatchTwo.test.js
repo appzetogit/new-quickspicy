@@ -428,9 +428,27 @@ test('the item list reads "2x Paneer Tikka (Half), 1x Naan"', async () => {
         formatItemsList([{ quantity: 2, name: 'Paneer Tikka', variantName: 'Half' }, { quantity: 1, name: 'Naan', variantName: '' }]),
         '2x Paneer Tikka (Half), 1x Naan',
     );
+    // Add-ons ride on the line they belong to (the killed-app alert has only this text).
+    assert.equal(
+        formatItemsList([{ quantity: 1, name: 'Burger', variantName: '', addons: [{ name: 'Extra Cheese', price: 20 }, { name: 'Dip' }] }]),
+        '1x Burger + Extra Cheese, Dip',
+    );
     const now = Date.now();
     assert.equal(acceptTimeoutSeconds({ acceptanceDeadlineAt: new Date(now + 90_000) }, now), 90);
     assert.equal(acceptTimeoutSeconds({}, now), '');
+});
+
+test('a cancelled order always carries cancellationReason: the note, else who cancelled it', async () => {
+    const { normalizeOrderForClient } = await import('./order.helpers.js');
+    const at = new Date();
+    const withNote = normalizeOrderForClient({ _id: 'a', orderStatus: 'cancelled_by_restaurant',
+        statusHistory: [{ at, to: 'cancelled_by_restaurant', byRole: 'RESTAURANT', note: 'Item out of stock' }] });
+    assert.equal(withNote.cancellationReason, 'Item out of stock');
+    assert.equal(withNote.cancelledBy, 'restaurant');
+    const noNote = normalizeOrderForClient({ _id: 'b', orderStatus: 'cancelled_by_restaurant',
+        statusHistory: [{ at, to: 'cancelled_by_restaurant', byRole: 'RESTAURANT', note: '' }] });
+    assert.equal(noNote.cancellationReason, 'Cancelled by the restaurant');
+    assert.equal(normalizeOrderForClient({ _id: 'c', orderStatus: 'delivered', statusHistory: [] }).cancellationReason, '');
 });
 
 // ---- 16: ratings from the orders, and the reviews list --------------------------------

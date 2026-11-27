@@ -38,6 +38,12 @@ test('a negative tip is refused at the door', () => {
     assert.throws(() => validateCalculateOrderDto({ ...cart, tipAmount: -5 }), /negative/);
 });
 
+test('Infinity (1e400 in JSON) is refused as a tip or a price', () => {
+    const body = JSON.parse(`{"restaurantId":"${cart.restaurantId}","items":[{"itemId":"a1b2c3d4e5f6a7b8c9d0e1f2","name":"X","price":1e400,"quantity":1}],"tipAmount":1e400}`);
+    assert.throws(() => validateCalculateOrderDto(body));
+    assert.throws(() => validateCalculateOrderDto({ ...cart, tipAmount: Infinity }));
+});
+
 test('no tip stays no tip', () => {
     assert.equal(validateCalculateOrderDto(cart).tipAmount, undefined);
 });
@@ -48,4 +54,6 @@ test('the admin switch and ceiling apply at checkout', { skip: !checkCheckoutTip
     assert.equal(checkCheckoutTip(150, { tipsEnabled: true, tipMaxAmount: 100 }).message, 'The most you can tip is ₹100');
     assert.equal(checkCheckoutTip(100, { tipsEnabled: true, tipMaxAmount: 100 }).ok, true, 'exactly the ceiling is allowed');
     assert.equal(checkCheckoutTip(500, { tipsEnabled: true, tipMaxAmount: null }).ok, true, 'no ceiling');
+    assert.equal(checkCheckoutTip(Infinity, { tipsEnabled: true }).ok, false, '1e400 (Infinity) is refused');
+    assert.equal(checkCheckoutTip(5000, { tipsEnabled: true, tipMaxAmount: null }).ok, false, 'a default ceiling applies when none is set');
 });

@@ -56,8 +56,9 @@ export const creditReferralReward = async (userId, amountInr, metadata = {}) => 
 
 export const createWalletTopupOrder = async (userId, amountInr) => {
     const amount = Number(amountInr);
-    if (!Number.isFinite(amount) || amount <= 0) {
-        throw new ValidationError('Amount must be greater than 0');
+    // ₹1 floor: ₹0.001 used to round to a 0-paise gateway order.
+    if (!Number.isFinite(amount) || amount < 1) {
+        throw new ValidationError('Minimum top-up amount is ₹1');
     }
     if (amount > 50000) {
         throw new ValidationError('Maximum amount is 50,000');
@@ -65,17 +66,10 @@ export const createWalletTopupOrder = async (userId, amountInr) => {
 
     const amountPaise = Math.round(amount * 100);
 
+    // No dev fallback: without Razorpay there is no payment to verify, so a
+    // top-up could only ever be credited on the caller's word.
     if (!isRazorpayConfigured()) {
-        // Dev fallback: return a compatible shape without writing to the DB.
-        const orderId = `order_dev_${Date.now()}`;
-        return {
-            razorpay: {
-                key: getRazorpayKeyId() || 'rzp_test_dummy',
-                orderId,
-                amount: amountPaise,
-                currency: 'INR'
-            }
-        };
+        throw new ValidationError('Wallet top-up is not available right now');
     }
 
     const receipt = `wallet_topup_${String(userId).slice(-8)}_${Date.now()}`;
@@ -114,24 +108,23 @@ export const verifyWalletTopupPayment = async (userId, payload) => {
      * credited fifty thousand rupees. The claimed amount is now only checked
      * for shape; what gets credited is what Razorpay says was captured.
      */
+    // Never credit an unverified payment: without Razorpay keys there is no
+    // signature to check, so refuse instead of trusting the claimed amount.
+    if (!isRazorpayConfigured()) {
+        throw new ValidationError('Wallet top-up is not available right now');
+    }
     let creditedInr;
-    if (isRazorpayConfigured()) {
-        try {
-            creditedInr = (await confirmRazorpayPayment({ orderId, paymentId, signature })) / 100;
-        } catch (err) {
-            logger.warn(`Wallet top-up rejected for user ${id}: ${err?.message || err}`);
-            throw new ValidationError('Payment verification failed');
-        }
-        // The same ceiling createWalletTopupOrder enforces. A top-up larger
-        // than that did not come from an order this server created.
-        if (creditedInr > 50000) {
-            logger.error(`Wallet top-up of ${creditedInr} exceeds the cap; user ${id}, order ${orderId}`);
-            throw new ValidationError('Payment verification failed');
-        }
-    } else {
-        // Development only. Production refuses to start without Razorpay
-        // credentials, so this branch cannot be reached there.
-        creditedInr = amount;
+    try {
+        creditedInr = (await confirmRazorpayPayment({ orderId, paymentId, signature })) / 100;
+    } catch (err) {
+        logger.warn(`Wallet top-up rejected for user ${id}: ${err?.message || err}`);
+        throw new ValidationError('Payment verification failed');
+    }
+    // The same ceiling createWalletTopupOrder enforces. A top-up larger
+    // than that did not come from an order this server created.
+    if (creditedInr > 50000) {
+        logger.error(`Wallet top-up of ${creditedInr} exceeds the cap; user ${id}, order ${orderId}`);
+        throw new ValidationError('Payment verification failed');
     }
 
     // Credit ONLY after verification. The gateway order id is the idempotency key,
@@ -143,12 +136,12 @@ export const verifyWalletTopupPayment = async (userId, payload) => {
         entityId: id,
         type: 'credit',
         amount: creditedInr,
-        description: isRazorpayConfigured() ? 'Wallet top-up' : 'Wallet top-up (dev)',
+        description: 'Wallet top-up',
         category: 'wallet_topup',
         idempotencyKey: `wallet_topup:${orderId}`,
         metadata: {
             source: 'wallet_topup',
-            mode: isRazorpayConfigured() ? 'razorpay' : 'dev',
+            mode: 'razorpay',
             razorpayOrderId: orderId,
             razorpayPaymentId: paymentId,
             claimedAmount: amount

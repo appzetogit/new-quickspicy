@@ -3,7 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import AuthRedirect from "@food/components/AuthRedirect";
 import AdminLayout from "./AdminLayout";
-import Loader from "@food/components/Loader";
+import AdminPageLoader from "./AdminPageLoader";
 import { getCurrentUser } from "@food/utils/auth";
 import { canAccessFeatureSettings, canAccessSuperPowers } from "@food/utils/adminPermissions";
 import { adminAPI } from "@/services/api";
@@ -212,7 +212,7 @@ function UnregisteredRestaurantsRouteGuard() {
     load();
   }, []);
 
-  if (loading) return <Loader />;
+  if (loading) return <AdminPageLoader fullScreen />;
   if (!isEnabled) return <Navigate to="/admin/food/restaurants" replace />;
   return <UnregisteredRestaurants />;
 }
@@ -230,7 +230,7 @@ export default function AdminRouter() {
   }, []);
 
   return (
-    <Suspense fallback={<Loader />}>
+    <Suspense fallback={<AdminPageLoader fullScreen />}>
       <Routes>
         {/* Admin Auth Routes */}
         <Route path="login" element={<AuthRedirect module="admin"><AdminLogin /></AuthRedirect>} />

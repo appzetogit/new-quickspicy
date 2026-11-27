@@ -7,6 +7,7 @@ import { requireRoles } from '../../../../core/roles/role.middleware.js';
 import { uploadRateLimiter } from '../../../uploads/middleware/upload.middleware.js';
 import * as orderController from '../../orders/controllers/order.controller.js';
 import * as riderOps from '../controllers/riderOps.controller.js';
+import { assertActiveTripFor } from '../../orders/services/order-delivery.service.js';
 import { registerDeliveryPartnerController, updateDeliveryPartnerProfileController, updateDeliveryPartnerBankDetailsController, listSupportTicketsController, createSupportTicketController, getSupportTicketByIdController, listOrderEmergencyRequestsController, createOrderEmergencyRequestController, getOrderEmergencyRequestController, updateDeliveryPartnerDetailsController, updateDeliveryPartnerProfilePhotoBase64Controller, updateAvailabilityController, getWalletController, createWithdrawalRequestController, createCashDepositOrderController, verifyCashDepositPaymentController, getEarningsController, getTripHistoryController, getPocketDetailsController, getEmergencyHelpController, getCashLimitController, getDeliveryReferralStatsController, getActiveEarningAddonsController, deleteDeliveryPartnerAccountController } from '../controllers/delivery.controller.js';
 import { getPublicFormSchemaController } from '../controllers/driverRegistrationField.controller.js';
 import { getMyServiceArea, listOwnPayoutStatements, getOwnPayoutStatement, ownPayoutStatementPdf, getOwnDocuments, reuploadOwnDocument } from '../../admin/controllers/adminFoundations.controller.js';
@@ -76,6 +77,11 @@ router.get('/order-emergency-requests', authMiddleware, requireRoles('DELIVERY_P
 router.post('/order-emergency-requests', authMiddleware, requireRoles('DELIVERY_PARTNER'), createOrderEmergencyRequestController);
 router.get('/order-emergency-requests/:id', authMiddleware, requireRoles('DELIVERY_PARTNER'), getOrderEmergencyRequestController);
 
+// Trip steps whose services live outside order-delivery.service.js: only the
+// rider who accepted the order, while it is live (that service checks its own).
+const activeTrip = (req, res, next) =>
+    assertActiveTripFor(req.params.orderId, req.user?.userId).then(() => next(), next);
+
 // ----- Orders -----
 router.get('/orders/current', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.getCurrentTripDeliveryController);
 // Every trip the rider is carrying (peak-time batching can mean more than one).
@@ -90,19 +96,19 @@ router.patch('/orders/:orderId/reached-drop', authMiddleware, requireRoles('DELI
 router.post('/orders/:orderId/verify-drop-otp', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.verifyDropOtpDeliveryController);
 router.patch('/orders/:orderId/complete', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.completeDeliveryController);
 router.patch('/orders/:orderId/status', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.updateOrderStatusDeliveryController);
-router.post('/orders/:orderId/collect/qr', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.createCollectQrController);
+router.post('/orders/:orderId/collect/qr', authMiddleware, requireRoles('DELIVERY_PARTNER'), activeTrip, orderController.createCollectQrController);
 
 router.get('/orders/:orderId/route', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.getOrderRouteDeliveryController);
 // Delivery partner rates the customer after handover.
 router.patch('/orders/:orderId/rate-customer', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.rateCustomerDeliveryController);
 
 router.get('/orders/:orderId/payment-status', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.getPaymentStatusController);
-router.post('/orders/:orderId/collect/cash', authMiddleware, requireRoles('DELIVERY_PARTNER'), orderController.switchToCashController);
+router.post('/orders/:orderId/collect/cash', authMiddleware, requireRoles('DELIVERY_PARTNER'), activeTrip, orderController.switchToCashController);
 // Running late, change owed to the customer, company-UPI payment confirmation (riderOps.controller.js).
-router.post('/orders/:orderId/running-late', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.runningLateController);
+router.post('/orders/:orderId/running-late', authMiddleware, requireRoles('DELIVERY_PARTNER'), activeTrip, riderOps.runningLateController);
 router.post('/orders/:orderId/change-owed', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.recordChangeOwedController);
 router.get('/orders/:orderId/change-owed', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.getChangeOwedController);
-router.post('/orders/:orderId/collect/upi-confirm', authMiddleware, requireRoles('DELIVERY_PARTNER'), riderOps.confirmUpiPaymentController);
+router.post('/orders/:orderId/collect/upi-confirm', authMiddleware, requireRoles('DELIVERY_PARTNER'), activeTrip, riderOps.confirmUpiPaymentController);
 
 
 // ----- Earnings / Settings -----

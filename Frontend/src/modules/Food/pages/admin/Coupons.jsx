@@ -563,7 +563,8 @@ export default function Coupons() {
         maxDiscount: formData.discountType === "percentage" && formData.maxDiscount !== "" ? Number(formData.maxDiscount) : undefined,
         usageLimit: formData.usageLimit !== "" ? Number(formData.usageLimit) : undefined,
         perUserLimit: formData.perUserLimit !== "" ? Number(formData.perUserLimit) : undefined,
-        isFirstOrderOnly: Boolean(formData.isFirstOrderOnly),
+        // "First-time Users" scope is the single first-order switch; the flag mirrors it.
+        isFirstOrderOnly: formData.customerScope === "first-time",
         adminBearPercentage: Number(formData.adminBearPercentage),
         restaurantBearPercentage: Number(formData.restaurantBearPercentage),
         category: formData.category || null,
@@ -616,7 +617,10 @@ export default function Coupons() {
       couponCode: offer.couponCode || "",
       discountType: flat ? "flat-price" : "percentage",
       discountValue: String(offer.discountValue ?? (flat ? offer.originalPrice : offer.discountPercentage) ?? ""),
-      customerScope: offer.customerScope || (offer.customerGroup === "new" ? "first-time" : offer.customerGroup) || "all",
+      // Older coupons may carry only the isFirstOrderOnly tick; show them as first-time scope.
+      customerScope: (offer.isFirstOrderOnly && (offer.customerScope || "all") === "all")
+        ? "first-time"
+        : offer.customerScope || (offer.customerGroup === "new" ? "first-time" : offer.customerGroup) || "all",
       customerIds: Array.isArray(offer.customerIds) ? offer.customerIds : [],
       restaurantScope: offer.restaurantScope === "selected" ? "selected" : "all",
       restaurantIds: Array.isArray(offer.restaurantIds) ? offer.restaurantIds : [],
@@ -937,17 +941,6 @@ export default function Coupons() {
                   className={`w-full px-3 py-2.5 text-sm rounded-lg border ${errors.perUserLimit ? "border-red-500" : "border-slate-300"} bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
                 />
                 {errors.perUserLimit && <p className="mt-1 text-xs text-red-600">{errors.perUserLimit}</p>}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  id="isFirstOrderOnly"
-                  type="checkbox"
-                  checked={formData.isFirstOrderOnly}
-                  onChange={(e) => handleFormChange("isFirstOrderOnly", e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <label htmlFor="isFirstOrderOnly" className="text-sm text-slate-700">First order only</label>
               </div>
 
               <div>

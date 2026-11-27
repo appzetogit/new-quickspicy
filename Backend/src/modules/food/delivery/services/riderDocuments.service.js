@@ -26,6 +26,8 @@ export const BUILT_IN_DOCUMENTS = [
     { key: 'panPhoto', label: 'PAN card', numberField: 'panNumber', folder: 'food/delivery/pan' },
     { key: 'drivingLicensePhoto', label: 'Driving licence', numberField: 'drivingLicenseNumber', folder: 'food/delivery/license' },
 ];
+/** Uploaded at sign-up, stored in customDocuments.vehicleRcPhoto. */
+const VEHICLE_RC = { key: 'vehicleRcPhoto', label: 'Vehicle RC' };
 const BUILT_IN = new Map(BUILT_IN_DOCUMENTS.map((d) => [d.key, d]));
 const STATUSES = ['pending', 'approved', 'rejected'];
 
@@ -58,6 +60,10 @@ function describe(rider, customFields, now = Date.now()) {
             url: rider[d.key] || '',
             number: d.numberField ? rider[d.numberField] || '' : '',
         })),
+        // The sign-up's vehicle RC, unless an admin-defined field already covers it.
+        ...(customFields.some((f) => f.key === VEHICLE_RC.key) ? [] : [{
+            ...VEHICLE_RC, custom: true, required: false, url: String(custom[VEHICLE_RC.key] || ''), number: '',
+        }]),
         ...customFields.map((f) => ({
             key: f.key, label: f.label, custom: true, required: f.required, url: String(custom[f.key] || ''), number: '',
         })),
@@ -187,6 +193,12 @@ export async function reuploadOwnDocument(riderId, key, file, { number } = {}) {
         data.customDocuments = { ...asObject(rider.customDocuments), [key]: url };
     }
     await prisma.foodDeliveryPartner.update({ where: { id: rider.id }, data });
+    // The new copy waits for an admin's review, so tell them it is there.
+    void import('./delivery.service.js').then(({ notifyAdminsOfRiderKyc }) => notifyAdminsOfRiderKyc(rider, {
+        title: 'Rider document submitted for review',
+        body: `${rider.name || 'A delivery partner'} uploaded ${doc.label} for verification.`,
+        subType: 'delivery_document',
+    })).catch((e) => logger.warn(`Rider document admin notification failed: ${e?.message || e}`));
     return getOwnDocuments(rider.id);
 }
 

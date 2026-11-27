@@ -1,4 +1,5 @@
 import { prisma } from '../../../config/prisma.js';
+import { escapeLike } from '../../../utils/helpers.js';
 
 /**
  * Restaurant ids whose cuisine list contains the term, case-insensitively.
@@ -18,7 +19,7 @@ export const restaurantIdsMatchingCuisine = async (term, limit = 500) => {
     const rows = await prisma.$queryRaw`
         SELECT "id" FROM "food_restaurants"
         WHERE EXISTS (
-            SELECT 1 FROM unnest("cuisines") AS c WHERE c ILIKE ${`%${needle}%`}
+            SELECT 1 FROM unnest("cuisines") AS c WHERE c ILIKE ${`%${escapeLike(needle)}%`}
         )
         LIMIT ${limit}
     `;

@@ -10,6 +10,7 @@ import {
     setDefaultAddress,
 } from './userAddress.service.js';
 import { uniquePhone } from '../../../../utils/testIds.js';
+import { validateCreateAddressDto, validateUpdateAddressDto } from '../validators/userAddress.validator.js';
 
 /**
  * Addresses were an embedded array on FoodUser; they are their own table now,
@@ -147,4 +148,12 @@ test('deleting every address leaves none, and does not throw', async () => {
 
     const after = await listAddresses(userId);
     assert.equal(after.addresses.length, 0);
+});
+
+test('a street or city of only spaces is refused', () => {
+    const base = { street: '12 MG Road', city: 'Pune', state: 'MH', latitude: 18.5, longitude: 73.8 };
+    assert.throws(() => validateCreateAddressDto({ ...base, street: '   ' }), /Street is required/);
+    assert.throws(() => validateCreateAddressDto({ ...base, city: ' ' }), /City is required/);
+    assert.throws(() => validateUpdateAddressDto({ city: '  ' }), /City is required/);
+    assert.equal(validateCreateAddressDto({ ...base, street: '  12 MG Road ' }).street, '12 MG Road');
 });

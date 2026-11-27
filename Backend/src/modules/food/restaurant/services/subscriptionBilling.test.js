@@ -107,14 +107,18 @@ test('a billing month labels and bounds itself', async () => {
     assert.equal(billingMonthLabel('2031-05'), 'May 2031');
     assert.equal(billingMonthLabel('legacy'), 'Pre-migration balance');
 
-    const { start, end } = getMonthWindow('2031-02');
-    assert.equal(start.getDate(), 1);
-    assert.equal(end.getDate(), 28, 'a non-leap February ends on the 28th');
-    assert.equal(end.getHours(), 23);
-
     // Lexicographic ordering is what the catch-up loop relies on.
     assert.ok('2031-02' < '2031-10');
     assert.match(previousBillingMonth(new Date('2031-01-15')), /^2030-12$/);
+});
+
+test('billing months are India months, whatever the server timezone', () => {
+    const { start, end } = getMonthWindow('2031-02');
+    assert.equal(start.toISOString(), '2031-01-31T18:30:00.000Z');
+    assert.equal(end.toISOString(), '2031-02-28T18:29:59.999Z');
+    // 01:30 IST on 1 Feb is still 31 Jan in UTC: January is the month just ended.
+    assert.equal(previousBillingMonth(new Date('2031-01-31T20:00:00Z')), '2031-01');
+    assert.equal(previousBillingMonth(new Date('2031-01-15T00:00:00Z')), '2030-12');
 });
 
 test('GMV counts only delivered orders, at the restaurant\'s share', async () => {

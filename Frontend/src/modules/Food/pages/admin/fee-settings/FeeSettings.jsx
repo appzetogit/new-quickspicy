@@ -27,6 +27,9 @@ const ladderProblem = (ranges = []) => {
   return null
 }
 
+/** Where the next range has to start: the end of the last one, or 0 km. */
+const ladderEnd = (ranges = []) => (ranges.length ? Math.max(...ranges.map((r) => Number(r.max) || 0)) : 0)
+
 // The same arithmetic as the server (order-pricing.service.js): each range
 // charges its fee plus the per-km rate past the range start, and pays the
 // rider base pay plus per-km past the range start. A distance past the last
@@ -213,6 +216,14 @@ export default function FeeSettings() {
     fetchFeeSettings(selectedZoneId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedZoneId])
+
+  // Pre-fill the add form's start with the end of the ladder: any other start
+  // leaves a gap or an overlap, and the save refuses both.
+  useEffect(() => {
+    if (editingRangeIndex !== null) return
+    setNewRange((prev) => ({ ...prev, min: String(ladderEnd(feeSettings.deliveryFeeRanges)) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feeSettings.deliveryFeeRanges])
 
   // Unified save function
   const zoneLabelFor = (id) => {
@@ -405,13 +416,12 @@ export default function FeeSettings() {
       return
     }
 
-    setFeeSettings(updatedSettings)
-    
-    // Save to DB immediately
-    await saveSettings(updatedSettings)
+    // Saved first: saveSettings puts the server's copy on screen when it
+    // succeeds. Setting state up front showed a range the server had refused.
+    if (!(await saveSettings(updatedSettings))) return
 
-    // Reset state
-    setNewRange({ min: '', max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
+    // The next range has to start where this one ends, so start it there.
+    setNewRange({ min: String(max), max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
   }
 
   // Delete delivery fee range
@@ -426,7 +436,6 @@ export default function FeeSettings() {
       ...feeSettings,
       deliveryFeeRanges: newRanges
     }
-    setFeeSettings(updatedSettings)
     await saveSettings(updatedSettings)
   }
 
@@ -468,9 +477,23 @@ export default function FeeSettings() {
       return
     }
 
-    const ranges = [...feeSettings.deliveryFeeRanges]
-    // Remove the range being edited
-    ranges.splice(editingRangeIndex, 1)
+    // The ladder has no gaps, so a range shares its start with the previous
+    // range's end and its end with the next one's start. Moving a boundary on
+    // its own always made an overlap or a gap and was refused, so no range
+    // could be resized. The neighbours now move with it.
+    const old = feeSettings.deliveryFeeRanges[editingRangeIndex]
+    const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.001
+    const ranges = feeSettings.deliveryFeeRanges
+      .filter((_, i) => i !== editingRangeIndex)
+      .map((r) => {
+        if (near(r.max, old.min)) return { ...r, max: min }
+        if (near(r.min, old.max)) return { ...r, min: max }
+        return r
+      })
+    if (ranges.some((r) => Number(r.min) >= Number(r.max))) {
+      toast.error('This would cover a neighbouring range completely. Delete that range first.')
+      return
+    }
 
     // Check for overlapping ranges
     for (const range of ranges) {
@@ -502,16 +525,15 @@ export default function FeeSettings() {
       return
     }
 
-    setFeeSettings(updatedSettings)
-    await saveSettings(updatedSettings)
+    if (!(await saveSettings(updatedSettings))) return
 
-    setNewRange({ min: '', max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
+    setNewRange({ min: String(ladderEnd(ranges)), max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
     setEditingRangeIndex(null)
   }
 
   // Cancel edit
   const handleCancelEdit = () => {
-    setNewRange({ min: '', max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
+    setNewRange({ min: String(ladderEnd(feeSettings.deliveryFeeRanges)), max: '', fee: '0', feePerKm: '0', deliveryBoyPerKm: '0', deliveryBoyBasePay: '0' })
     setEditingRangeIndex(null)
   }
 

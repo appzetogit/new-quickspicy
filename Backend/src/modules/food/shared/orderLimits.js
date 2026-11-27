@@ -48,12 +48,21 @@ export function assertCodAllowedForTotal(total, limits) {
     }
 }
 
-/** Refuses a cart with more of one dish than the limit. */
+/**
+ * Refuses a cart with more of one dish than the limit. Lines for the same dish
+ * and option are added up first, so splitting it over two lines (different
+ * add-ons or notes) cannot get past the cap.
+ */
 export function assertItemQuantities(items, limits) {
     const max = Number(limits?.maxItemQuantity) || DEFAULT_MAX_ITEM_QUANTITY;
-    for (const item of Array.isArray(items) ? items : []) {
-        if (Number(item?.quantity) > max) {
+    const totals = new Map();
+    (Array.isArray(items) ? items : []).forEach((item, index) => {
+        const id = item?.itemId || item?.id;
+        const key = id ? `${id}::${item?.variantId || ''}` : `line:${index}`;
+        const sum = (totals.get(key) || 0) + (Number(item?.quantity) || 0);
+        totals.set(key, sum);
+        if (sum > max) {
             throw new ValidationError(`You can order at most ${max} of one item`);
         }
-    }
+    });
 }

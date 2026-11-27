@@ -43,7 +43,7 @@ const makeFood = async (ownerId) => {
 };
 
 const track = async (body) => {
-    const a = await createRestaurantAddon(restaurantId, body);
+    const a = await createRestaurantAddon(restaurantId, { price: 10, ...body });
     created.addons.push(a.id);
     return a;
 };
@@ -85,11 +85,11 @@ test('the name is unique per restaurant, ignoring case', async () => {
     const name = `Paneer ${uniqueTag('N')}`;
     await track({ name });
 
-    await assert.rejects(() => createRestaurantAddon(restaurantId, { name }), /already exists/);
+    await assert.rejects(() => createRestaurantAddon(restaurantId, { name, price: 10 }), /already exists/);
     // Prisma cannot compare a Json string case-insensitively for equality, so
     // this is the check that would quietly stop working if that were assumed.
     await assert.rejects(
-        () => createRestaurantAddon(restaurantId, { name: name.toUpperCase() }),
+        () => createRestaurantAddon(restaurantId, { name: name.toUpperCase(), price: 10 }),
         /already exists/,
     );
 
@@ -98,7 +98,7 @@ test('the name is unique per restaurant, ignoring case', async () => {
     assert.ok(longer.id);
 
     // And another restaurant is free to use the same name.
-    const elsewhere = await createRestaurantAddon(otherRestaurantId, { name });
+    const elsewhere = await createRestaurantAddon(otherRestaurantId, { name, price: 10 });
     created.addons.push(elsewhere.id);
     assert.ok(elsewhere.id);
 
@@ -117,7 +117,7 @@ test('add-ons can only link to this restaurant\'s own dishes', async () => {
     // Otherwise a restaurant could hang its add-on off a competitor's dish, at
     // a price that competitor never set.
     await assert.rejects(
-        () => createRestaurantAddon(restaurantId, { name: uniqueTag('X'), foodIds: [theirs] }),
+        () => createRestaurantAddon(restaurantId, { name: uniqueTag('X'), price: 10, foodIds: [theirs] }),
         /do not belong to this restaurant/,
     );
     await assert.rejects(
@@ -231,4 +231,35 @@ test('the list filters by status and searches the draft name', async () => {
     // An unrecognised status is ignored rather than matching nothing.
     const bogus = await listRestaurantAddons(restaurantId, { status: 'banana', search: tag });
     assert.equal(bogus.total, 1);
+});
+
+test('add-on price is required, 0 allowed, capped; pure-veg restaurants refuse non-veg', async () => {
+    await assert.rejects(() => createRestaurantAddon(restaurantId, { name: uniqueTag('P') }), /0 or more/);
+    await assert.rejects(() => createRestaurantAddon(restaurantId, { name: uniqueTag('P'), price: '' }), /0 or more/);
+    await assert.rejects(() => createRestaurantAddon(restaurantId, { name: uniqueTag('P'), price: 1e13 }), /cannot be more/);
+    const free = await track({ name: uniqueTag('Free'), price: 0 });
+    assert.equal(free.price, 0);
+    await assert.rejects(() => updateRestaurantAddon(restaurantId, free.id, { draft: { price: null } }), /0 or more/);
+
+    await prisma.foodRestaurant.update({ where: { id: restaurantId }, data: { pureVegRestaurant: true } });
+    try {
+        await assert.rejects(
+            () => createRestaurantAddon(restaurantId, { name: uniqueTag('NV'), price: 20, foodType: 'non-veg' }),
+            /Pure veg/,
+        );
+        await assert.rejects(
+            () => updateRestaurantAddon(restaurantId, free.id, { draft: { foodType: 'non-veg' } }),
+            /Pure veg/,
+        );
+    } finally {
+        await prisma.foodRestaurant.update({ where: { id: restaurantId }, data: { pureVegRestaurant: false } });
+    }
+});
+
+test("includeDeleted='false' leaves deleted add-ons out", async () => {
+    const { validateAddonListQuery } = await import('../validators/addon.validator.js');
+    const gone = await track({ name: uniqueTag('Gone'), price: 5 });
+    await deleteRestaurantAddon(restaurantId, gone.id);
+    const { addons } = await listRestaurantAddons(restaurantId, validateAddonListQuery({ includeDeleted: 'false' }));
+    assert.ok(!addons.some((a) => a.id === gone.id));
 });

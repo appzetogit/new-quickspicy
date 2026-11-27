@@ -195,17 +195,12 @@ export async function getCashBlockedPartnerIds(partnerIds) {
   const limit = Number(settings?.deliveryCashLimit) || 0;
   if (limit <= 0) return new Set();
 
-  // Wallets are one table now, keyed by (entityType, entityId).
-  const wallets = await prisma.wallet.findMany({
-    where: {
-      entityType: 'deliveryBoy',
-      entityId: { in: partnerIds.map(String) },
-      cashInHand: { gte: limit },
-    },
-    select: { entityId: true },
-  });
-
-  return new Set(wallets.map((w) => w.entityId));
+  // Cash collected on delivered COD orders less deposits (the same figure
+  // the rider's wallet shows). The wallet row alone was never updated on
+  // delivery, so nobody ever reached the limit.
+  const { getRidersCashInHand } = await import('../../delivery/services/deliveryFinance.service.js');
+  const cash = await getRidersCashInHand(partnerIds);
+  return new Set([...cash].filter(([, c]) => c.cashInHand >= limit).map(([id]) => id));
 }
 
 /** Cash the rider has to physically collect, so it counts against their float. */
@@ -716,15 +711,20 @@ async function resetDispatchAndRehunt(row, activeStatuses) {
     throw new ValidationError('A delivery partner has already accepted this order.');
   }
 
-  await prisma.$transaction([
+  // Conditional: a rider accepting between the read above and this write used
+  // to be overwritten back to 'unassigned', and the order was offered again.
+  const reset = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.foodOrder.updateMany({
+      where: { id: row.id, dispatchStatus: { not: 'accepted' }, dispatchAcceptedAt: null },
+      data: { dispatchStatus: 'unassigned', dispatchDeliveryPartnerId: null },
+    });
+    if (!count) return false;
     // A fresh round for everyone, except riders an admin took the order away
     // from: those stay excluded, as they are without a resend.
-    prisma.orderDispatchOffer.deleteMany({ where: { orderId: row.id, action: { not: 'deassigned' } } }),
-    prisma.foodOrder.update({
-      where: { id: row.id },
-      data: { dispatchStatus: 'unassigned', dispatchDeliveryPartnerId: null },
-    }),
-  ]);
+    await tx.orderDispatchOffer.deleteMany({ where: { orderId: row.id, action: { not: 'deassigned' } } });
+    return true;
+  });
+  if (!reset) throw new ValidationError('A delivery partner has already accepted this order.');
 
   await tryAutoAssign(row.id);
   return { success: true };

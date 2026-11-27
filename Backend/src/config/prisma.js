@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger.js';
+import { escapeLike } from '../utils/helpers.js';
 import { applyAdminScope, currentAdminScope } from '../core/roles/adminScope.context.js';
 
 /**
@@ -23,6 +24,28 @@ const withMongoId = (value) => {
     );
     if (typeof value.id === 'string') mapped._id = value.id;
     return mapped;
+};
+
+/**
+ * Prisma's contains / startsWith / endsWith do NOT escape LIKE wildcards, so a
+ * search for "%" or "_" matched every row. Escape them in every `where` (and
+ * nested relation filter) once, here, for all ~90 call sites. Copies instead of
+ * mutating: callers reuse one `where` for findMany + count, and mutating it
+ * would escape twice.
+ */
+const LIKE_OPS = new Set(['contains', 'startsWith', 'endsWith']);
+const escapeLikeFilters = (value, inWhere = false) => {
+    if (Array.isArray(value)) return value.map((v) => escapeLikeFilters(v, inWhere));
+    if (value?.constructor !== Object) return value;
+    let out = null;
+    for (const [key, inner] of Object.entries(value)) {
+        if (key === 'data' && !inWhere) continue;
+        const next = inWhere && LIKE_OPS.has(key) && typeof inner === 'string'
+            ? escapeLike(inner)
+            : escapeLikeFilters(inner, inWhere || key === 'where');
+        if (next !== inner) (out ??= { ...value })[key] = next;
+    }
+    return out ?? value;
 };
 
 /**
@@ -144,7 +167,8 @@ export const prisma = new PrismaClient({
                 // A sub-admin's request only reaches their own cities. Outside an
                 // admin request there is no scope and this changes nothing.
                 const scope = currentAdminScope();
-                const scoped = scope ? applyAdminScope(model, operation, args, scope) : args;
+                const escaped = escapeLikeFilters(args);
+                const scoped = scope ? applyAdminScope(model, operation, escaped, scope) : escaped;
                 return withMongoId(await query(scoped));
             }
         }

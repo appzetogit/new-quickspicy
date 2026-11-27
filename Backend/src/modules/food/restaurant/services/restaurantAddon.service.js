@@ -3,6 +3,7 @@ import { isId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { notifyAdminsSafely } from '../../../../core/notifications/firebase.service.js';
 import { logger } from '../../../../utils/logger.js';
+import { toMenuPrice } from '../validators/restaurant.validator.js';
 
 /**
  * The restaurant's own side of add-ons.
@@ -101,13 +102,11 @@ async function nameIsTaken(restaurantId, name, exceptId = null) {
 async function resolveVariantPrices(restaurantId, addonFoodIds, variantPrices) {
     if (variantPrices === undefined) return null;
     const entries = (Array.isArray(variantPrices) ? variantPrices : [])
-        .map((v) => ({ variantId: String(v?.variantId || '').trim(), price: Number(v?.price) }))
+        .map((v) => ({ variantId: String(v?.variantId || '').trim(), price: v?.price }))
         .filter((v) => isId(v.variantId));
 
     for (const entry of entries) {
-        if (!Number.isFinite(entry.price) || entry.price < 0) {
-            throw new ValidationError('Add-on variant price must be 0 or more');
-        }
+        entry.price = toMenuPrice(entry.price, 'Add-on variant price', { allowZero: true });
     }
     if (!entries.length) return [];
 
@@ -230,11 +229,34 @@ export async function listRestaurantAddons(restaurantId, query = {}) {
     return { addons: list.map(serializeAddon), total, page, limit };
 }
 
+/** A pure-veg restaurant's add-ons are veg too, as its dishes and categories are. */
+async function assertPureVegAllows(restaurantId, foodType) {
+    if (foodType !== 'non-veg') return;
+    const restaurant = await prisma.foodRestaurant.findUnique({
+        where: { id: restaurantId },
+        select: { pureVegRestaurant: true },
+    });
+    if (restaurant?.pureVegRestaurant === true) {
+        throw new ValidationError('Pure veg restaurants can only add veg add-ons');
+    }
+}
+
+const notifyAdminsOfAddonReview = (id, name, edited) =>
+    void notifyAdminsSafely({
+        title: edited ? 'Addon Changed: Approval Needed 🍟' : 'New Addon Approval Request 🍟',
+        body: edited
+            ? `Restaurant has edited the addon "${name}" and it needs approval again.`
+            : `Restaurant has submitted a new addon "${name}" for approval.`,
+        data: { type: 'approval_request', subType: 'addon', id },
+    }).catch((err) => logger.warn(`Addon approval notification failed: ${err?.message || err}`));
+
 export async function createRestaurantAddon(restaurantId, body = {}) {
     const rid = assertRestaurantId(restaurantId);
 
     const name = String(body?.name || '').trim();
     if (!name) throw new ValidationError('Add-on name is required');
+    const price = toMenuPrice(body?.price, 'Price', { allowZero: true });
+    await assertPureVegAllows(rid, normalizeAddonFoodType(body?.foodType));
     if (await nameIsTaken(rid, name)) throw new ValidationError('Add-on already exists');
 
     const foodIds = await sanitizeFoodIds(rid, body?.foodIds);
@@ -248,7 +270,7 @@ export async function createRestaurantAddon(restaurantId, body = {}) {
                 name,
                 description: String(body.description || '').trim(),
                 foodType: normalizeAddonFoodType(body?.foodType),
-                price: Number(body.price) || 0,
+                price,
                 image: String(body.image || '').trim(),
                 images: cleanImages(body.images),
             },
@@ -267,11 +289,7 @@ export async function createRestaurantAddon(restaurantId, body = {}) {
         include: { variantPrices: true },
     });
 
-    void notifyAdminsSafely({
-        title: 'New Addon Approval Request 🍟',
-        body: `Restaurant has submitted a new addon "${name}" for approval.`,
-        data: { type: 'approval_request', subType: 'addon', id: addon.id },
-    }).catch((err) => logger.warn(`Addon approval notification failed: ${err?.message || err}`));
+    notifyAdminsOfAddonReview(addon.id, name, false);
 
     await invalidatePublicAddonCache();
     return serializeAddon(addon);
@@ -326,12 +344,11 @@ export async function updateRestaurantAddon(restaurantId, addonId, updateDto = {
             if (ft !== 'veg' && ft !== 'non-veg') {
                 throw new ValidationError('Food type must be veg or non-veg');
             }
+            await assertPureVegAllows(rid, ft);
             draft.foodType = ft;
         }
         if (d.price !== undefined) {
-            const price = Number(d.price);
-            if (!Number.isFinite(price) || price < 0) throw new ValidationError('Price must be >= 0');
-            draft.price = price;
+            draft.price = toMenuPrice(d.price, 'Price', { allowZero: true });
         }
         if (d.image !== undefined) draft.image = String(d.image || '').trim();
         if (d.images !== undefined) draft.images = cleanImages(d.images);
@@ -358,6 +375,8 @@ export async function updateRestaurantAddon(restaurantId, addonId, updateDto = {
         await writeVariantPrices(tx, id, variantPriceRows);
         return tx.foodAddon.findUnique({ where: { id }, include: { variantPrices: true } });
     });
+    // An edit sends it back to the approval queue; the admin has to hear of it.
+    if (data.approvalStatus === 'pending') notifyAdminsOfAddonReview(id, updated?.draft?.name || '', true);
     await invalidatePublicAddonCache();
     return serializeAddon(updated);
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildInvoice, renderInvoiceHtml } from './invoice.service.js';
+import { buildInvoice, deliveryAddressLine, renderInvoiceHtml } from './invoice.service.js';
 
 /**
  * The bill a customer keeps.
@@ -171,4 +171,10 @@ test('an order with no items renders rather than throwing', () => {
     const inv = buildInvoice({ order: order({ items: [] }) });
     assert.deepEqual(inv.items, []);
     assert.ok(renderInvoiceHtml(inv).includes('Total'));
+});
+
+test('the flat number stays on the bill even when the street contains the same digits', () => {
+    assert.equal(deliveryAddressLine({ house: '12', street: 'Sector 120', city: 'Noida' }), '12, Sector 120, Noida');
+    // A real repeat is still printed once.
+    assert.equal(deliveryAddressLine({ house: 'Flat 4', street: 'Flat 4, MG Road', city: 'Pune' }), 'Flat 4, MG Road, Pune');
 });

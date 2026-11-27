@@ -72,6 +72,12 @@ const money = (value) => Number(value ?? 0);
 const geoPoint = (lat, lng) =>
     lat == null || lng == null ? undefined : { type: 'Point', coordinates: [Number(lng), Number(lat)] };
 
+/** An accepted order not yet delivered or cancelled. */
+const riderOnTrip = (row) =>
+    row?.dispatchStatus === 'accepted'
+    && row?.orderStatus !== 'delivered'
+    && !String(row?.orderStatus || '').startsWith('cancelled');
+
 const entityRating = (rating, comment, ratedAt) =>
     rating == null ? undefined : { rating, comment: comment || '', ratedAt };
 
@@ -100,7 +106,9 @@ export function toOrder(row) {
             markupPercent: money(item.markupPercent),
             // 'Veg' | 'Egg' | 'Non-Veg' (the dish's diet at order time).
             foodType: orderItemFoodType(item),
-            addons: item.addons || []
+            // { addonId, name, price, quantity }: one of each add-on per unit of the line.
+            addons: (Array.isArray(item.addons) ? item.addons : []).map((a) =>
+                a && typeof a === 'object' ? { ...a, price: money(a.price), quantity: Number(a.quantity) || 1 } : a)
         })),
 
         deliveryAddress: {
@@ -218,7 +226,12 @@ export function toOrder(row) {
             dropOtp: { required: row.dropOtpRequired, verified: row.dropOtpVerified }
         },
 
-        lastRiderLocation: geoPoint(row.riderLat, row.riderLng),
+        // Only while the accepted rider is bringing the order: every customer
+        // view reads this, and must not show a rider who was only offered the
+        // order, or where the rider went after delivering it.
+        lastRiderLocation: riderOnTrip(row) ? geoPoint(row.riderLat, row.riderLng) : undefined,
+        riderLat: riderOnTrip(row) ? row.riderLat : null,
+        riderLng: riderOnTrip(row) ? row.riderLng : null,
 
         // Order for someone else: the account holder is customerName/Phone,
         // the person it is delivered to is the recipient.

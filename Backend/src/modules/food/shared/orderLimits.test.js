@@ -28,4 +28,7 @@ test('more of one dish than the limit is refused', () => {
     const limits = { maxItemQuantity: 10 };
     assert.doesNotThrow(() => assertItemQuantities([{ quantity: 10 }, { quantity: 3 }], limits));
     assert.throws(() => assertItemQuantities([{ quantity: 2 }, { quantity: 11 }], limits), /at most 10 of one item/);
+    // The same dish split over two lines is added up.
+    assert.throws(() => assertItemQuantities([{ itemId: 'a', quantity: 6 }, { itemId: 'a', quantity: 5 }], limits), /at most 10 of one item/);
+    assert.doesNotThrow(() => assertItemQuantities([{ itemId: 'a', quantity: 6 }, { itemId: 'a', variantId: 'v', quantity: 5 }], limits));
 });

@@ -73,6 +73,15 @@ test('search does not match an out of stock dish', async () => {
     assert.equal(hit.matchedDishId, available.id);
 });
 
+test("searching a category's name finds restaurants with a dish in it", async () => {
+    const dish = await prisma.foodItem.create({
+        data: { restaurantId: restaurant.id, name: 'Burger', categoryName: `${tag} fresh category`, price: 100, approvalStatus: 'approved', isAvailable: true },
+    });
+    created.foods.push(dish.id);
+    const res = await searchUnified({ q: `${tag} fresh category`, lat: HERE.lat, lng: HERE.lng });
+    assert.ok(res.data.restaurants.some((r) => r.id === restaurant.id && r.matchedDishId === dish.id));
+});
+
 test('search results carry isOpenNow, openStatusReason and nextOpeningAt, and no zone flag', async () => {
     const result = await searchUnified({ q: tag, lat: HERE.lat, lng: HERE.lng });
     const hit = result.data.restaurants.find((r) => r.id === restaurant.id);

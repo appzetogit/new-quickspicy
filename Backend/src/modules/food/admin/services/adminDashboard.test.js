@@ -239,7 +239,12 @@ test('the sidebar badges count real statuses', async () => {
     // These three filtered on values that were not in any enum, so they always
     // read zero: no 'pending' order status, no 'offline_payment' method, and
     // safety reports start 'unread'.
-    assert.ok(badges.orders >= 1, 'the preparing order is awaiting action');
+    // Same set as the Pending Orders tab, so the badge never counts an order
+    // the tab does not show (the preparing order is Processing, not Pending).
+    assert.equal(
+        badges.orders,
+        await prisma.foodOrder.count({ where: { orderStatus: { in: ['created', 'confirmed'] } } }),
+    );
     assert.ok(Number.isInteger(badges.offlinePayments));
     assert.ok(Number.isInteger(badges.safetyReports));
     assert.ok(Number.isInteger(badges.emergencyHelp));

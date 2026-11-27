@@ -477,6 +477,36 @@ export default function FoodApproval() {
                   </div>
                 )}
 
+                {Array.isArray(selectedRequest.variants) && selectedRequest.variants.length > 0 && (
+                  <div className="col-span-full">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                      Variants ({selectedRequest.variants.length})
+                    </label>
+                    <div className="overflow-hidden rounded-lg border border-slate-100">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Name</th>
+                            <th className="px-3 py-2 text-right">Price</th>
+                            <th className="px-3 py-2 text-right">Compare-at price</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedRequest.variants.map((v, idx) => (
+                            <tr key={v.id || v._id || idx} className="border-t border-slate-100">
+                              <td className="px-3 py-2 text-gray-900">{v.name}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-green-600">₹{v.price}</td>
+                              <td className="px-3 py-2 text-right text-gray-500">
+                                {Number(v.otherPrice) > 0 ? `₹${v.otherPrice}` : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* Images */}
                 {(() => {
                   const allImages = (selectedRequest.images || []).filter(img => img && typeof img === 'string');

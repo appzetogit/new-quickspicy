@@ -16,33 +16,36 @@ export async function createWithdrawalRequest(restaurantId, { amount, bankDetail
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) throw new ValidationError('Invalid withdrawal amount');
 
-    const finance = await getRestaurantFinance(restaurantId);
+    // The balance is derived from order aggregates (pending withdrawals count
+    // against it), not a stored column, so two requests sent at once could both
+    // pass the check. A per-restaurant lock held until the insert commits makes
+    // the second one see the first.
+    const withdrawal = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`restaurant_withdrawal:${restaurantId}`}))`;
+        const finance = await getRestaurantFinance(restaurantId);
 
-    const lockedAmount = Math.max(0, Number(finance?.subscription?.lockedAmount || 0));
-    const lockedMonths = String(finance?.subscription?.lockedMonths || '');
-    const netAvailable = Math.max(
-        0,
-        Number(finance?.wallet?.netAvailable ?? finance?.currentCycle?.netAvailable ?? 0),
-    );
+        const lockedAmount = Math.max(0, Number(finance?.subscription?.lockedAmount || 0));
+        const lockedMonths = String(finance?.subscription?.lockedMonths || '');
+        const netAvailable = Math.max(
+            0,
+            Number(finance?.wallet?.netAvailable ?? finance?.currentCycle?.netAvailable ?? 0),
+        );
 
-    // ponytail: the balance is derived from order aggregates, not a stored
-    // column, so two requests sent at once can both pass this check. Bounded by
-    // admin approval today. A wallet balance column with a conditional update
-    // is the fix if that stops being enough.
-    if (value > netAvailable) {
-        if (lockedAmount > 0) {
-            throw new ValidationError(
-                `Withdrawal restricted. ${rupees(lockedAmount)} is locked against subscription dues`
-                + `${lockedMonths ? ` for ${lockedMonths}` : ''}.`
-                + ` Available to withdraw: ${rupees(netAvailable)}`,
-            );
+        if (value > netAvailable) {
+            if (lockedAmount > 0) {
+                throw new ValidationError(
+                    `Withdrawal restricted. ${rupees(lockedAmount)} is locked against subscription dues`
+                    + `${lockedMonths ? ` for ${lockedMonths}` : ''}.`
+                    + ` Available to withdraw: ${rupees(netAvailable)}`,
+                );
+            }
+            throw new ValidationError(`Insufficient balance. Available to withdraw: ${rupees(netAvailable)}`);
         }
-        throw new ValidationError(`Insufficient balance. Available to withdraw: ${rupees(netAvailable)}`);
-    }
 
-    const withdrawal = await prisma.foodRestaurantWithdrawal.create({
-        data: { restaurantId, amount: value, bankDetails: bankDetails ?? undefined, status: 'pending' },
-    });
+        return tx.foodRestaurantWithdrawal.create({
+            data: { restaurantId, amount: value, bankDetails: bankDetails ?? undefined, status: 'pending' },
+        });
+    }, { timeout: 15000 });
 
     return serialize(withdrawal);
 }
