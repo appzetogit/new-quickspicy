@@ -77,6 +77,12 @@ test('a restaurant sees approved global categories and its own', async () => {
     assert.ok(ids.has(ownPending.id), 'its own pending category is visible in the manage list');
     assert.ok(!ids.has(pendingGlobal.id), 'an unapproved global category is not shared yet');
     assert.ok(!ids.has(theirs.id), "another restaurant's private category must never appear");
+
+    // 178: ownOnly lists just its own, each editable and deletable.
+    const own = await listRestaurantCategories(mine.id, { mine: 'true', includeInactive: 'true' });
+    assert.deepEqual(own.categories.map((c) => c._id), [ownPending.id]);
+    assert.equal(own.categories[0].canEdit, true);
+    assert.equal(own.categories[0].canDelete, true);
 });
 
 test('the compact picker hides the restaurant\'s own unapproved categories', async () => {

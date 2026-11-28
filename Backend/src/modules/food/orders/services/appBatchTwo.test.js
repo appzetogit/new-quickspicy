@@ -470,6 +470,23 @@ test("a customer's rating updates the restaurant and rider at once, and lists as
     assert.equal(Number(riderRow.rating), 5);
     assert.equal(riderRow.totalRatings, 1);
 
+    // 176/172: the restaurant's own profile carries the rating and the display code.
+    const { getCurrentRestaurantProfile } = await import('../../restaurant/services/restaurant.service.js');
+    const profile = await getCurrentRestaurantProfile(openKitchen.id);
+    assert.equal(profile.rating, 4);
+    assert.equal(profile.totalRatings, 1);
+    assert.equal(profile.restaurantCode, `REST${openKitchen.id.slice(-6).toUpperCase()}`);
+
+    // 161: the restaurant hears about the review (push + inbox row).
+    let inbox = null;
+    for (let i = 0; i < 20 && !inbox; i += 1) {
+        inbox = await prisma.foodNotification.findFirst({ where: { ownerType: 'RESTAURANT', ownerId: openKitchen.id, metadata: { path: ['type'], equals: 'review_received' } } });
+        if (!inbox) await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(inbox, 'restaurant inbox row for the review');
+    assert.equal(inbox.metadata.orderMongoId, liveOrderId);
+    assert.equal(inbox.metadata.rating, '4');
+
     const { reviews, meta } = await listRestaurantReviews(openKitchen.id, { page: 1, limit: 10 });
     assert.equal(meta.total, 1);
     assert.equal(meta.average, 4);

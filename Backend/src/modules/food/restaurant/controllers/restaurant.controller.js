@@ -101,7 +101,13 @@ export const updateRestaurantProfileController = async (req, res, next) => {
     try {
         const restaurantId = req.user?.userId;
         const restaurant = await updateRestaurantProfile(restaurantId, req.body || {});
-        return sendResponse(res, 200, 'Restaurant updated successfully', { restaurant });
+        // A live restaurant's KYC/contact edits wait for an admin; say so, or
+        // the old value coming back reads as "the edit did not save".
+        const held = restaurant?.profileChangeRequest?.fields || [];
+        const message = held.length
+            ? `Sent to admin for approval: ${held.join(', ')}. Your current details stay live until then.`
+            : 'Restaurant updated successfully';
+        return sendResponse(res, 200, message, { restaurant });
     } catch (error) {
         next(error);
     }

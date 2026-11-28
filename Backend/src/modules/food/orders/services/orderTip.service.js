@@ -139,7 +139,8 @@ export const tipAfterDelivery = async ({ userId, orderId, amount }) => {
     } catch (error) {
         // The customer has already been charged, so put it back rather than
         // leaving them paying for a tip no rider was credited with.
-        await refundWalletBalance(userId, tip, 'Tip could not be applied', { orderId: order.id })
+        // Not a refund of the order (165): the tip is simply put back.
+        await refundWalletBalance(userId, tip, 'Tip could not be applied', { orderId: order.id, kind: 'tip_return' }, { category: 'adjustment' })
             .catch(() => {});
         throw error;
     }

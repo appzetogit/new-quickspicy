@@ -27,7 +27,7 @@ test.after(async () => {
 
 test('requesting a withdrawal syncs the ledger through a real transaction, not a raw write', async () => {
     const partner = await prisma.foodDeliveryPartner.create({
-        data: { name: `Payout Rider ${stamp()}`, phone: uniquePhone('7'), status: 'approved' },
+        data: { name: `Payout Rider ${stamp()}`, phone: uniquePhone('7'), status: 'approved', bankAccountNumber: '123456789012', bankIfscCode: 'HDFC0001234' },
     });
     created.partners.push(partner.id);
 
@@ -59,6 +59,13 @@ test('requesting a withdrawal syncs the ledger through a real transaction, not a
         },
     });
     created.orders.push(order.id);
+
+    // 184: no bank details on file and none sent -- refused, nothing reserved.
+    await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { bankIfscCode: null } });
+    await assert.rejects(() => requestDeliveryWithdrawal(partner.id, { amount: 200 }), /bank account number and IFSC/);
+    await assert.rejects(() => requestDeliveryWithdrawal(partner.id, { amount: 200, paymentMethod: 'upi' }), /UPI ID/);
+    assert.equal((await import('./deliveryFinance.service.js')).hasRiderPayoutDetails({ upiId: 'rider@upi' }), true, 'a UPI ID alone is enough');
+    await prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data: { bankIfscCode: 'HDFC0001234' } });
 
     const withdrawal = await requestDeliveryWithdrawal(partner.id, { amount: 200 });
     assert.equal(withdrawal.status, 'pending');

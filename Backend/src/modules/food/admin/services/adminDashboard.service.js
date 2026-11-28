@@ -19,7 +19,11 @@ import { zoneMatch } from '../../shared/zoneHierarchy.js';
  * who abandoned checkout should not appear in a revenue chart.
  */
 
-const PENDING_ORDER_STATUSES = ['created', 'confirmed', 'preparing', 'ready_for_pickup', 'picked_up'];
+// Every live state between placed and delivered/cancelled. reached_pickup and
+// reached_drop were missing, and the tile linked to the Processing tab (which
+// lists only part of these), so its count and the list never agreed (180).
+// The admin order list's "in-progress" status lists exactly these.
+const PENDING_ORDER_STATUSES = ['created', 'confirmed', 'preparing', 'ready_for_pickup', 'reached_pickup', 'picked_up', 'reached_drop'];
 
 /**
  * Orders that count: paid for in cash or wallet (which settle on delivery), or

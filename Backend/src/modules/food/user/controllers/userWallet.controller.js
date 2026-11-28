@@ -1,11 +1,15 @@
 import { sendResponse } from '../../../../utils/response.js';
 import { getUserWallet, createWalletTopupOrder, verifyWalletTopupPayment } from '../services/userWallet.service.js';
+import { isRazorpayConfigured } from '../../orders/helpers/razorpay.helper.js';
 
 export const getUserWalletController = async (req, res, next) => {
     try {
         const userId = req.user?.userId;
         const wallet = await getUserWallet(userId);
-        return sendResponse(res, 200, 'Wallet fetched successfully', { wallet });
+        // Lets the app disable Add Money up front instead of failing on tap (166).
+        return sendResponse(res, 200, 'Wallet fetched successfully', {
+            wallet: { ...wallet, walletTopupEnabled: isRazorpayConfigured() },
+        });
     } catch (error) {
         next(error);
     }

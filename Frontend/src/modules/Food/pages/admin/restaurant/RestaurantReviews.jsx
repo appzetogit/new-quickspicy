@@ -215,6 +215,8 @@ export default function RestaurantReviews() {
               </DropdownMenu>
               <button 
                 onClick={() => setIsSettingsOpen(true)}
+                title="Table columns"
+                aria-label="Table columns"
                 className="p-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-all"
               >
                 <Settings className="w-5 h-5" />
@@ -292,6 +294,39 @@ export default function RestaurantReviews() {
 
         </div>
       </div>
+
+      {/* The gear opened nothing (182): it now picks the table's columns. */}
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="max-w-sm bg-white p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-200">
+            <DialogTitle className="flex items-center gap-2 text-lg"><Columns className="w-5 h-5 text-slate-600" />Table columns</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-4 space-y-2">
+            {[
+              ["si", "SI"], ["orderId", "Order ID"], ["restaurant", "Restaurant"], ["customer", "Customer"],
+              ["review", "Review"], ["rating", "Rating"], ["date", "Date"],
+            ].map(([key, label]) => (
+              <label key={key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                <span className="text-sm text-slate-700">{label}</span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-emerald-600"
+                  checked={visibleColumns[key]}
+                  onChange={() => setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))}
+                />
+              </label>
+            ))}
+          </div>
+          <DialogFooter className="px-6 pb-6">
+            <button
+              onClick={() => setIsSettingsOpen(false)}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              <Check className="w-4 h-4" />Done
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
         <DialogContent className="max-w-2xl bg-white p-0">

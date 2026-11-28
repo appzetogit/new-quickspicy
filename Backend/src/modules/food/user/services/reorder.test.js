@@ -5,7 +5,7 @@ import { prisma } from '../../../../config/prisma.js';
 import { uniquePhone } from '../../../../utils/testIds.js';
 import { deriveRestaurantFields, fromRestaurantLocation } from '../../restaurant/restaurant.mapper.js';
 import { getReorderStores, groupHistory, matchLastVariant } from './reorder.service.js';
-import { buildMenuFooter, NUTRITION_NOTE } from '../../restaurant/services/menuFooter.service.js';
+import { buildMenuFooter } from '../../restaurant/services/menuFooter.service.js';
 
 /**
  * Reorder screen (C3) and the menu footer (C6). Seeding follows
@@ -81,7 +81,7 @@ test('groupHistory: newest store first, latest line wins, counted once per order
     const b = 'b'.repeat(24);
     const dish = 'c'.repeat(24);
     const stores = groupHistory([
-        { restaurantId: b, createdAt: new Date('2026-11-19'), items: [{ itemId: dish, name: 'New', variantName: 'Full' }, { itemId: dish, name: 'Dup' }] },
+        { id: 'ord_new', order_id: 'QS1001', restaurantId: b, createdAt: new Date('2026-11-19'), items: [{ itemId: dish, name: 'New', variantName: 'Full' }, { itemId: dish, name: 'Dup' }] },
         { restaurantId: a, createdAt: new Date('2026-11-10'), items: [] },
         { restaurantId: b, createdAt: new Date('2026-11-01'), items: [{ itemId: dish, name: 'Old', variantName: 'Half' }] },
     ]);
@@ -91,6 +91,8 @@ test('groupHistory: newest store first, latest line wins, counted once per order
     assert.equal(entry.variantName, 'Full');
     assert.equal(entry.timesOrdered, 2);
     assert.equal(stores[0].ordersCount, 2);
+    // 162: the store remembers its newest order, to open it from Reorder.
+    assert.deepEqual([stores[0].lastOrderId, stores[0].lastOrderDisplayId], ['ord_new', 'QS1001']);
 });
 
 test('matchLastVariant: by id, then by name, else flagged gone', () => {
@@ -114,8 +116,8 @@ test('menu footer: GST rate drives the tax note; packing 0; FSSAI and legal name
     assert.equal(withGst.legalName, 'Spice Hut Foods LLP');
     assert.equal(withGst.fssaiNumber, '12345678901234');
     assert.equal(withGst.address, 'Ongole, AP');
-    assert.equal(withGst.nutritionNote, NUTRITION_NOTE);
-    assert.deepEqual(withGst.notes.map((n) => n.key), ['menu_disclaimer', 'nutrition', 'taxes', 'packing', 'fssai']);
+    assert.equal(withGst.nutritionNote, null, 'no generic nutrition line without nutrition data (160)');
+    assert.deepEqual(withGst.notes.map((n) => n.key), ['menu_disclaimer', 'taxes', 'packing', 'fssai']);
 
     const noGst = buildMenuFooter({ restaurantName: 'Plain' }, { gstRate: 0 });
     assert.equal(noGst.tax.pricesIncludeTax, true);

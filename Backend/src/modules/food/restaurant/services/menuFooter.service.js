@@ -16,7 +16,9 @@ import { loadActiveFeeSettings } from '../../orders/services/order-pricing.servi
  *    store address are the restaurant's own public fields.
  */
 
-export const NUTRITION_NOTE = 'An average active adult requires 2,000 kcal energy per day, however calorie needs may vary.';
+// 160: no dish carries nutrition data, so a generic kcal line under a menu
+// claimed something the menu never backed up. Left out; nutritionNote is null
+// until dishes have real nutrition fields.
 export const MENU_DISCLAIMER =
     'Menu items, prices, photos and descriptions are set by the restaurant. Dishes may vary from the pictures shown. '
     + 'Please inform the restaurant of any allergies before ordering.';
@@ -65,7 +67,6 @@ export function buildMenuFooter(restaurant = {}, { gstRate = null } = {}) {
 
     const notes = [
         { key: 'menu_disclaimer', title: 'Menu disclaimer', text: MENU_DISCLAIMER },
-        { key: 'nutrition', title: 'Nutritional information', text: NUTRITION_NOTE },
         { key: 'taxes', title: 'Taxes', text: taxNote },
         { key: 'packing', title: 'Packing charges', text: packagingNote },
     ];
@@ -79,7 +80,7 @@ export function buildMenuFooter(restaurant = {}, { gstRate = null } = {}) {
         packagingCharge,
         packagingNote,
         tax: { gstRate: safeRate, pricesIncludeTax, appliesTo: 'food', note: taxNote },
-        nutritionNote: NUTRITION_NOTE,
+        nutritionNote: null,
         menuDisclaimer: MENU_DISCLAIMER,
         notes,
     };

@@ -242,6 +242,12 @@ test('cancelling refunds the right amount and blocks a second cancel', async () 
     assert.match(row.orderStatus, /^cancelled/);
     // A cash order was never charged, so there is nothing to refund.
     assert.equal(Number(row.refundAmount), 0);
+    // ...and it must not count as a refund on the profile (164).
+    assert.equal(row.refundStatus, 'none');
+    assert.equal(cancelled.payment?.refund?.status ?? cancelled.order?.payment?.refund?.status, 'none');
+    const { meta } = await listOrdersUser(userId, {});
+    assert.equal(meta.refundedCount, 0, 'the profile Refunds count leaves the COD cancel out');
+    assert.ok(meta.cancelledCount >= 1);
 
     // Cancelling twice must not run the refund path again.
     await assert.rejects(() => cancelOrder(id, userId, 'again'), /within 1 minute of placing them/);
@@ -320,7 +326,8 @@ test('cancelling an order gives the coupon use back (user and restaurant cancel)
     for (let i = 0; i < 20 && !rows.length; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         rows = await prisma.foodNotification.findMany({
-            where: { ownerType: 'USER', ownerId: userId, message: 'Out of paneer' },
+            // Inside a full sentence now (179), never the bare reason.
+            where: { ownerType: 'USER', ownerId: userId, message: { contains: 'Reason: Out of paneer.' } },
         });
     }
     assert.equal(rows.length, 1);

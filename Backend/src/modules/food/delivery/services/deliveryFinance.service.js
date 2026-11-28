@@ -285,8 +285,21 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         totalCashLimit,
         availableCashLimit: Math.max(0, totalCashLimit - cashInHand),
         deliveryWithdrawalLimit,
+        // What the app checks before offering Withdraw (184).
+        hasBankDetails: hasRiderPayoutDetails({ accountNumber: partner.bankAccountNumber, ifscCode: partner.bankIfscCode }),
+        hasUpiId: Boolean(String(partner.upiId || '').trim()),
         transactions: transactions.slice(0, 50),
     };
+};
+
+/**
+ * Somewhere to send a payout: a bank account (number AND IFSC) or a UPI ID.
+ * A request that names UPI needs the UPI ID.
+ */
+export const hasRiderPayoutDetails = ({ paymentMethod = 'bank_transfer', upiId, accountNumber, ifscCode } = {}) => {
+    const upi = Boolean(String(upiId || '').trim());
+    if (String(paymentMethod).toLowerCase() === 'upi') return upi;
+    return upi || Boolean(String(accountNumber || '').trim() && String(ifscCode || '').trim());
 };
 
 /**
@@ -317,6 +330,20 @@ export const requestDeliveryWithdrawal = async (deliveryPartnerId, payload) => {
     ]);
 
     if (!partner) throw new ValidationError('Delivery partner not found');
+
+    // 184: no payout without somewhere to pay it. Admin used to receive
+    // requests with an empty account and had to chase the rider for it.
+    const bank = bankDetails && typeof bankDetails === 'object' ? bankDetails : {};
+    const upiId = String(payload?.upiId || partner.upiId || '').trim();
+    const accountNumber = String(bank.accountNumber || partner.bankAccountNumber || '').trim();
+    const ifscCode = String(bank.ifscCode || partner.bankIfscCode || '').trim();
+    if (!hasRiderPayoutDetails({ paymentMethod, upiId, accountNumber, ifscCode })) {
+        throw new ValidationError(
+            String(paymentMethod).toLowerCase() === 'upi'
+                ? 'Add your UPI ID in Profile → Bank details before withdrawing.'
+                : 'Add your bank account number and IFSC (or a UPI ID) in Profile → Bank details before withdrawing.',
+        );
+    }
 
     const pendingBefore = num(pendingAgg?._sum?.amount);
     const currentBalance = num(walletDoc?.balance);

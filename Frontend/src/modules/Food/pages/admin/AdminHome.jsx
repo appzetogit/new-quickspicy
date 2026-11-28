@@ -140,7 +140,7 @@ export default function AdminHome() {
         { label: "Delivered", value: 0, color: "#0ea5e9" },
         { label: "Cancelled", value: 0, color: "#ef4444" },
         { label: "Refunded", value: 0, color: "#f59e0b" },
-        { label: "Pending", value: 0, color: "#10b981" },
+        { label: "In progress", value: 0, color: "#10b981" },
       ]
     }
 
@@ -149,7 +149,7 @@ export default function AdminHome() {
       { label: "Delivered", value: byStatus.delivered || 0, color: "#0ea5e9" },
       { label: "Cancelled", value: byStatus.cancelled || 0, color: "#ef4444" },
       { label: "Refunded", value: byStatus.refunded || 0, color: "#f59e0b" },
-      { label: "Pending", value: byStatus.pending || 0, color: "#10b981" },
+      { label: "In progress", value: byStatus.pending || 0, color: "#10b981" },
     ]
   }
 
@@ -309,7 +309,7 @@ export default function AdminHome() {
               helper="Placed and not yet delivered or cancelled"
               icon={<Activity className="h-5 w-5 text-amber-600" />}
               accent="bg-amber-200/40"
-              path="/admin/food/orders/processing"
+              path="/admin/food/orders/in-progress"
             />
             <MetricCard
               title="Platform fee"
@@ -508,7 +508,7 @@ export default function AdminHome() {
                 </span>
               </CardHeader>
               <CardContent className="min-w-0 pt-4">
-                <div className="h-72 w-full min-w-0">
+                <div className="h-56 w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie
@@ -528,13 +528,10 @@ export default function AdminHome() {
                         labelStyle={{ color: "#111827" }}
                         itemStyle={{ color: "#111827" }}
                       />
-                      <Legend
-                        formatter={(value) => <span style={{ color: "#111827", fontSize: 12 }}>{value}</span>}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {orderStats.map((item) => (
                     <div
                       key={item.label}
@@ -543,17 +540,17 @@ export default function AdminHome() {
                           'Delivered': '/admin/food/orders/delivered',
                           'Cancelled': '/admin/food/orders/canceled',
                           'Refunded': '/admin/food/orders/refunded',
-                          'Pending': '/admin/food/orders/pending'
+                          'In progress': '/admin/food/orders/in-progress'
                         }
                         navigate(routes[item.label] || '/admin/food/orders/all')
                       }}
-                      className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-2 cursor-pointer hover:bg-neutral-50 hover:border-neutral-300 transition-all group"
+                      className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 cursor-pointer hover:bg-neutral-50 hover:border-neutral-300 transition-all group"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full transition-transform group-hover:scale-125" style={{ background: item.color }} />
-                        <p className="text-sm text-neutral-800 group-hover:text-neutral-900">{item.label}</p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full transition-transform group-hover:scale-125" style={{ background: item.color }} />
+                        <p className="truncate text-sm text-neutral-800 group-hover:text-neutral-900">{item.label}</p>
                       </div>
-                      <p className="text-sm font-semibold text-neutral-900">{item.value}</p>
+                      <p className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">{Number(item.value || 0).toLocaleString("en-IN")}</p>
                     </div>
                   ))}
                 </div>
@@ -673,7 +670,7 @@ export default function AdminHome() {
                         'Delivered': '/admin/food/orders/delivered',
                         'Cancelled': '/admin/food/orders/canceled',
                         'Refunded': '/admin/food/orders/refunded',
-                        'Pending': '/admin/food/orders/pending'
+                        'In progress': '/admin/food/orders/in-progress'
                       }
                       navigate(routes[item.label] || '/admin/food/orders/all')
                     }}

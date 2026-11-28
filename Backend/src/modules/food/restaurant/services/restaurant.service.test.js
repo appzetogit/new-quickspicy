@@ -283,6 +283,23 @@ test('an approved restaurant keeps trading: a reviewable edit becomes a change r
     assert.ok(row.approvedAt, 'the approval stands');
 });
 
+// 177: the compliance sheet sends every field back; an older PAN/GSTIN on file
+// must not block the save, and untouched fields are not filed for review.
+test('re-sending unchanged (even legacy) PAN/GSTIN is not an edit; only the changed field is held', async () => {
+    const r = await makeRestaurant({ status: 'approved', approvedAt: new Date(), panNumber: 'OLDPAN', gstNumber: 'LEGACYGST', fssaiNumber: '111' });
+
+    const updated = await updateRestaurantProfile(r.id, {
+        panNumber: 'oldpan', nameOnPan: '', gstRegistered: false, gstNumber: 'LEGACYGST', fssaiNumber: '22222222222222',
+    });
+    assert.deepEqual(updated.profileChangeRequest?.fields, ['FSSAI number']);
+    assert.deepEqual(updated.pendingProfileChange?.fields, ['FSSAI number'], 'the response shows what awaits approval');
+
+    const untouched = await updateRestaurantProfile(r.id, { panNumber: 'OLDPAN', gstNumber: 'LEGACYGST' });
+    assert.equal(untouched.profileChangeRequest, undefined, 'nothing changed, nothing filed');
+    await assert.rejects(() => updateRestaurantProfile(r.id, { panNumber: 'BAD' }), /Invalid PAN/);
+    await prisma.foodRestaurantProfileChange.deleteMany({ where: { restaurantId: r.id } });
+});
+
 test('editing a reviewable field on a rejected restaurant clears the previous decision', async () => {
     const r = await makeRestaurant({ status: 'rejected', rejectionReason: 'old' });
 

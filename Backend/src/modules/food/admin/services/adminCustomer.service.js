@@ -28,24 +28,38 @@ export const BAN_REASON_MAX = 300;
  */
 const sanitizeUrl = (value) => String(value || '').trim().replace(/^`+|`+$/g, '').trim();
 
-/** Delivered orders only: a cancelled order is not a customer's spend. */
+/**
+ * Orders a customer placed (183: every order except an unpaid, abandoned
+ * checkout), and their spend -- delivered orders only, since a cancelled order
+ * is not money spent. The count used to be delivered-only too, so a customer
+ * with cancelled or live orders showed fewer orders than they had placed.
+ */
 const deliveredStatsFor = async (userIds) => {
     if (!userIds.length) return new Map();
 
-    const rows = await prisma.foodOrder.groupBy({
-        by: ['userId'],
-        where: { userId: { in: userIds }, orderStatus: 'delivered' },
-        _count: { _all: true },
-        _sum: { total: true },
-    });
+    const [placed, delivered] = await Promise.all([
+        prisma.foodOrder.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds }, orderStatus: { not: 'pending_payment' } },
+            _count: { _all: true },
+        }),
+        prisma.foodOrder.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds }, orderStatus: 'delivered' },
+            _count: { _all: true },
+            _sum: { total: true },
+        }),
+    ]);
+    const deliveredBy = new Map(delivered.map((row) => [row.userId, row]));
 
     return new Map(
-        rows.map((row) => [
+        placed.map((row) => [
             row.userId,
             {
                 totalOrder: row._count._all,
+                deliveredOrders: deliveredBy.get(row.userId)?._count._all || 0,
                 // total is Decimal; the admin table sums and formats these.
-                totalOrderAmount: Number(row._sum.total || 0),
+                totalOrderAmount: Number(deliveredBy.get(row.userId)?._sum.total || 0),
             },
         ])
     );
@@ -95,6 +109,7 @@ const serializeCustomer = (user, stats) => ({
     banReason: user.isActive === false ? user.banReason || null : null,
     bannedAt: user.isActive === false ? user.bannedAt || null : null,
     totalOrder: stats?.totalOrder || 0,
+    deliveredOrders: stats?.deliveredOrders || 0,
     totalOrderAmount: stats?.totalOrderAmount || 0,
     joiningDate: user.createdAt,
     createdAt: user.createdAt,
@@ -229,7 +244,7 @@ export async function getCustomers(query = {}) {
             SELECT u."id", u."createdAt", COUNT(o."id") AS cnt
             FROM "food_users" u
             LEFT JOIN "food_orders" o
-              ON o."userId" = u."id" AND o."orderStatus" = 'delivered'
+              ON o."userId" = u."id" AND o."orderStatus" <> 'pending_payment'
             WHERE u."id" = ANY(${scoped.map((u) => u.id)})
             GROUP BY u."id", u."createdAt"
             ${havingSql}

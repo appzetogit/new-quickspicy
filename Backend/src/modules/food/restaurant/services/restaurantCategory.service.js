@@ -99,7 +99,12 @@ export async function listRestaurantCategories(restaurantId, query = {}) {
     const zoneIds = isId(zoneIdRaw)
         ? [zoneIdRaw, ...(zoneIdRaw === context.zoneId ? context.locationZoneIds : [])]
         : context.locationZoneIds;
-    const AND = [visibility, zoneVisibilityFilter(zoneIds.length ? await withMainZones(zoneIds) : zoneIdRaw)];
+    // ?mine=true / ?ownOnly=true (178): just the categories this restaurant made, which are
+    // the ones it can edit and delete -- whatever zone they were filed under.
+    const ownOnly = ['ownOnly', 'mine'].some((k) => query[k] === 'true' || query[k] === '1') || query.scope === 'own';
+    const AND = ownOnly
+        ? [{ OR: [{ restaurantId: context.restaurantId }, { createdByRestaurantId: context.restaurantId }] }]
+        : [visibility, zoneVisibilityFilter(zoneIds.length ? await withMainZones(zoneIds) : zoneIdRaw)];
     if (search) {
         AND.push({ name: { contains: search.slice(0, 80), mode: 'insensitive' } });
     }

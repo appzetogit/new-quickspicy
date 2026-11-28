@@ -69,7 +69,12 @@ export function groupHistory(orders = []) {
         if (!isId(rid)) continue;
         let store = stores.get(rid);
         if (!store) {
-            store = { restaurantId: rid, lastOrderedAt: order.createdAt, ordersCount: 0, items: new Map() };
+            // Newest first, so the first order seen is the last one placed.
+            store = {
+                restaurantId: rid, lastOrderedAt: order.createdAt, ordersCount: 0, items: new Map(),
+                lastOrderId: order.id ? String(order.id) : null,
+                lastOrderDisplayId: order.order_id || (order.id ? String(order.id) : null),
+            };
             stores.set(rid, store);
         }
         store.ordersCount += 1;
@@ -254,7 +259,7 @@ export async function getReorderStores(userId, query = {}) {
         orderBy: { createdAt: 'desc' },
         take: HISTORY_ORDERS,
         select: {
-            id: true, restaurantId: true, createdAt: true,
+            id: true, order_id: true, restaurantId: true, createdAt: true,
             items: {
                 select: {
                     itemId: true, name: true, image: true, isVeg: true, foodType: true, quantity: true, price: true,
@@ -318,7 +323,8 @@ export async function getReorderStores(userId, query = {}) {
                 || new Date(b.lastOrderedAt) - new Date(a.lastOrderedAt)
                 || b.timesOrdered - a.timesOrdered)
             .slice(0, MAX_ITEMS_PER_STORE);
-        return { restaurant, lastOrderedAt: h.lastOrderedAt, items };
+        // 162: the Reorder screen opens the last order from here.
+        return { restaurant, lastOrderedAt: h.lastOrderedAt, lastOrderId: h.lastOrderId, lastOrderDisplayId: h.lastOrderDisplayId, items };
     });
 
     return { stores };

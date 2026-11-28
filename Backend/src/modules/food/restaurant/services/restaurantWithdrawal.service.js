@@ -10,7 +10,7 @@ import { restaurantDisplayId } from '../../../../utils/helpers.js';
  */
 
 // Decimal columns reach JSON as strings otherwise.
-const serialize = (w) => ({ ...w, amount: Number(w.amount) });
+const serialize = (w) => ({ ...w, amount: Number(w.amount), restaurantCode: restaurantDisplayId(w.restaurantId) });
 
 const rupees = (value) => `₹${Number(value).toLocaleString('en-IN')}`;
 

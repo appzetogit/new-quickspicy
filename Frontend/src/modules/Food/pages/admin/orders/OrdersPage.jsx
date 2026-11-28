@@ -42,6 +42,12 @@ const statusConfig = {
     color: "orange",
     icon: Package,
   },
+  "in-progress": {
+    title: "Orders In Progress",
+    subtitle: "Placed and not yet delivered or cancelled",
+    color: "amber",
+    icon: Package,
+  },
   "food-on-the-way": {
     title: "Food On The Way Orders",
     subtitle: "Delivery partner accepted — not yet delivered",

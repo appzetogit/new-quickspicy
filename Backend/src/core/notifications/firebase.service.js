@@ -822,6 +822,7 @@ const RESTAURANT_INBOX_TYPES = {
     order_deassigned: 'order',
     delivery_accepted: 'order',
     rider_arrived: 'order',
+    review_received: 'order',
     food_approved: 'menu',
     food_rejected: 'menu',
     addon_approved: 'menu',

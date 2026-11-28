@@ -135,6 +135,26 @@ export async function unlockWalletAmount(entityType, entityId, amount) {
  * Kept so the frontend needs no change now that the embedded transaction array
  * is gone and the ledger is the only source.
  */
+/**
+ * What a credit/debit actually was, for the wallet's label and filter. Only
+ * order_refund is a refund: change from a COD order, cashback, referral and
+ * top-up bonus are credits of their own and must not show under Refunds.
+ */
+export const walletTxnKind = (row) => {
+    const meta = row.metadata || {};
+    const desc = String(row.description || '');
+    if (row.category === 'order_refund') {
+        return meta.source === 'split_payment_return' ? 'payment_returned' : 'refund';
+    }
+    if (meta.kind === 'cod_change_credit') return 'change_credit';
+    if (meta.kind === 'tip_return') return 'tip_returned';
+    if (meta.source === 'cashback' || desc.startsWith('Cashback')) return 'cashback';
+    if (row.category === 'referral_reward') return 'referral';
+    if (row.category === 'wallet_topup') return desc.startsWith('Top-up bonus') ? 'topup_bonus' : 'topup';
+    if (row.category === 'order_payment') return 'order_payment';
+    return row.type === 'credit' ? 'credit' : 'debit';
+};
+
 export const toWalletTransaction = (row) => ({
     id: row.id,
     _id: row.id,
@@ -147,6 +167,7 @@ export const toWalletTransaction = (row) => ({
     createdAt: row.createdAt,
     metadata: row.metadata || {},
     category: row.category,
+    kind: walletTxnKind(row),
     balanceAfter: Number(row.balanceAfter)
 });
 

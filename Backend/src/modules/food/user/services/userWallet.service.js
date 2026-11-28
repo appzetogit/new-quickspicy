@@ -54,6 +54,9 @@ export const creditReferralReward = async (userId, amountInr, metadata = {}) => 
     return { wallet: await getUserWallet(id) };
 };
 
+// Said plainly, so support knows it is the payment setup and not the customer.
+export const TOPUP_UNAVAILABLE_MESSAGE = 'Adding money to the wallet is not available right now: online payments are not set up. Please try again later or contact support.';
+
 export const createWalletTopupOrder = async (userId, amountInr) => {
     const amount = Number(amountInr);
     // ₹1 floor: ₹0.001 used to round to a 0-paise gateway order.
@@ -69,11 +72,19 @@ export const createWalletTopupOrder = async (userId, amountInr) => {
     // No dev fallback: without Razorpay there is no payment to verify, so a
     // top-up could only ever be credited on the caller's word.
     if (!isRazorpayConfigured()) {
-        throw new ValidationError('Wallet top-up is not available right now');
+        throw new ValidationError(TOPUP_UNAVAILABLE_MESSAGE);
     }
 
     const receipt = `wallet_topup_${String(userId).slice(-8)}_${Date.now()}`;
-    const order = await createRazorpayOrder(amountPaise, 'INR', receipt);
+    let order;
+    try {
+        order = await createRazorpayOrder(amountPaise, 'INR', receipt);
+    } catch (err) {
+        // Razorpay's own error carries its HTTP status: a key problem came back
+        // as a 401/500 from us, and a 401 reads to the app as "signed out".
+        logger.error(`Wallet top-up order failed for user ${userId}: ${err?.error?.description || err?.message || err}`);
+        throw new ValidationError('Could not start the payment right now. Please try again in a moment.');
+    }
 
     return {
         razorpay: {
@@ -111,7 +122,7 @@ export const verifyWalletTopupPayment = async (userId, payload) => {
     // Never credit an unverified payment: without Razorpay keys there is no
     // signature to check, so refuse instead of trusting the claimed amount.
     if (!isRazorpayConfigured()) {
-        throw new ValidationError('Wallet top-up is not available right now');
+        throw new ValidationError(TOPUP_UNAVAILABLE_MESSAGE);
     }
     let creditedInr;
     try {
@@ -186,7 +197,7 @@ export const deductWalletBalance = async (userId, amountInr, description = 'Orde
     return { wallet: await getUserWallet(id) };
 };
 
-export const refundWalletBalance = async (userId, amountInr, description = 'Order refund', metadata = {}) => {
+export const refundWalletBalance = async (userId, amountInr, description = 'Order refund', metadata = {}, { category = 'order_refund' } = {}) => {
     const id = requireUserId(userId);
     const amount = Number(amountInr);
     if (!Number.isFinite(amount) || amount <= 0) return { wallet: await getUserWallet(id) };
@@ -197,9 +208,9 @@ export const refundWalletBalance = async (userId, amountInr, description = 'Orde
         type: 'credit',
         amount,
         description,
-        category: 'order_refund',
+        category,
         orderId: metadata?.orderId ? String(metadata.orderId) : null,
-        metadata: { source: 'order_refund', ...(metadata || {}) }
+        metadata: { source: category, ...(metadata || {}) }
     });
 
     return { wallet: await getUserWallet(id) };

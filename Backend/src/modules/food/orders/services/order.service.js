@@ -61,6 +61,7 @@ import {
   canExposeOrderToRestaurant,
   isStatusAdvance,
   STATUS_PRIORITY,
+  TERMINAL_ORDER_STATUSES,
 } from './order.helpers.js';
 
 const ORDER_ACCEPTANCE_WINDOW_SECONDS = 240;
@@ -1399,7 +1400,7 @@ export async function listOrdersUser(userId, query) {
   const { page, limit, skip } = buildPaginationOptions(query);
   const where = { userId: String(userId), orderStatus: { not: 'pending_payment' } };
 
-  const [rows, total] = await Promise.all([
+  const [rows, total, byStatus, refundedCount] = await Promise.all([
     prisma.foodOrder.findMany({
       where,
       include: withRelations(),
@@ -1408,14 +1409,26 @@ export async function listOrdersUser(userId, query) {
       take: limit,
     }),
     prisma.foodOrder.count({ where }),
+    prisma.foodOrder.groupBy({ by: ['orderStatus'], where, _count: { _all: true } }),
+    // Money actually returned (164): an unpaid COD cancel is not a refund.
+    prisma.foodOrder.count({ where: { ...where, refundAmount: { gt: 0 } } }),
   ]);
 
-  return buildPaginatedResult({
+  const result = buildPaginatedResult({
     docs: toOrders(rows).map((order) => normalizeOrderForClient(order)),
     total,
     page,
     limit,
   });
+  // The Profile "My Orders" counts, over every order rather than one page.
+  const countOf = (pred) => byStatus.filter((r) => pred(r.orderStatus)).reduce((n, r) => n + r._count._all, 0);
+  Object.assign(result.meta, {
+    activeCount: countOf((s) => !TERMINAL_ORDER_STATUSES.includes(s)),
+    deliveredCount: countOf((s) => s === 'delivered'),
+    cancelledCount: countOf((s) => String(s).startsWith('cancelled')),
+    refundedCount,
+  });
+  return result;
 }
 
 /**
@@ -2053,6 +2066,16 @@ export async function submitOrderRatings(orderId, userId, dto) {
     ...itemRatings.map((entry) => applyAggregateRating('foodItem', entry.itemId, entry.rating)),
   ]);
 
+  if (ratesRestaurant) {
+    const stars = Number(dto.restaurantRating);
+    const comment = String(dto.restaurantComment || "").trim();
+    void notifyOwnersSafely([{ ownerType: "RESTAURANT", ownerId: row.restaurantId }], {
+      title: `New ${stars}\u2605 review`,
+      body: `Order #${order.order_id || ""}${comment ? `: "${comment.slice(0, 80)}"` : " was rated by the customer"}`,
+      data: { type: "review_received", orderId: order.id, orderMongoId: order.id, displayOrderId: order.order_id || "", reviewId: order.id, rating: String(stars) },
+    });
+  }
+
   enqueueOrderEvent('order_ratings_submitted', {
     orderMongoId: order.id,
     orderId: order.id,
@@ -2322,6 +2345,18 @@ function assertNotAnsweredElsewhere(from, to) {
   }
 }
 
+/**
+ * The customer's cancellation push. The restaurant's reason used to BE the
+ * whole body, so a terse or half-typed one ("C") reached the customer alone and
+ * the refund line was dropped. The reason now only rides along, in a sentence.
+ * Exported for the tests.
+ */
+export function restaurantCancelBody(note, refundDetail = "", by = "the restaurant") {
+  const reason = String(note || "").replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
+  const because = reason.length >= 3 ? ` Reason: ${reason.slice(0, 120)}.` : "";
+  return `Unfortunately, your order has been cancelled by ${by}.${because}${refundDetail}`;
+}
+
 export async function updateOrderStatusRestaurant(orderId, restaurantId, orderStatus, note = "") {
   await expireUnacceptedOrders({ restaurantId: String(restaurantId) });
 
@@ -2465,7 +2500,7 @@ export async function updateOrderStatusRestaurant(orderId, restaurantId, orderSt
             ? " The amount you paid is being added back to your Quick Spicy wallet."
             : "";
     title = "Order Cancelled ❌";
-    body = (note && String(note).trim()) ? note : `Unfortunately, your order has been cancelled by the restaurant.${refundDetail}`;
+    body = restaurantCancelBody(note, refundDetail);
   }
 
   try {
@@ -2816,6 +2851,13 @@ export async function listOrdersAdmin(query) {
         };
         AND.push({ dispatchStatus: { not: "accepted" } });
         break;
+      case "in-progress":
+        // Everything placed and not yet delivered or cancelled: what the
+        // dashboard's "Orders in progress" tile counts.
+        where.orderStatus = {
+          in: ["created", "confirmed", "preparing", "ready_for_pickup", "reached_pickup", "picked_up", "reached_drop"],
+        };
+        break;
       case "food-on-the-way":
         where.dispatchStatus = "accepted";
         where.orderStatus = { notIn: ["delivered", ...terminalCancelledStatuses] };
@@ -3073,7 +3115,7 @@ export async function updateOrderStatusAdmin(orderId, orderStatus, note = "", ad
     body = "Your order is ready and waiting to be picked up.";
   } else if (String(orderStatus).includes("cancel")) {
     title = "Order Cancelled ❌";
-    body = (note && String(note).trim()) ? note : `Unfortunately, your order has been cancelled by support.`;
+    body = restaurantCancelBody(note, "", "support");
   }
 
   await notifyOwnersSafely(notifyList, {

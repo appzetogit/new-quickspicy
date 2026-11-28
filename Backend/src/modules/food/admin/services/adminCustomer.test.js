@@ -84,7 +84,7 @@ test.after(async () => {
     await prisma.$disconnect();
 });
 
-test('lifetime totals count delivered orders only', async () => {
+test('the order count is every order placed; the spend is delivered orders only', async () => {
     const user = await makeUser(`${tag} Buyer`);
     const restaurant = await makeRestaurant();
 
@@ -97,12 +97,16 @@ test('lifetime totals count delivered orders only', async () => {
     const { customers } = await getCustomers({ search: tag });
     const row = customers.find((c) => c.id === user.id);
 
-    assert.equal(row.totalOrder, 2);
+    // An unpaid, abandoned checkout is not an order placed.
+    await makeOrder(user, restaurant, { total: 77, orderStatus: 'pending_payment', paymentMethod: 'razorpay', paymentStatus: 'created' });
+
+    assert.equal(row.totalOrder, 4, 'placed: delivered, cancelled and live');
+    assert.equal(row.deliveredOrders, 2);
     assert.equal(row.totalOrderAmount, 400, 'Decimal summed to a number, not a string');
 
     const detail = await getCustomerById(user.id);
-    assert.equal(detail.totalOrders, 2, 'the detail screen reads totalOrders');
-    assert.equal(detail.totalOrder, 2, 'the list reads totalOrder');
+    assert.equal(detail.totalOrders, 4, 'the detail screen reads totalOrders');
+    assert.equal(detail.totalOrder, 4, 'the list reads totalOrder');
     assert.equal(detail.totalOrderAmount, 400);
 });
 

@@ -1,7 +1,7 @@
 import { applyAppPricing } from '../../pricing/priceRules.service.js';
 import { logger } from '../../../../utils/logger.js';
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, restaurantDisplayId } from '../../../../utils/helpers.js';
 import { uploadImageBuffer } from '../../../../services/cloudinary.service.js';
 import { normalizeMediaUrlForStorage } from '../../../../services/storage.service.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
@@ -427,6 +427,8 @@ const toRestaurantProfile = (doc) => {
         id: doc._id,
         _id: doc._id,
         restaurantId: doc.restaurantId || undefined,
+        // The code admin and payouts show (REST + last 6), one everywhere.
+        restaurantCode: restaurantDisplayId(doc._id || doc.id),
         name: doc.restaurantName || '',
         restaurantName: doc.restaurantName || '',
         zoneId: doc.zoneId ? String(doc.zoneId) : '',
@@ -560,6 +562,8 @@ const PROFILE_SELECT = {
     subscriptionValidTill: true, updatedAt: true, upiId: true, upiQrImage: true,
     zoneId: true,
     packagingCharge: true,
+    // Outlet info shows the rating; without these it read 0 for everyone.
+    rating: true, totalRatings: true,
     // The location-change approval flow reads these.
     pendingLatitude: true, pendingLongitude: true, pendingZoneId: true,
     locationUpdateStatus: true, locationUpdateRequestedAt: true,
@@ -1246,6 +1250,12 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
             ownerPhone: true, ownerPhoneDigits: true, ownerPhoneLast10: true,
             primaryContactNumber: true, status: true,
             latitude: true, longitude: true, pureVegRestaurant: true,
+            // Compared below, so a field sent back unchanged is not an edit.
+            ownerName: true, ownerEmail: true, panNumber: true, nameOnPan: true, panImage: true,
+            aadhaarNumber: true, aadhaarImage: true, gstRegistered: true, gstNumber: true,
+            gstLegalName: true, gstAddress: true, gstImage: true,
+            fssaiNumber: true, fssaiExpiry: true, fssaiImage: true,
+            profileImage: true, coverImages: true, menuImages: true,
         },
     });
 
@@ -1497,7 +1507,9 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
 
     if (body.panNumber !== undefined) {
         update.panNumber = String(body.panNumber || '').trim().toUpperCase();
-        if (update.panNumber && !PAN_REGEX.test(update.panNumber)) {
+        // Only a changed PAN is checked: the edit sheet sends every field back,
+        // and an older saved value must not block saving something else.
+        if (update.panNumber && update.panNumber !== currentRestaurant.panNumber && !PAN_REGEX.test(update.panNumber)) {
             throw new ValidationError('Invalid PAN format. It looks like ABCDE1234F');
         }
     }
@@ -1533,7 +1545,7 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
     }
     if (body.gstNumber !== undefined) {
         update.gstNumber = String(body.gstNumber || '').trim().toUpperCase();
-        if (update.gstNumber && !GSTIN_REGEX.test(update.gstNumber)) {
+        if (update.gstNumber && update.gstNumber !== currentRestaurant.gstNumber && !GSTIN_REGEX.test(update.gstNumber)) {
             throw new ValidationError('GSTIN must be 15 characters, e.g. 22ABCDE1234F1Z5');
         }
     }
@@ -1567,6 +1579,15 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
     // they are held as a change request instead of being written and sending
     // the whole restaurant back to `pending`, which hid it from customers.
     // One still being onboarded is not visible yet, so it is left as it was.
+    // A field sent back as it already is is not a change: left in, it filed a
+    // review request for every untouched field on the sheet (177).
+    const same = (a, b) => (a instanceof Date || b instanceof Date
+        ? new Date(a || 0).getTime() === new Date(b || 0).getTime()
+        : JSON.stringify(a ?? '') === JSON.stringify(b ?? ''));
+    for (const key of Object.keys(update)) {
+        if (key in currentRestaurant && same(update[key], currentRestaurant[key])) delete update[key];
+    }
+
     let profileRequest = null;
     if (currentRestaurant.status === 'approved') {
         const { now, held } = splitHeld(update);
@@ -1643,7 +1664,9 @@ export const updateRestaurantProfile = async (restaurantId, body = {}) => {
             );
         }
 
-        return withRequests(toRestaurantProfile(toRestaurant(doc)));
+        // The same shape as GET /current, pendingProfileChange and
+        // pendingBankChange included, so the app can show what awaits approval.
+        return withRequests(await getCurrentRestaurantProfile(restaurantId));
     } catch (err) {
         if (err?.code === 'P2002') {
             throw new ValidationError('A restaurant with this name and phone already exists');

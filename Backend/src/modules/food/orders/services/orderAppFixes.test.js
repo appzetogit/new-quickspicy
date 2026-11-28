@@ -303,3 +303,13 @@ test('a restaurant sees no rider until one has accepted the order', () => {
     assert.equal(accepted.dispatch.deliveryPartnerId.name, 'Tanu');
     assert.equal(accepted.dispatch.deliveryPartnerId.phone, '9800000001');
 });
+
+// 179: the restaurant's reason rides inside a full sentence, never alone.
+test('a restaurant cancellation push is a full sentence with the reason and refund line', async () => {
+    const { restaurantCancelBody } = await import('./order.service.js');
+    assert.equal(restaurantCancelBody('C'), 'Unfortunately, your order has been cancelled by the restaurant.');
+    assert.equal(
+        restaurantCancelBody('Item out of stock', ' The amount you paid is being added back to your Quick Spicy wallet.'),
+        'Unfortunately, your order has been cancelled by the restaurant. Reason: Item out of stock. The amount you paid is being added back to your Quick Spicy wallet.',
+    );
+});
