@@ -908,10 +908,13 @@ export async function calculateOrderPricing(userId, dto, options = {}) {
   );
 
   const priceChanges = (Array.isArray(dto.items) ? dto.items : [])
-    .map((rawItem) => {
+    .map((rawItem, index) => {
       const itemId = String(rawItem?.itemId || rawItem?.id || '').trim();
-      const resolved = items.find((entry) => String(entry.itemId) === itemId);
-      if (!resolved) return null;
+      // resolveOrderCartItems returns one line per cart line, in order. Matching
+      // by itemId compared a "2 piece" line with the "1 piece" price whenever
+      // the cart held the same dish in two sizes, so checkout never cleared.
+      const resolved = items[index];
+      if (!resolved || String(resolved.itemId) !== itemId) return null;
 
       const previousPrice = Number(rawItem?.price);
       const nextPrice = Number(resolved.price);

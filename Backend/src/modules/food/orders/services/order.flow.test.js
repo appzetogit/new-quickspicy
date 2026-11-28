@@ -120,6 +120,48 @@ const cartOf = (quantity = 2) => ({
     paymentMethod: 'cash',
 });
 
+test('the same dish in two sizes is not reported as a price change', async () => {
+    const food = await prisma.foodItem.create({
+        data: {
+            restaurantId,
+            name: 'Sized pastry',
+            price: 100,
+            approvalStatus: 'approved',
+            isAvailable: true,
+            variants: { create: [{ name: '1 piece', price: 100 }, { name: '2 piece', price: 200, sortOrder: 1 }] },
+        },
+        include: { variants: true },
+    });
+    created.foods.push(food.id);
+    const one = food.variants.find((v) => v.name === '1 piece');
+    const two = food.variants.find((v) => v.name === '2 piece');
+    try {
+        const quote = await calculateOrder(userId, {
+            ...cartOf(1),
+            items: [
+                { itemId: food.id, variantId: one.id, quantity: 1, price: 100 },
+                { itemId: food.id, variantId: two.id, quantity: 1, price: 200 },
+            ],
+        });
+        assert.deepEqual(quote.priceChanges, []);
+        assert.equal(quote.pricing.subtotal, 300);
+
+        // A real drift on the second line is still caught, against that line's own size.
+        const drift = await calculateOrder(userId, {
+            ...cartOf(1),
+            items: [
+                { itemId: food.id, variantId: one.id, quantity: 1, price: 100 },
+                { itemId: food.id, variantId: two.id, quantity: 1, price: 180 },
+            ],
+        });
+        assert.equal(drift.priceChanges.length, 1);
+        assert.equal(drift.priceChanges[0].previousPrice, 180);
+        assert.equal(drift.priceChanges[0].price, 200);
+    } finally {
+        await prisma.foodItemVariant.deleteMany({ where: { foodItemId: food.id } });
+    }
+});
+
 test('the cart totals before anything is written', async () => {
     const quote = await calculateOrder(userId, cartOf(2));
 
