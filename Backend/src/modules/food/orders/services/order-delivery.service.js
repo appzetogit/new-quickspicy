@@ -827,7 +827,7 @@ export async function confirmReachedPickupDelivery(orderId, deliveryPartnerId) {
       body: `${partner?.name || 'The delivery partner'} has arrived at ${
         restaurant?.restaurantName || 'your restaurant'
       } to pick up Order .`,
-      data: { type: 'rider_arrived', orderMongoId: row.id, partnerName: partner?.name || '' },
+      data: { type: 'rider_arrived', orderId: row.id, orderMongoId: row.id, partnerName: partner?.name || '' },
     });
   } catch (error) {
     logger.error(

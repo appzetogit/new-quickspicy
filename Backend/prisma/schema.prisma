@@ -3625,6 +3625,8 @@ model FoodChatConversation {
   @@index([status])
   /// The inbox pages threads newest first.
   @@index([createdAt(sort: Desc)])
+  /// ...by last activity: updatedAt moves with every message.
+  @@index([updatedAt(sort: Desc)])
   @@map("food_chat_conversations")
 }
 

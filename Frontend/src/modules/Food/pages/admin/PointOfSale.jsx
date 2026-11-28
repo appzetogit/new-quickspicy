@@ -84,7 +84,7 @@ export default function PointOfSale() {
         if (!id) return null
 
         const resolvedName = getRestaurantName(restaurant) || `Restaurant ${id.slice(-6)}`
-        const resolvedCode = getRestaurantCode(restaurant) || `REST${id.slice(-6).padStart(6, '0')}`
+        const resolvedCode = getRestaurantCode(restaurant) || `REST${id.slice(-6).toUpperCase()}`
 
         return {
           ...restaurant,

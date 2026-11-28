@@ -68,3 +68,27 @@ test('sending an order push saves the inbox row, with no device to push to', asy
         await prisma.$disconnect();
     }
 });
+
+test('the rider pushes a rider should find later are kept in the rider inbox', () => {
+    const rider = [{ ownerType: 'DELIVERY_PARTNER', ownerId: 'd1' }];
+    const kept = orderInboxRows(rider, push({ data: { type: 'bonus_credited', transactionId: 'T1' } }));
+    assert.equal(kept.length, 1);
+    assert.equal(kept[0].ownerType, 'DELIVERY_PARTNER');
+    assert.equal(kept[0].category, 'wallet');
+    assert.equal(orderInboxRows(rider, push({ data: { type: 'order_cancelled', orderId: 'x' } }))[0].category, 'order');
+    // A new-order offer expires in a minute; it is not inbox material.
+    assert.equal(orderInboxRows(rider, push({ data: { type: 'new_order', orderId: 'x' } })).length, 0);
+    // A customer's order push still goes to the customer only.
+    assert.equal(orderInboxRows(rider, push()).length, 0);
+});
+
+test('a restaurant keeps its order and menu pushes, with the push data to route on', () => {
+    const both = [{ ownerType: 'USER', ownerId: 'u1' }, { ownerType: 'RESTAURANT', ownerId: 'r1' }];
+    const rows = orderInboxRows(both, push({ data: { type: 'order_cancelled', orderId: 'o9', orderMongoId: 'o9', link: '/food/user/orders/o9' } }));
+    const mine = rows.find((r) => r.ownerType === 'RESTAURANT');
+    assert.equal(mine.link, '/restaurant/orders/o9', 'never the customer link');
+    assert.equal(mine.metadata.type, 'order_cancelled');
+    assert.equal(mine.metadata.orderMongoId, 'o9');
+    const menu = orderInboxRows([{ ownerType: 'RESTAURANT', ownerId: 'r1' }], push({ data: { type: 'food_approved', foodId: 'f1' } }));
+    assert.equal(menu[0].category, 'menu');
+});

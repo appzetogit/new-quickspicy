@@ -207,6 +207,9 @@ export async function enterManualQueue(orderId, options = {}) {
   return row;
 }
 
+/** { lat, lng } or null. */
+const latLng = (lat, lng) => (lat == null || lng == null ? null : { lat: Number(lat), lng: Number(lng) });
+
 /** Orders waiting for an admin to assign (or for an assigned rider to accept). */
 export async function listManualQueue() {
   const filter = await manualOrderFilter();
@@ -224,8 +227,11 @@ export async function listManualQueue() {
       id: true, order_id: true, orderId: true, orderStatus: true, dispatchStatus: true,
       dispatchDeliveryPartnerId: true, dispatchAssignedAt: true, awaitingManualAt: true, createdAt: true,
       paymentMethod: true, total: true, zoneId: true, addrStreet: true, addrCity: true,
+      addrAdditionalDetails: true, addrLat: true, addrLng: true, customerName: true,
       isForSomeoneElse: true,
-      restaurant: { select: { restaurantName: true, area: true } },
+      restaurant: {
+        select: { restaurantName: true, area: true, addressLine1: true, city: true, latitude: true, longitude: true },
+      },
       zone: { select: { name: true } },
       items: { select: { name: true, quantity: true } },
       dispatchOffers: {
@@ -256,6 +262,12 @@ export async function listManualQueue() {
         zoneId: r.zoneId,
         zoneName: r.zone?.name || '',
         dropArea: [r.addrStreet, r.addrCity].filter(Boolean).join(', '),
+        // Where the rider goes, both ends, so the admin can judge who is near.
+        restaurantAddress: [r.restaurant?.addressLine1, r.restaurant?.area, r.restaurant?.city].filter(Boolean).join(', '),
+        restaurantLocation: latLng(r.restaurant?.latitude, r.restaurant?.longitude),
+        customerName: r.customerName || '',
+        dropAddress: [r.addrStreet, r.addrAdditionalDetails, r.addrCity].filter(Boolean).join(', '),
+        dropLocation: latLng(r.addrLat, r.addrLng),
         paymentMethod: r.paymentMethod,
         total: Number(r.total) || 0,
         isForSomeoneElse: r.isForSomeoneElse,

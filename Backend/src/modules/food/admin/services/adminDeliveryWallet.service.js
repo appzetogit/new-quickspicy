@@ -1,5 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, riderDisplayId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { getBulkDeliveryPartnerStats } from './adminDeliveryPartner.service.js';
 import { ensureWallet, recordTransaction } from '../../../../core/payments/transaction.service.js';
@@ -48,7 +48,8 @@ export async function getDeliveryWallets(query = {}) {
             walletId: p.id,
             deliveryId: p.id,
             name: p.name,
-            deliveryIdString: p.phone,
+            deliveryIdString: riderDisplayId(p.id),
+            deliveryPhone: p.phone || '',
             pocketBalance: stats.pocketBalance || 0,
             // How much more COD this rider may take before they must settle up.
             remainingCashLimit: Math.max(0, globalLimit - cashInHand),
@@ -174,7 +175,8 @@ export async function getCashLimitSettlements(query = {}) {
         createdAt: d.createdAt,
         deliveryId: d.deliveryPartner?.id || d.deliveryPartnerId,
         deliveryName: d.deliveryPartner?.name || 'N/A',
-        deliveryIdString: d.deliveryPartner?.phone || 'N/A',
+        deliveryIdString: riderDisplayId(d.deliveryPartner?.id || d.deliveryPartnerId) || 'N/A',
+        deliveryPhone: d.deliveryPartner?.phone || '',
         amount: Number(d.amount || 0),
         status: d.status,
         razorpayPaymentId: d.razorpayPaymentId || '-',

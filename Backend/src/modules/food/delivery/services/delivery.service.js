@@ -19,7 +19,7 @@ import { config } from '../../../../config/env.js';
 import { verifyOtp } from '../../../../core/otp/otp.service.js';
 import { findDeliveryPartnerByPhone } from '../../../../core/auth/onboardingGate.js';
 import { getIO, rooms } from '../../../../config/socket.js';
-import { normalizeRiderPhone } from '../validators/delivery.validator.js';
+import { normalizeRiderPhone, vehicleNumberRegex } from '../validators/delivery.validator.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -278,9 +278,21 @@ function bankFieldsOf(payload = {}) {
     return out;
 }
 
+const RIDER_VEHICLE_TYPES = ['bike', 'scooter', 'electric', 'bicycle'];
+
+/** The rider's own vehicle edit: a known type, and a real Indian plate. */
+function cleanVehicleType(value) {
+    const type = String(value || '').trim().toLowerCase();
+    if (type && !RIDER_VEHICLE_TYPES.includes(type)) throw new ValidationError('Choose bike, scooter, electric or bicycle');
+    return type || null;
+}
+
 /** Shared vehicle-number guard for the profile-update paths. */
 async function claimVehicleNumber(vNum, selfId) {
     if (!vNum) return;
+    if (!vehicleNumberRegex.test(vNum)) {
+        throw new ValidationError('Enter a valid vehicle number, e.g. MH12AB1234 or 22BH1234AB');
+    }
     const activeVehicle = await prisma.foodDeliveryPartner.findFirst({
         where: { vehicleNumber: vNum, id: { not: String(selfId) }, status: { not: 'rejected' } },
     });
@@ -306,14 +318,14 @@ export const updateDeliveryPartnerProfile = async (userId, payload, files) => {
     if (address !== undefined) data.address = address;
     if (city !== undefined) data.city = city;
     if (state !== undefined) data.state = state;
-    if (vehicleType !== undefined) data.vehicleType = vehicleType;
+    if (vehicleType !== undefined) data.vehicleType = cleanVehicleType(vehicleType);
     if (vehicleName !== undefined) data.vehicleName = vehicleName;
 
     if (
         vehicleNumber !== undefined &&
         String(vehicleNumber).trim().toUpperCase() !== String(partner.vehicleNumber || '').trim().toUpperCase()
     ) {
-        const vNum = String(vehicleNumber).trim().toUpperCase();
+        const vNum = String(vehicleNumber).replace(/[\s-]/g, '').toUpperCase();
         await claimVehicleNumber(vNum, partner.id);
         data.vehicleNumber = vNum || null;
     }
@@ -340,11 +352,11 @@ export const updateDeliveryPartnerDetails = async (userId, payload) => {
             vehicle.number !== undefined &&
             String(vehicle.number || '').trim().toUpperCase() !== String(partner.vehicleNumber || '').trim().toUpperCase()
         ) {
-            const vNum = String(vehicle.number || '').trim().toUpperCase();
+            const vNum = String(vehicle.number || '').replace(/[\s-]/g, '').toUpperCase();
             await claimVehicleNumber(vNum, partner.id);
             data.vehicleNumber = vNum || null;
         }
-        if (vehicle.type !== undefined) data.vehicleType = String(vehicle.type || '').trim();
+        if (vehicle.type !== undefined) data.vehicleType = cleanVehicleType(vehicle.type);
         if (vehicle.brand !== undefined) data.vehicleName = String(vehicle.brand || '').trim();
         if (vehicle.model !== undefined) data.vehicleName = String(vehicle.model || '').trim();
     }
@@ -356,13 +368,15 @@ export const updateDeliveryPartnerDetails = async (userId, payload) => {
     return prisma.foodDeliveryPartner.update({ where: { id: partner.id }, data });
 };
 
-export const updateDeliveryPartnerProfilePhotoBase64 = async (userId, payload) => {
+export const updateDeliveryPartnerProfilePhotoBase64 = async (userId, payload, files) => {
     const partner = await requirePartner(userId);
 
-    const base64 = payload?.base64;
-    if (!base64 || typeof base64 !== 'string') throw new ValidationError('base64 is required');
+    // Multipart (`profilePhoto` file) or JSON `base64`, plain or as a data URL.
+    const file = files?.profilePhoto?.[0];
+    const base64 = typeof payload?.base64 === 'string' ? payload.base64.replace(/^data:[^,]*,/, '') : '';
+    if (!file && !base64) throw new ValidationError('base64 is required');
 
-    const buffer = Buffer.from(base64, 'base64');
+    const buffer = file ? file.buffer : Buffer.from(base64, 'base64');
     if (!buffer || !buffer.length) throw new ValidationError('Invalid base64 image');
     if (buffer.length > 8 * 1024 * 1024) throw new ValidationError('Image too large (max 8MB)');
 
@@ -946,6 +960,7 @@ const toTripDto = (order) => {
         status,
         restaurantName,
         restaurant: restaurantName,
+        customerName: order?.customerName || order?.user?.name || '',
         items: order?.items || [],
         orderItems: order?.items || [],
         paymentMethod,
@@ -980,12 +995,22 @@ export const getDeliveryPartnerTripHistory = async (deliveryPartnerId, query = {
     const statusFilter = normalizeStatusFilter(query.status);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 1000);
 
-    const { start, end } = computeRange(period, date);
+    // period=all: every trip, no date window.
+    const allTime = String(period).toLowerCase() === 'all';
+    const { start, end } = allTime ? {} : computeRange(period, date);
 
     const where = {
         dispatchDeliveryPartnerId: partnerId,
-        OR: withinRange(start, end),
+        AND: allTime ? [] : [{ OR: withinRange(start, end) }],
     };
+    // Customer name or order id.
+    const search = String(query.search || '').trim();
+    if (search) {
+        const contains = { contains: search, mode: 'insensitive' };
+        where.AND.push({
+            OR: [{ customerName: contains }, { order_id: contains }, { user: { name: contains } }],
+        });
+    }
 
     // orderStatus is an enum, so it can only be matched against its values:
     // `startsWith: 'cancelled'` is a string filter Prisma rejects, and it made
@@ -1003,7 +1028,11 @@ export const getDeliveryPartnerTripHistory = async (deliveryPartnerId, query = {
 
     const orders = await prisma.foodOrder.findMany({
         where,
-        include: { items: true, restaurant: { select: { id: true, restaurantName: true } } },
+        include: {
+            items: true,
+            restaurant: { select: { id: true, restaurantName: true } },
+            user: { select: { name: true } },
+        },
         orderBy: TRIP_ORDER_BY,
         take: limit,
     });
@@ -1011,7 +1040,7 @@ export const getDeliveryPartnerTripHistory = async (deliveryPartnerId, query = {
     return {
         period,
         date: (date || new Date()).toISOString(),
-        range: { start: start.toISOString(), end: end.toISOString() },
+        range: allTime ? null : { start: start.toISOString(), end: end.toISOString() },
         trips: (orders || []).map(toTripDto),
     };
 };

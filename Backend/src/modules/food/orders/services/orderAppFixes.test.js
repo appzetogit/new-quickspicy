@@ -281,3 +281,25 @@ test('admin cancel needs a reason, and the restaurant alert carries it as string
     const history = await prisma.orderStatusHistory.findFirst({ where: { orderId: id, to: 'cancelled_by_admin' } });
     assert.equal(history.note, 'Customer called support to cancel');
 });
+
+test('a restaurant sees no rider until one has accepted the order', () => {
+    const rider = { id: 'r1', name: 'Tanu', phone: '9800000001' };
+    const offered = toRestaurantContact({
+        dispatchStatus: 'assigned',
+        dispatchDeliveryPartnerId: 'r1',
+        deliveryPartner: rider,
+        dispatch: { status: 'assigned', acceptedAt: null, deliveryPartnerId: rider },
+    });
+    assert.equal(offered.dispatch.deliveryPartnerId, null);
+    assert.equal(offered.deliveryPartner, null);
+    assert.ok(!JSON.stringify(offered).includes('Tanu'), 'an offered rider is not named');
+
+    const accepted = toRestaurantContact({
+        dispatchStatus: 'accepted',
+        dispatchAcceptedAt: new Date(),
+        deliveryPartner: rider,
+        dispatch: { status: 'accepted', acceptedAt: new Date(), deliveryPartnerId: rider },
+    });
+    assert.equal(accepted.dispatch.deliveryPartnerId.name, 'Tanu');
+    assert.equal(accepted.dispatch.deliveryPartnerId.phone, '9800000001');
+});

@@ -1,11 +1,12 @@
 import { prisma } from '../../../../config/prisma.js';
 import { BRAND_IMAGE_URL } from '../../../../config/brand.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, riderDisplayId } from '../../../../utils/helpers.js';
 import { NotFoundError, ValidationError } from '../../../../core/auth/errors.js';
 import { logger } from '../../../../utils/logger.js';
 import { notifyApplicationDecision } from './decisionNotify.js';
 import { resolveRiderZones } from './adminRiderCohort.service.js';
 import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
+import { computeRiderPocket, getRiderSettledPayouts } from '../../delivery/services/deliveryFinance.service.js';
 
 /**
  * The admin delivery-partner list and its money summary, extracted from
@@ -48,7 +49,7 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
         orderStatus: 'delivered',
     };
 
-    const [earnings, cash, deposits, bonuses, withdrawals] = await Promise.all([
+    const [earnings, cash, deposits, bonuses, withdrawals, settled, wallets] = await Promise.all([
         // Earnings and the delivered-order count come from one grouping.
         prisma.foodOrder.groupBy({
             by: ['dispatchDeliveryPartnerId'],
@@ -79,7 +80,13 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
             where: { deliveryPartnerId: { in: ids }, status: { in: ['approved', 'pending'] } },
             _sum: { amount: true },
         }),
+        getRiderSettledPayouts(ids),
+        prisma.wallet.findMany({
+            where: { entityType: 'deliveryBoy', entityId: { in: ids } },
+            select: { entityId: true, balance: true, lockedAmount: true, totalSettled: true },
+        }),
     ]);
+    const walletBy = new Map(wallets.map((w) => [String(w.entityId), w]));
 
     const statsMap = new Map(ids.map((id) => [id, emptyStats()]));
     const at = (id) => statsMap.get(String(id));
@@ -117,11 +124,21 @@ export async function getBulkDeliveryPartnerStats(partnerIds) {
         if (row.status === 'pending') stats.pendingWithdrawal = num(row._sum.amount);
     }
 
-    for (const stats of statsMap.values()) {
-        // What the rider can still withdraw: earned plus bonuses, less what has
-        // been paid out and what is already claimed.
-        stats.pocketBalance =
-            stats.totalEarning + stats.bonus - stats.totalWithdrawn - stats.pendingWithdrawal;
+    for (const [id, stats] of statsMap) {
+        // What the rider can still withdraw: the same figure their app shows.
+        const wallet = walletBy.get(id);
+        const pocket = computeRiderPocket({
+            earned: stats.totalEarning,
+            bonus: stats.bonus,
+            approvedWithdrawals: stats.totalWithdrawn,
+            settledPayouts: settled.get(id) || 0,
+            pending: stats.pendingWithdrawal,
+            walletBalance: Number(wallet?.balance) || 0,
+            walletLocked: Number(wallet?.lockedAmount) || 0,
+            walletTotalSettled: Number(wallet?.totalSettled) || 0,
+        });
+        stats.pocketBalance = pocket.pocketBalance;
+        stats.totalWithdrawn = pocket.totalWithdrawn;
         // Cash they collected on our behalf and have not yet handed in.
         stats.cashInHand = stats.cashCollected - stats.totalDeposited;
     }
@@ -203,7 +220,7 @@ const serializePartner = (doc, stats = {}, sl = 0) => {
         name: doc.name || '',
         email: doc.email || '',
         phone: doc.phone || '',
-        deliveryId: doc.id ? `DP-${doc.id.slice(-8).toUpperCase()}` : null,
+        deliveryId: riderDisplayId(doc.id),
         zone: doc.zone?.name || doc.city || doc.state || doc.address || '',
         zoneId: doc.zoneId || null,
         zoneName: doc.zone?.name || '',

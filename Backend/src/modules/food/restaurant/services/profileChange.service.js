@@ -2,7 +2,7 @@ import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { logger } from '../../../../utils/logger.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
-import { notifyAdminsSafely, sendNotificationToOwner } from '../../../../core/notifications/firebase.service.js';
+import { notifyAdminsSafely, notifyOwnerSafely } from '../../../../core/notifications/firebase.service.js';
 import { invalidateCache } from '../../../../middleware/cache.js';
 
 /**
@@ -194,14 +194,10 @@ export async function approveProfileChange(id, adminId) {
     }
     await dropRestaurantCaches();
 
-    void sendNotificationToOwner({
-        ownerType: 'RESTAURANT',
-        ownerId: row.restaurantId,
-        payload: {
-            title: 'Your changes are live',
-            body: `Approved: ${describe(row.changes)}.`,
-            data: { type: 'profile_change_approved', id: row.id },
-        },
+    void notifyOwnerSafely({ ownerType: 'RESTAURANT', ownerId: row.restaurantId }, {
+        title: 'Your changes are live',
+        body: `Approved: ${describe(row.changes)}.`,
+        data: { type: 'profile_change_approved', id: row.id },
     }).catch(() => {});
     return present(row);
 }
@@ -220,14 +216,10 @@ export async function rejectProfileChange(id, adminId, reason = '') {
         include: { restaurant: { select: RESTAURANT_SELECT } },
     });
 
-    void sendNotificationToOwner({
-        ownerType: 'RESTAURANT',
-        ownerId: row.restaurantId,
-        payload: {
-            title: 'Changes not approved',
-            body: `Your changes were not approved: ${text}`,
-            data: { type: 'profile_change_rejected', id: row.id },
-        },
+    void notifyOwnerSafely({ ownerType: 'RESTAURANT', ownerId: row.restaurantId }, {
+        title: 'Changes not approved',
+        body: `Your changes were not approved: ${text}`,
+        data: { type: 'profile_change_rejected', id: row.id },
     }).catch(() => {});
     return present(row);
 }

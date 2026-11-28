@@ -75,7 +75,7 @@ const RESTAURANT_CARD = {
   id: true, restaurantName: true, profileImage: true, area: true, city: true,
   latitude: true, longitude: true, rating: true, totalRatings: true,
 };
-const RESTAURANT_DETAIL = { ...RESTAURANT_CARD, ownerPhone: true, primaryContactNumber: true };
+const RESTAURANT_DETAIL = { ...RESTAURANT_CARD, addressLine1: true, ownerPhone: true, primaryContactNumber: true };
 const RESTAURANT_ADMIN = {
   id: true, restaurantName: true, area: true, city: true, ownerPhone: true, zoneId: true,
 };
@@ -3079,7 +3079,7 @@ export async function updateOrderStatusAdmin(orderId, orderStatus, note = "", ad
   await notifyOwnersSafely(notifyList, {
     title,
     body,
-    data: { type: "order_status_update", orderId: updated.id, orderStatus: String(orderStatus || "") },
+    data: { type: "order_status_update", orderId: updated.id, orderMongoId: updated.id, orderStatus: String(orderStatus || "") },
   });
 
   // The restaurant must not miss a cancellation: it may be cooking the order.
@@ -3211,7 +3211,7 @@ export async function markOrderDeliveredAdmin(orderId, adminId, note = "") {
   await notifyOwnersSafely(notifyList, {
     title: "Order Delivered! 🎉",
     body: `Order #${orderLabel} has been marked as delivered by support.`,
-    data: { type: "order_status_update", orderId: updated.id, orderStatus: "delivered" },
+    data: { type: "order_status_update", orderId: updated.id, orderMongoId: updated.id, orderStatus: "delivered" },
   });
 
   try {
@@ -3339,6 +3339,8 @@ export async function processRefundAdmin(orderId, amount, adminId, destination =
         type: "refund_processed",
         orderId: String(updated.order_id || updated.id),
         orderRowId: updated.id,
+        orderMongoId: updated.id,
+        link: `/food/user/orders/${updated.id}`,
       },
     }).catch((err) => {
       logger.warn(`Refund notification failed for order ${updated.id}: ${err?.message || err}`);

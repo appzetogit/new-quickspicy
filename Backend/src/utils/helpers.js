@@ -36,3 +36,11 @@ export const buildPaginatedResult = ({ docs, total, page, limit }) => {
  * Postgres' default LIKE escape character is the backslash.
  */
 export const escapeLike = (value) => String(value ?? '').replace(/[\\%_]/g, '\\$&');
+
+/**
+ * The readable codes the apps and the admin show for a rider and a restaurant.
+ * Derived from the id (there is no stored code column), in one place, so every
+ * screen shows the same one.
+ */
+export const riderDisplayId = (id) => (id ? `DP-${String(id).slice(-8).toUpperCase()}` : null);
+export const restaurantDisplayId = (id) => (id ? `REST${String(id).slice(-6).toUpperCase()}` : null);

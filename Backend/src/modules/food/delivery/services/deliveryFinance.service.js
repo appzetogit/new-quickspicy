@@ -1,5 +1,5 @@
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, riderDisplayId } from '../../../../utils/helpers.js';
 import { getDeliveryCashLimitSettings } from '../../admin/services/admin.service.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import {
@@ -12,6 +12,7 @@ import {
 import { logger } from '../../../../utils/logger.js';
 import { recordTransaction } from '../../../../core/payments/transaction.service.js';
 import { approvedChangeByRider } from '../../orders/services/changeCredit.service.js';
+import { alertAdmins } from '../../admin/services/decisionNotify.js';
 
 const num = (v) => Number(v) || 0;
 
@@ -98,6 +99,39 @@ export const getRidersCashInHand = async (deliveryPartnerIds, { wallets } = {}) 
 };
 
 /**
+ * What a rider can still withdraw. The one formula behind the rider's wallet
+ * (pocketBalance) and the admin's Delivery Boy Wallet list, which used to
+ * compute it two different ways and disagree.
+ *
+ * Paid out = approved withdrawals plus balance-sheet / weekly-statement payouts
+ * (Settlement rows): a rider paid through a statement kept seeing that money
+ * as still available. Floored at the ledger's available balance, so a manual
+ * admin credit is honoured.
+ */
+export const computeRiderPocket = ({
+    earned = 0, bonus = 0, approvedWithdrawals = 0, settledPayouts = 0, pending = 0,
+    walletBalance = 0, walletLocked = 0, walletTotalSettled = 0,
+} = {}) => {
+    const totalWithdrawn = Math.max(num(approvedWithdrawals) + num(settledPayouts), num(walletTotalSettled));
+    const computed = Math.max(0, num(earned) + num(bonus) - (totalWithdrawn + num(pending)));
+    const lockedAmount = Math.max(num(walletLocked), num(pending));
+    const ledgerAvailable = Math.max(0, num(walletBalance) - lockedAmount);
+    return { pocketBalance: Math.max(computed, ledgerAvailable), totalWithdrawn, lockedAmount };
+};
+
+/** Balance-sheet / weekly-statement payouts made to these riders, by rider id. */
+export const getRiderSettledPayouts = async (deliveryPartnerIds) => {
+    const ids = [...new Set((deliveryPartnerIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return new Map();
+    const rows = await prisma.settlement.groupBy({
+        by: ['entityId'],
+        where: { entityType: 'deliveryBoy', entityId: { in: ids }, status: 'processed' },
+        _sum: { amount: true },
+    });
+    return new Map(rows.map((r) => [String(r.entityId), num(r._sum?.amount)]));
+};
+
+/**
  * Enhanced wallet fetch for delivery partners. Integrates:
  * 1. Historical orders (earnings)
  * 2. Admin bonuses
@@ -120,6 +154,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
         depositList,
         walletDoc,
         ordersTx,
+        settledByRider,
     ] = await Promise.all([
         getDeliveryCashLimitSettings(),
         // 1. Total earnings from delivered orders
@@ -160,6 +195,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
             },
             take: 20,
         }),
+        getRiderSettledPayouts([partnerId]),
     ]);
 
     const byStatus = (status) =>
@@ -182,21 +218,21 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
 
     const totalEarned = Math.max(aggTotalEarned, walletTotalEarnings);
     const totalBonus = Math.max(aggTotalBonus, walletTotalBonus);
-    const totalWithdrawn = Math.max(aggTotalWithdrawn, walletTotalSettled);
     const cashInHand = cash.cashInHand;
 
     const totalCashLimit = num(cashLimitSettings.deliveryCashLimit);
     const deliveryWithdrawalLimit = num(cashLimitSettings.deliveryWithdrawalLimit) || 100;
 
-    // Pocket balance = (earnings + bonus) − approved withdrawals − pending withdrawals,
-    // floored at the ledger balance so manual adjustments are honoured.
-    const computedPocketBalance = Math.max(
-        0,
-        totalEarned + totalBonus - (totalWithdrawn + pendingWithdrawals),
-    );
-    const effectiveLockedAmount = Math.max(walletLockedAmount, pendingWithdrawals);
-    const availableWalletBalance = Math.max(0, walletBalance - effectiveLockedAmount);
-    const pocketBalance = Math.max(computedPocketBalance, availableWalletBalance);
+    const { pocketBalance, totalWithdrawn, lockedAmount: effectiveLockedAmount } = computeRiderPocket({
+        earned: totalEarned,
+        bonus: totalBonus,
+        approvedWithdrawals: aggTotalWithdrawn,
+        settledPayouts: settledByRider.get(partnerId) || 0,
+        pending: pendingWithdrawals,
+        walletBalance,
+        walletLocked: walletLockedAmount,
+        walletTotalSettled,
+    });
 
     const transactions = [
         ...(ordersTx || []).map((o) => ({
@@ -236,6 +272,7 @@ export const getDeliveryPartnerWalletEnhanced = async (deliveryPartnerId) => {
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return {
+        deliveryId: riderDisplayId(partnerId),  // the rider's display code, as on the profile
         totalBalance: totalEarned + totalBonus, // gross lifetime earnings
         pocketBalance,                          // available to withdraw
         cashInHand,                             // COD still to be deposited
@@ -355,6 +392,15 @@ export const requestDeliveryWithdrawal = async (deliveryPartnerId, payload) => {
         });
 
         return created;
+    });
+
+    alertAdmins({
+        title: 'New delivery partner withdrawal request',
+        body: `${partner.name || 'A delivery partner'} (${riderDisplayId(partnerId)}) requested \u20b9${amount.toLocaleString('en-IN')}.`,
+        data: {
+            type: 'withdrawal_request', subType: 'delivery', withdrawalId: withdrawal.id,
+            partnerId, amount: String(amount), link: '/admin/food/delivery-withdrawal',
+        },
     });
 
     return withdrawal;

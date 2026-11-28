@@ -115,7 +115,7 @@ export async function refreshOrderEta(orderId, { force = false } = {}) {
         const order = await runUnscoped(() => prisma.foodOrder.findUnique({
             where: { id },
             select: {
-                id: true, userId: true, orderStatus: true, createdAt: true, etaComputedAt: true,
+                id: true, userId: true, restaurantId: true, dispatchStatus: true, orderStatus: true, createdAt: true, etaComputedAt: true,
                 delayedUntil: true, promisedDeliveryAt: true,
                 addrLat: true, addrLng: true, riderLat: true, riderLng: true,
                 dispatchDeliveryPartnerId: true,
@@ -192,6 +192,11 @@ export async function refreshOrderEta(orderId, { force = false } = {}) {
             if (io) {
                 io.to(rooms.user(order.userId)).emit('order_eta', payload);
                 io.to(rooms.tracking(id)).emit('order_eta', payload);
+                // The restaurant and the rider show the same ETA as the customer.
+                if (order.restaurantId) io.to(rooms.restaurant(order.restaurantId)).emit('order_eta', payload);
+                if (order.dispatchDeliveryPartnerId && order.dispatchStatus === 'accepted') {
+                    io.to(rooms.delivery(order.dispatchDeliveryPartnerId)).emit('order_eta', payload);
+                }
             }
         } catch {
             // The next fetch carries it anyway.

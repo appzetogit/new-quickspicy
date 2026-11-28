@@ -213,3 +213,12 @@ test('the public endpoints stay public', async () => {
         assert.equal(status, 200, `${path} should not require a token`);
     }
 });
+
+test('a rider profile photo sent as base64 JSON is not refused as too large', async () => {
+    // A phone photo is ~1MB of base64, ten times the global JSON cap. The
+    // route must read it (and then ask for auth), not answer 413.
+    const body = { base64: 'A'.repeat(1024 * 1024) };
+    assert.equal((await http.post('/api/v1/food/delivery/profile/photo-base64', { body })).status, 401);
+    // Every other route keeps the small cap.
+    assert.equal((await http.post('/api/v1/food/delivery/wallet/withdraw', { body })).status, 413);
+});

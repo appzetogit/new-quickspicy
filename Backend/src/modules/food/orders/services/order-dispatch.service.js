@@ -116,6 +116,8 @@ const DRIVER_ACCEPT_WINDOW_MS = 45000;
  */
 export function buildIncomingOrderPushData(order, payload, acceptanceDeadlineAt, windowMs = DRIVER_ACCEPT_WINDOW_MS) {
   const s = (v) => (v === undefined || v === null ? '' : String(v));
+  const etaRaw = payload?.estimatedDeliveryAt ?? order?.estimatedDeliveryAt;
+  const eta = etaRaw ? new Date(etaRaw) : null;
 
   const earning = s(payload?.riderEarning ?? 0);
   const distance = s(payload?.tripDistanceKm ?? '');
@@ -172,6 +174,8 @@ export function buildIncomingOrderPushData(order, payload, acceptanceDeadlineAt,
     // The customer's note for the rider. The popup is built from this push
     // alone, so without it the note never showed on the offer.
     deliveryInstructions: s(order?.deliveryInstructions || ''),
+    etaMinutes: s(payload?.etaMinutes ?? order?.etaMinutes ?? ''),
+    estimatedDeliveryAt: eta && !Number.isNaN(eta.getTime()) ? eta.toISOString() : '',
   };
 }
 

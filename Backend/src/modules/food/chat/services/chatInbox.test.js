@@ -62,9 +62,12 @@ test('threads with unread messages are on the first page wherever they fall', as
     assert.equal(oldest.unread, 1);
     assert.equal(oldest.lastMessage, 'still there?');
 
+    // Read, it stays on top: the list is ordered by last activity. Ordered by
+    // creation, an old thread with a new message dropped off the first page
+    // once read -- a rider's support chat vanished from the admin desk.
     await markRead(ADMIN, threads[0]);
     const after = await listConversations(ADMIN, { limit: 1 });
-    assert.ok(!idsOf(after).includes(threads[0]));
+    assert.deepEqual(idsOf(after), [threads[0]]);
 });
 
 test('a customer sees only their own threads', async () => {

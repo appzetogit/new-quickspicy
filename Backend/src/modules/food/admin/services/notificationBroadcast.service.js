@@ -412,7 +412,9 @@ export const createBroadcastNotification = async ({ body = {}, adminId } = {}) =
             category: 'broadcast',
             broadcastId: broadcast.id,
             metadata: {
+                type: 'admin_broadcast',
                 broadcastId: broadcast.id,
+                link,
                 ownerLabel: target.label || '',
                 ownerSubLabel: target.subLabel || '',
                 // So the app can show the code as something tappable rather

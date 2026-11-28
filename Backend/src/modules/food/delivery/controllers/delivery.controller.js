@@ -53,7 +53,7 @@ export const updateDeliveryPartnerDetailsController = async (req, res, next) => 
 export const updateDeliveryPartnerProfilePhotoBase64Controller = async (req, res, next) => {
     try {
         const userId = req.user?.userId;
-        const partner = await updateDeliveryPartnerProfilePhotoBase64(userId, req.body || {});
+        const partner = await updateDeliveryPartnerProfilePhotoBase64(userId, req.body || {}, req.files);
         return sendResponse(res, 200, 'Profile photo updated successfully', { partner });
     } catch (error) {
         next(error);

@@ -28,6 +28,32 @@ function useTick(ms = 1000) {
   }, [ms])
 }
 
+/** One end of the trip: the address, the coordinates, and a map link. */
+function Place({ label, address, at }) {
+  const coords = at && Number.isFinite(at.lat) && Number.isFinite(at.lng) ? `${at.lat.toFixed(6)}, ${at.lng.toFixed(6)}` : ""
+  return (
+    <div className="text-xs text-slate-600 flex gap-1 items-start">
+      <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+      <span className="min-w-0 break-words">
+        <span className="font-medium text-slate-700">{label}:</span> {address || "—"}
+        {coords ? (
+          <>
+            {" · "}
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${at.lat},${at.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 underline"
+            >
+              {coords}
+            </a>
+          </>
+        ) : null}
+      </span>
+    </div>
+  )
+}
+
 const sinceText = (date) => {
   const mins = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 60000))
   if (mins < 1) return "just now"
@@ -161,9 +187,12 @@ export default function AssignRider() {
                     <span>{money(o.total)}</span>
                     {o.isForSomeoneElse ? <span className="text-violet-600">For someone else</span> : null}
                   </div>
-                  <div className="text-xs text-slate-600 flex gap-1 items-start">
-                    <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {o.dropArea || "—"}
-                  </div>
+                  <Place label="Pickup" address={o.restaurantAddress || o.restaurantArea} at={o.restaurantLocation} />
+                  <Place
+                    label={o.customerName ? `Drop · ${o.customerName}` : "Drop"}
+                    address={o.dropAddress || o.dropArea}
+                    at={o.dropLocation}
+                  />
                   <div className="text-xs text-slate-500 truncate">{o.items.join(", ")}</div>
                   {o.declinedBy?.length ? (
                     <div className="text-xs text-rose-600">

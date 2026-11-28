@@ -72,6 +72,11 @@ app.use(responseTimeLogger);
  */
 const SIGNED_WEBHOOK_PATHS = ['/webhook/razorpay', '/api/deploy'];
 
+// The rider app sends its profile photo as base64 JSON; a phone photo is far
+// over the 100kb default, so that one route gets a larger cap (the service
+// still refuses anything over 8MB decoded). Registered first, so the global
+// parser below sees the body already read and skips it.
+app.use('/api/v1/food/delivery/profile/photo-base64', express.json({ limit: '12mb' }));
 app.use(express.json({
     verify: (req, _res, buf) => {
         const url = req.originalUrl || '';

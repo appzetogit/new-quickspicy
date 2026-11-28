@@ -2,7 +2,7 @@ import { prisma } from '../../../../config/prisma.js';
 import { isId } from '../../../../utils/helpers.js';
 import { logger } from '../../../../utils/logger.js';
 import { ValidationError, NotFoundError } from '../../../../core/auth/errors.js';
-import { notifyAdminsSafely, sendNotificationToOwner } from '../../../../core/notifications/firebase.service.js';
+import { notifyAdminsSafely, notifyOwnerSafely } from '../../../../core/notifications/firebase.service.js';
 import { normalizeMediaUrlForStorage } from '../../../../services/storage.service.js';
 
 /**
@@ -95,14 +95,10 @@ export async function requestBankChange(restaurantId, change) {
         data: { type: 'approval_request', subType: 'bank_change', id: row.id },
     }).catch((err) => logger.warn(`Bank change admin notice failed: ${err?.message || err}`));
 
-    void sendNotificationToOwner({
-        ownerType: 'RESTAURANT',
-        ownerId: rid,
-        payload: {
-            title: 'Payout account change requested',
-            body: 'A change to your payout bank account was requested and is waiting for approval. If this was not you, contact support right away.',
-            data: { type: 'bank_change_requested', id: row.id },
-        },
+    void notifyOwnerSafely({ ownerType: 'RESTAURANT', ownerId: rid }, {
+        title: 'Payout account change requested',
+        body: 'A change to your payout bank account was requested and is waiting for approval. If this was not you, contact support right away.',
+        data: { type: 'bank_change_requested', id: row.id },
     }).catch((err) => logger.warn(`Bank change owner notice failed: ${err?.message || err}`));
 
     return { status: 'pending', id: row.id };
@@ -165,14 +161,10 @@ export async function approveBankChange(id, adminId) {
         return tx.foodRestaurantBankChange.findUnique({ where: { id: req.id }, include: WITH_RESTAURANT });
     });
 
-    void sendNotificationToOwner({
-        ownerType: 'RESTAURANT',
-        ownerId: row.restaurantId,
-        payload: {
-            title: 'Payout account updated',
-            body: 'Your new payout bank details were approved. Future payouts go to the new account.',
-            data: { type: 'bank_change_approved', id: row.id },
-        },
+    void notifyOwnerSafely({ ownerType: 'RESTAURANT', ownerId: row.restaurantId }, {
+        title: 'Payout account updated',
+        body: 'Your new payout bank details were approved. Future payouts go to the new account.',
+        data: { type: 'bank_change_approved', id: row.id },
     }).catch(() => {});
     return present(row);
 }
@@ -189,14 +181,10 @@ export async function rejectBankChange(id, adminId, reason = '') {
         return tx.foodRestaurantBankChange.findUnique({ where: { id: req.id }, include: WITH_RESTAURANT });
     });
 
-    void sendNotificationToOwner({
-        ownerType: 'RESTAURANT',
-        ownerId: row.restaurantId,
-        payload: {
-            title: 'Payout account change rejected',
-            body: `Your payout account change was not approved: ${text}`,
-            data: { type: 'bank_change_rejected', id: row.id },
-        },
+    void notifyOwnerSafely({ ownerType: 'RESTAURANT', ownerId: row.restaurantId }, {
+        title: 'Payout account change rejected',
+        body: `Your payout account change was not approved: ${text}`,
+        data: { type: 'bank_change_rejected', id: row.id },
     }).catch(() => {});
     return present(row);
 }

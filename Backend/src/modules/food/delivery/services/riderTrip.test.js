@@ -192,6 +192,23 @@ test('trip history: a bad date is a 400 and an old trip touched today stays on i
     assert.equal(thatDay.trips.some((t) => t.id === old.id), true);
 });
 
+test('trip history: period=all has no window, and search finds a trip by customer or order id', async () => {
+    const rider = await newRider();
+    const longAgo = new Date(Date.now() - 200 * 24 * 3600 * 1000);
+    const old = await newOrder({
+        orderStatus: 'delivered', dispatchStatus: 'accepted', dispatchDeliveryPartnerId: rider.id,
+        createdAt: longAgo, deliveredAt: longAgo, customerName: 'Zubin Trip',
+    });
+    const all = await getDeliveryPartnerTripHistory(rider.id, { period: 'all' });
+    assert.equal(all.range, null);
+    const trip = all.trips.find((t) => t.id === old.id);
+    assert.ok(trip, 'an old trip is in the all-time list');
+    assert.equal(trip.customerName, 'Zubin Trip');
+
+    assert.equal((await getDeliveryPartnerTripHistory(rider.id, { period: 'all', search: 'zubin' })).trips.length, 1);
+    assert.equal((await getDeliveryPartnerTripHistory(rider.id, { period: 'all', search: 'nobody-like-this' })).trips.length, 0);
+});
+
 test('the customer sees no rider position before accept or after delivery', async () => {
     const rider = await newRider({ lastLat: 22.73, lastLng: 75.87, lastLocationAt: new Date() });
     const offered = await newOrder({ dispatchStatus: 'assigned', dispatchDeliveryPartnerId: rider.id, riderLat: 22.73, riderLng: 75.87 });

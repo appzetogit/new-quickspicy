@@ -284,7 +284,7 @@ export default function RestaurantWithdraws() {
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end min-w-0">
               <div className="relative flex-1 sm:flex-initial min-w-[200px]">
                 <input
                   type="text"
@@ -343,7 +343,7 @@ export default function RestaurantWithdraws() {
               </DropdownMenu>
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-all flex items-center justify-center"
+                className="shrink-0 p-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-all flex items-center justify-center"
                 title="Table Settings"
               >
                 <Settings className="w-4 h-4" />

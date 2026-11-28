@@ -504,7 +504,12 @@ const INBOX_PAGE_SIZE = 50;
  *
  * @param {{orderId?: string, before?: string, limit?: number}} [query]
  *   orderId lists only that order's threads (all of them, unpaged).
- *   before is the createdAt of the last thread already shown (from nextBefore).
+ *   before is the updatedAt of the last thread already shown (from nextBefore).
+ *
+ * Ordered by last activity (updatedAt moves with every message), not by when
+ * the thread was opened: a rider's support thread from last month that got a
+ * new message today belongs at the top, and ordered by creation it sank below
+ * a page of newer order threads the moment the admin had read it once.
  */
 export async function listConversations(me, query = {}) {
     const myToken = partyToken(me.role, me.id);
@@ -519,14 +524,14 @@ export async function listConversations(me, query = {}) {
         where: {
             participants: { has: myToken },
             ...(orderId ? { orderId } : {}),
-            ...(before ? { createdAt: { lt: before } } : {}),
+            ...(before ? { updatedAt: { lt: before } } : {}),
         },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         ...(orderId ? {} : { take: limit + 1 }),
     });
     const hasMore = !orderId && pageRows.length > limit;
     const docs = hasMore ? pageRows.slice(0, limit) : pageRows;
-    const nextBefore = hasMore ? docs[docs.length - 1].createdAt : null;
+    const nextBefore = hasMore ? docs[docs.length - 1].updatedAt : null;
 
     if (!orderId && !before) {
         const unreadThreads = await prisma.foodChatMessage.groupBy({
@@ -598,7 +603,7 @@ export async function listConversations(me, query = {}) {
     });
 
     merged.sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        (a, b) => new Date(b.lastAt || b.createdAt || 0).getTime() - new Date(a.lastAt || a.createdAt || 0).getTime()
     );
 
     const conversations = await attachOrderNumbers(await attachAssignees(await attachPeers(merged)));

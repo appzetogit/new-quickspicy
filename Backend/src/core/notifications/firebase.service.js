@@ -790,37 +790,129 @@ export const sendTestNotification = async ({ ownerType, ownerId, platform }) => 
 const ORDER_INBOX_TYPES = new Set(['order_update', 'order_status_update', 'order_cancelled']);
 
 /**
- * Rows for the customer's inbox: one per USER target of a visible order push.
+ * The rider pushes kept in the rider's inbox, by data.type, with the inbox
+ * category. Only these ever reached the rider's Notifications screen through
+ * the push path before: everything a rider is told about money, documents or
+ * an order taken off them was push-only, so the screen showed broadcasts and
+ * little else. New-order offers are deliberately absent -- they expire in a
+ * minute and would bury everything else.
+ */
+const RIDER_INBOX_TYPES = {
+    order_status_update: 'order',
+    order_completed: 'order',
+    order_cancelled: 'order',
+    order_deassigned: 'order',
+    incentive_credited: 'wallet',
+    incentive_rejected: 'wallet',
+    bonus_credited: 'wallet',
+    referral_bonus: 'wallet',
+    payout_statement_paid: 'wallet',
+    document_rejected: 'account',
+};
+
+/**
+ * The restaurant pushes kept in the restaurant's inbox, by data.type, with the
+ * inbox category. Approvals and support replies write their own rows
+ * (decisionNotify.js, adminSupportTicket.service.js) and are not listed.
+ */
+const RESTAURANT_INBOX_TYPES = {
+    new_order: 'order',
+    order_status_update: 'order',
+    order_cancelled: 'order',
+    order_deassigned: 'order',
+    delivery_accepted: 'order',
+    rider_arrived: 'order',
+    food_approved: 'menu',
+    food_rejected: 'menu',
+    addon_approved: 'menu',
+    addon_rejected: 'menu',
+    campaign_invitation: 'offer',
+    payout_statement_paid: 'wallet',
+    bank_change_requested: 'account',
+    bank_change_approved: 'account',
+    bank_change_rejected: 'account',
+    profile_change_approved: 'account',
+    profile_change_rejected: 'account',
+};
+
+/** Where a restaurant's inbox row opens: the order, when there is one. */
+const restaurantLink = (data, orderId) => {
+    const link = String(data.link || '');
+    if (link.startsWith('/restaurant')) return link;
+    return orderId ? `/restaurant/orders/${orderId}` : '';
+};
+
+/**
+ * Inbox rows for a visible push: one per USER target of an order push, and
+ * one per DELIVERY_PARTNER / RESTAURANT target of a push type listed above.
+ * The push data is the row's metadata, so a tap routes the same way.
  *
  * Order pushes were push-only, so the app's Notifications screen -- which reads
  * the inbox -- stayed empty however many orders a customer placed. Silent
  * data-only pushes are skipped (the visible copy is the one kept), as is
- * anything that is not an order push: admin broadcasts write their own rows.
+ * anything else: admin broadcasts and admin decisions write their own rows.
  * Exported for the tests.
  */
 export const orderInboxRows = (targets = [], payload = {}) => {
     if (payload?.dataOnly || payload?.saveToInbox === false) return [];
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+    const type = String(data.type || '');
     const orderId = String(data.orderMongoId || data.orderId || '').trim();
     const title = String(payload?.title || '').trim();
     const message = String(payload?.body || '').trim();
-    if (!ORDER_INBOX_TYPES.has(String(data.type || '')) || !orderId || !title || !message) return [];
+    if (!title || !message) return [];
 
-    const users = new Set(
-        (Array.isArray(targets) ? targets : [targets])
-            .filter((t) => String(t?.ownerType || '').toUpperCase() === 'USER' && t?.ownerId)
+    const list = Array.isArray(targets) ? targets : [targets];
+    const ownersOf = (ownerType) => [...new Set(
+        list
+            .filter((t) => String(t?.ownerType || '').toUpperCase() === ownerType && t?.ownerId)
             .map((t) => String(t.ownerId)),
-    );
-    return [...users].map((ownerId) => ({
-        ownerType: 'USER',
-        ownerId,
-        title,
-        message,
-        link: `/food/user/orders/${orderId}`,
-        category: 'order',
-        source: 'ORDER_EVENT',
-        metadata: data,
-    }));
+    )];
+
+    const rows = [];
+    if (ORDER_INBOX_TYPES.has(type) && orderId) {
+        for (const ownerId of ownersOf('USER')) {
+            rows.push({
+                ownerType: 'USER',
+                ownerId,
+                title,
+                message,
+                link: `/food/user/orders/${orderId}`,
+                category: 'order',
+                source: 'ORDER_EVENT',
+                metadata: data,
+            });
+        }
+    }
+    if (RESTAURANT_INBOX_TYPES[type]) {
+        for (const ownerId of ownersOf('RESTAURANT')) {
+            rows.push({
+                ownerType: 'RESTAURANT',
+                ownerId,
+                title,
+                message,
+                link: restaurantLink(data, orderId),
+                category: RESTAURANT_INBOX_TYPES[type],
+                source: 'ORDER_EVENT',
+                metadata: data,
+            });
+        }
+    }
+    if (RIDER_INBOX_TYPES[type]) {
+        for (const ownerId of ownersOf('DELIVERY_PARTNER')) {
+            rows.push({
+                ownerType: 'DELIVERY_PARTNER',
+                ownerId,
+                title,
+                message,
+                link: '',
+                category: RIDER_INBOX_TYPES[type],
+                source: 'ORDER_EVENT',
+                metadata: data,
+            });
+        }
+    }
+    return rows;
 };
 
 /** Saves the inbox copy in the background: it never delays or fails the push. */

@@ -189,6 +189,41 @@ const mapDeliverySupport = (response) => {
     }));
 };
 
+const pendingWithdrawalRows = (response) => {
+  const rows = response?.data?.data?.requests || [];
+  return (Array.isArray(rows) ? rows : []).filter(
+    (item) => String(item?.status || "").toLowerCase() === "pending"
+  );
+};
+
+const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+
+const mapRestaurantWithdrawals = (response) =>
+  pendingWithdrawalRows(response).map((item) => ({
+    id: `withdraw-restaurant-${String(item?._id || item?.id || "")}`,
+    title: "Restaurant Withdrawal Request",
+    message: `${item?.restaurantName || "Restaurant"} (${item?.restaurantIdString || "N/A"}) requested a withdrawal of ${money(item?.amount)}.`,
+    type: "withdrawal",
+    category: "restaurant_withdrawal",
+    path: "/admin/food/restaurant-withdraws",
+    createdAt: item?.createdAt,
+    timeLabel: toDateLabel(item?.createdAt),
+    metaLabel: joinMeta(item?.restaurantName, item?.restaurantIdString, money(item?.amount)),
+  }));
+
+const mapDeliveryWithdrawals = (response) =>
+  pendingWithdrawalRows(response).map((item) => ({
+    id: `withdraw-delivery-${String(item?._id || item?.id || "")}`,
+    title: "Delivery Partner Withdrawal Request",
+    message: `${item?.deliveryName || "Delivery partner"} (${item?.deliveryIdString || "N/A"}) requested a withdrawal of ${money(item?.amount)}.`,
+    type: "withdrawal",
+    category: "delivery_withdrawal",
+    path: "/admin/food/delivery-withdrawal",
+    createdAt: item?.createdAt,
+    timeLabel: toDateLabel(item?.createdAt),
+    metaLabel: joinMeta(item?.deliveryName, item?.deliveryIdString, money(item?.amount)),
+  }));
+
 const mapExpiredFssai = (response) => {
   const payload = response?.data?.data;
   const rows = payload?.items || payload?.data || response?.data?.items || [];
@@ -252,6 +287,8 @@ export default function useAdminNotifications(options = {}) {
         adminAPI.getExpiredFssaiNotifications(),
         adminAPI.getEndingSoonAlerts(),
         adminAPI.getRestaurantAddons({ approvalStatus: "pending", page: 1, limit: 50 }),
+        adminAPI.getWithdrawals({ status: "pending", page: 1, limit: 50 }),
+        adminAPI.getDeliveryWithdrawals({ status: "pending", page: 1, limit: 50 }),
       ]);
       const [
         restaurantsRes,
@@ -262,6 +299,8 @@ export default function useAdminNotifications(options = {}) {
         fssaiExpiredRes,
         endingSoonRes,
         addonApprovalRes,
+        restaurantWithdrawRes,
+        deliveryWithdrawRes,
       ] = settled.map((r) => (r.status === "fulfilled" ? r.value : null));
 
       const restaurantRows =
@@ -274,6 +313,8 @@ export default function useAdminNotifications(options = {}) {
         ...mapDeliveryJoinRequests(deliveryJoinRes),
         ...mapFoodApprovals(foodApprovalRes),
         ...mapPendingAddons(addonApprovalRes),
+        ...mapRestaurantWithdrawals(restaurantWithdrawRes),
+        ...mapDeliveryWithdrawals(deliveryWithdrawRes),
         ...mapUserRestaurantSupport(supportRes),
         ...mapDeliverySupport(deliverySupportRes),
         ...mapExpiredFssai(fssaiExpiredRes),

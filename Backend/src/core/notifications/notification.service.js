@@ -177,3 +177,17 @@ export const dismissAllNotifications = async ({ ownerType, ownerId } = {}) => {
 
     return { modifiedCount: Number(result?.count || 0) };
 };
+
+/** Marks every unread notification of this owner read; returns how many changed. */
+export const markAllNotificationsAsRead = async ({ ownerType, ownerId } = {}) => {
+    const result = await prisma.foodNotification.updateMany({
+        where: {
+            ownerType: normalizeOwnerType(ownerType),
+            ownerId: requireId(ownerId, 'ownerId'),
+            dismissedAt: null,
+            isRead: false,
+        },
+        data: { isRead: true, readAt: new Date() },
+    });
+    return { modifiedCount: Number(result?.count || 0), unreadCount: 0 };
+};

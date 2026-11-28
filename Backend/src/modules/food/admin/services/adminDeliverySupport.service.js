@@ -1,6 +1,6 @@
 import { dayRange } from '../../../../utils/timezone.js';
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, riderDisplayId } from '../../../../utils/helpers.js';
 import { sendNotificationToOwner } from '../../../../core/notifications/firebase.service.js';
 import { getRestaurantSubscriptionSettings } from './adminSettings.service.js';
 import { getAdminRestaurantSubscriptionHistory as historyFromRestaurant } from '../../restaurant/services/subscriptionHistory.service.js';
@@ -145,7 +145,7 @@ export async function updateDeliverySupportTicket(id, body = {}) {
                     message,
                     source: 'SUPPORT_RESPONSE',
                     category: 'support',
-                    metadata: { ticketId: ticket.id },
+                    metadata: { type: 'support_response', ticketId: ticket.id },
                 },
             })
             .catch((err) => logger.error('Error creating delivery support notification:', err));
@@ -156,7 +156,8 @@ export async function updateDeliverySupportTicket(id, body = {}) {
             payload: {
                 title: 'Support Ticket Response',
                 body: message,
-                data: { type: 'SUPPORT_RESPONSE', ticketId: ticket.id },
+                // Lower-case like every other rider push type (the rider app accepts both).
+                data: { type: 'support_response', ticketId: ticket.id, ticketCode: ticket.ticketId || '' },
             },
         }).catch((err) => logger.error('Error sending delivery support push notification:', err));
     }
@@ -250,7 +251,7 @@ export async function getDeliveryPartnerBonusTransactions(query = {}) {
         sl: skip + index + 1,
         transactionId: t.transactionId,
         deliveryPartnerId: t.deliveryPartnerId,
-        deliveryId: t.deliveryPartnerId ? `DP-${t.deliveryPartnerId.slice(-8).toUpperCase()}` : null,
+        deliveryId: riderDisplayId(t.deliveryPartnerId),
         deliveryman: t.deliveryPartner?.name || '',
         // Decimal, so it would otherwise reach the admin table as a string.
         amount: Number(t.amount),

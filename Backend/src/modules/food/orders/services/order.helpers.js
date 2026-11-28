@@ -131,15 +131,23 @@ export function toRestaurantContact(order) {
   if (out.deliveryAddress && typeof out.deliveryAddress === "object") out.deliveryAddress = { ...out.deliveryAddress, phone: "" };
   if (out.userId && typeof out.userId === "object") out.userId = person(out.userId);
 
-  // The Call button rings the rider -- once the rider has accepted. A rider
-  // the order is only offered to is not the restaurant's to call.
-  const riderAccepted = Boolean(order.dispatchAcceptedAt || order.dispatch?.acceptedAt);
+  // The rider is the restaurant's to see -- name, phone, Call button -- only
+  // once they have accepted. A rider the order is merely offered to (or was
+  // offered and let it lapse) showed up as "the rider" on the ticket, so a
+  // name like that of any online rider in the zone appeared before anyone
+  // had taken the order. Until acceptance there is no rider at all.
+  const dispatchStatus = order.dispatchStatus ?? order.dispatch?.status;
+  const riderAccepted = dispatchStatus
+    ? dispatchStatus === "accepted"
+    : Boolean(order.dispatchAcceptedAt || order.dispatch?.acceptedAt);
   if (!riderAccepted) {
-    const noPhone = (p) => (p && typeof p === "object" ? { ...p, phone: "" } : p);
     if (out.dispatch && typeof out.dispatch === "object") {
-      out.dispatch = { ...out.dispatch, deliveryPartnerId: noPhone(out.dispatch.deliveryPartnerId) };
+      out.dispatch = { ...out.dispatch, deliveryPartnerId: null, externalRider: null };
     }
-    if (out.deliveryPartner) out.deliveryPartner = noPhone(out.deliveryPartner);
+    out.deliveryPartner = null;
+    out.dispatchDeliveryPartnerId = null;
+    delete out.deliveryPartnerName;
+    delete out.deliveryPartnerPhone;
   }
   return out;
 }
@@ -762,6 +770,9 @@ export function buildDeliverySocketPayload(orderDoc, restaurantDoc = null) {
     deliveryFee: order?.pricing?.deliveryFee || 0,
     deliveryFleet: order?.deliveryFleet,
     dispatch: order?.dispatch,
+    // The live ETA the customer is shown (eta.service.js), so the offer can show it too.
+    etaMinutes: order?.etaMinutes ?? null,
+    estimatedDeliveryAt: order?.estimatedDeliveryAt ?? null,
     createdAt: order?.createdAt,
     updatedAt: order?.updatedAt,
   };

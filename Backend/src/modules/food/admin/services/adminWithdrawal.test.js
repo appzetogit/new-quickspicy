@@ -59,6 +59,7 @@ test.after(async () => {
         where: { entityType: 'deliveryBoy', entityId: { in: created.partners } },
     });
     await prisma.wallet.deleteMany({ where: { entityId: { in: created.partners } } });
+    await prisma.foodNotification.deleteMany({ where: { ownerId: { in: [...created.partners, ...created.restaurants] } } });
     await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: created.partners } } });
     await prisma.foodRestaurant.deleteMany({ where: { id: { in: created.restaurants } } });
     await prisma.$disconnect();
@@ -150,6 +151,18 @@ test('rejecting releases the reservation without paying', async () => {
     assert.equal(Number(wallet.lockedAmount), 0, 'but the hold is lifted');
 });
 
+test('a rider is told once when their withdrawal is rejected', async () => {
+    const partner = await makePartner(500, 300);
+    const w = await makeWithdrawal(partner, 300);
+    await updateDeliveryWithdrawalStatus(w.id, { status: 'rejected', rejectionReason: 'Bank details wrong' });
+    await updateDeliveryWithdrawalStatus(w.id, { status: 'rejected' }); // a repeat click
+
+    const inbox = await prisma.foodNotification.findMany({ where: { ownerType: 'DELIVERY_PARTNER', ownerId: partner.id } });
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0].metadata.type, 'withdrawal_rejected');
+    assert.match(inbox[0].message, /Bank details wrong/);
+});
+
 test('an already-decided request cannot be changed', async () => {
     const partner = await makePartner(400);
     const w = await makeWithdrawal(partner, 100);
@@ -193,7 +206,7 @@ test('delivery payouts list with their partner details', async () => {
 
     const row = requests.find((r) => r.id === w.id);
     assert.equal(row.deliveryName, partner.name, 'joined through the foreign key');
-    assert.match(row.deliveryIdString, /^DEL/, 'short code derived from the id');
+    assert.match(row.deliveryIdString, /^DP-[0-9A-F]{8}$/, 'short code derived from the id');
     assert.equal(row.amount, 321, 'Decimal converted for the client');
     assert.equal(row.status, 'Pending', 'the table renders it capitalised');
 
@@ -225,10 +238,16 @@ test('a restaurant payout is decided once', async () => {
     const row = requests.find((r) => r.id === w.id);
     assert.equal(row.restaurantName, restaurant.restaurantName);
     assert.equal(row.restaurantBankDetails.ifscCode, 'TEST0001');
-    assert.match(row.restaurantIdString, /^REST/);
+    assert.equal(row.restaurantIdString, `REST${restaurant.id.slice(-6).toUpperCase()}`);
 
     const approved = await updateWithdrawalStatus(w.id, { status: 'approved', transactionId: 'UTR-9' });
     assert.equal(approved.status, 'approved');
+
+    // The restaurant is told, in its inbox as well as by push.
+    const inbox = await prisma.foodNotification.findMany({ where: { ownerType: 'RESTAURANT', ownerId: restaurant.id } });
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0].metadata.type, 'withdrawal_approved');
+    assert.equal(inbox[0].metadata.withdrawalId, w.id);
 
     await assert.rejects(
         () => updateWithdrawalStatus(w.id, { status: 'rejected' }),

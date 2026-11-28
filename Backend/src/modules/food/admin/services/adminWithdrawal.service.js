@@ -1,8 +1,9 @@
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, restaurantDisplayId, riderDisplayId } from '../../../../utils/helpers.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { recordTransaction } from '../../../../core/payments/transaction.service.js';
 import { parseDayBound } from '../../../../utils/timezone.js';
+import { notifyWithdrawalDecision } from './decisionNotify.js';
 
 /**
  * Withdrawal approvals, extracted from admin.service.js.
@@ -42,7 +43,7 @@ const serializeRestaurantWithdrawal = (w) => ({
     id: w.id,
     amount: Number(w.amount),
     restaurantName: w.restaurant?.restaurantName || 'N/A',
-    restaurantIdString: w.restaurant ? `REST${w.restaurant.id.slice(-6).padStart(6, '0')}` : 'N/A',
+    restaurantIdString: restaurantDisplayId(w.restaurant?.id || w.restaurantId) || 'N/A',
     restaurantBankDetails: {
         accountHolderName: w.restaurant?.accountHolderName || '',
         accountNumber: w.restaurant?.accountNumber || '',
@@ -62,7 +63,8 @@ const serializeDeliveryWithdrawal = (w) => ({
     deliveryPhone: w.deliveryPartner?.phone || 'N/A',
     // Mongo carried a stored `profilePartnerId` code; the schema has no such
     // column, so it is derived from the id exactly as the restaurant one is.
-    deliveryIdString: w.deliveryPartner ? `DEL${w.deliveryPartner.id.slice(-6).padStart(6, '0')}` : 'N/A',
+    deliveryIdString: riderDisplayId(w.deliveryPartner?.id || w.deliveryPartnerId) || 'N/A',
+    deliveryId: riderDisplayId(w.deliveryPartner?.id || w.deliveryPartnerId),
     status: titleCase(w.status),
 });
 
@@ -141,6 +143,9 @@ export async function updateWithdrawalStatus(id, { status, adminNote, rejectionR
         where: { id: String(id) },
         include: { restaurant: { select: { id: true, restaurantName: true } } },
     });
+    await notifyWithdrawalDecision(
+        { ownerType: 'RESTAURANT', ownerId: updated.restaurantId }, updated, next, rejectionReason || adminNote || '',
+    );
     return { ...updated, amount: Number(updated.amount) };
 }
 
@@ -192,6 +197,9 @@ export async function updateDeliveryWithdrawalStatus(
     const next = raw === 'processed' ? 'approved' : raw;
     if (!WITHDRAWAL_STATUSES.includes(next)) throw new ValidationError('Invalid withdrawal status');
 
+    // Set only when this call moved the request out of pending, so a repeat
+    // click does not notify the rider twice.
+    let decided = false;
     await prisma.$transaction(async (tx) => {
         // Claim the request first. Everything below only runs for the caller
         // that actually moved it out of pending.
@@ -217,6 +225,7 @@ export async function updateDeliveryWithdrawalStatus(
         }
 
         if (next === 'pending') return;
+        decided = true;
 
         const claimed = await tx.foodDeliveryWithdrawal.findUnique({
             where: { id: String(id) },
@@ -293,5 +302,10 @@ export async function updateDeliveryWithdrawalStatus(
             deliveryPartner: { select: { id: true, name: true, phone: true } },
         },
     });
+    if (decided) {
+        await notifyWithdrawalDecision(
+            { ownerType: 'DELIVERY_PARTNER', ownerId: updated.deliveryPartnerId }, updated, next, rejectionReason || adminNote || '',
+        );
+    }
     return { ...updated, amount: Number(updated.amount) };
 }

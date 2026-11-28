@@ -325,7 +325,7 @@ test('a new order gets an ETA, and the rider position lands on it by order numbe
     // A rider takes it, and pings with the QS number.
     await prisma.foodOrder.update({
         where: { id: liveOrderId },
-        data: { dispatchDeliveryPartnerId: rider.id, dispatchAcceptedAt: new Date(), orderStatus: 'picked_up', etaComputedAt: null },
+        data: { dispatchDeliveryPartnerId: rider.id, dispatchStatus: 'accepted', dispatchAcceptedAt: new Date(), orderStatus: 'picked_up', etaComputedAt: null },
     });
     await saveRiderPosition({ orderId: row.order_id, riderId: rider.id, lat: SOUTH.lat, lng: SOUTH.lng + 0.01 });
     let after;
@@ -380,14 +380,14 @@ test('a restaurant cannot chat with the customer, and chats with the rider only 
     assert.equal(sent.text, 'Parcel is ready');
 
     // Offered but not accepted: refused.
-    await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchAcceptedAt: null } });
+    await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchStatus: 'assigned', dispatchAcceptedAt: null } });
     try {
         await assert.rejects(
             () => sendMessage(kitchen, { orderId: liveOrderId, peerRole: 'DELIVERY_PARTNER', text: 'Hello?' }),
             (err) => status(err) === 403 && /once they have accepted/.test(err.message),
         );
     } finally {
-        await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchAcceptedAt: new Date() } });
+        await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchStatus: 'accepted', dispatchAcceptedAt: new Date() } });
     }
 });
 
@@ -411,12 +411,12 @@ test("the restaurant sees the rider's phone once the rider has accepted, not bef
     const accepted = await getOrderById(liveOrderId, { restaurantId: openKitchen.id });
     assert.equal(riderPhone(accepted), rider.phone);
 
-    await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchAcceptedAt: null } });
+    await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchStatus: 'assigned', dispatchAcceptedAt: null } });
     try {
         const offered = await getOrderById(liveOrderId, { restaurantId: openKitchen.id });
         assert.equal(riderPhone(offered), '');
     } finally {
-        await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchAcceptedAt: new Date() } });
+        await prisma.foodOrder.update({ where: { id: liveOrderId }, data: { dispatchStatus: 'accepted', dispatchAcceptedAt: new Date() } });
     }
 });
 

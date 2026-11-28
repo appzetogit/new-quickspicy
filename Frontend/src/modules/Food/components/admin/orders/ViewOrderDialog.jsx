@@ -59,6 +59,8 @@ const formatDialogMoney = (value) => {
 /** Statuses where an admin can still give the order a rider (before pickup). */
 const RIDER_ASSIGNABLE = ["confirmed", "preparing", "ready_for_pickup"]
 
+const mapLink = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+
 export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged }) {
   const [pickingRider, setPickingRider] = useState(false)
   // Full order detail (statusHistory + transaction split) fetched on open;
@@ -453,6 +455,34 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Restaurant Name</p>
                 <p className="text-sm font-medium text-slate-900">{restaurantLabel(order.restaurant)}</p>
               </div>
+              {(() => {
+                // The populated restaurant on the full detail carries where it is.
+                const r = [detail?.restaurantId, order.restaurant].find((v) => v && typeof v === "object") || null
+                if (!r) return null
+                const address = [r.addressLine1, r.addressLine2, r.area, r.city, r.state, r.pincode]
+                  .map((v) => String(v || "").trim())
+                  .filter(Boolean)
+                  .join(", ")
+                const lat = Number(r.latitude)
+                const lng = Number(r.longitude)
+                const hasPoint = r.latitude != null && r.longitude != null && Number.isFinite(lat) && Number.isFinite(lng)
+                return (
+                  <div className="space-y-1 mt-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Restaurant Location</p>
+                    <p className="text-sm text-slate-900">{address || "Address not available"}</p>
+                    {hasPoint && (
+                      <a
+                        href={mapLink(lat, lng)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 underline"
+                      >
+                        {lat.toFixed(6)}, {lng.toFixed(6)} (open map)
+                      </a>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
 
@@ -566,7 +596,15 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order, onChanged
                 <p className="text-sm text-slate-900">{formatAddress(order.address)}</p>
                 {getCoordinates(order.address) && (
                   <p className="text-xs text-slate-500 mt-2">
-                    <span className="font-medium">Coordinates:</span> {getCoordinates(order.address)}
+                    <span className="font-medium">Coordinates:</span>{" "}
+                    <a
+                      href={mapLink(...order.address.location.coordinates.slice().reverse())}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      {getCoordinates(order.address)} (open map)
+                    </a>
                   </p>
                 )}
                 {order.address.label && (

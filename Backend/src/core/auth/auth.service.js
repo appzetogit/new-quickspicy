@@ -15,7 +15,7 @@ import { config } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
 import { sendAdminResetOtpEmail } from "../../utils/email.js";
 import { prisma } from "../../config/prisma.js";
-import { isId } from "../../utils/helpers.js";
+import { isId, riderDisplayId } from "../../utils/helpers.js";
 import { hashAdminPassword, compareAdminPassword } from "./adminPassword.util.js";
 import { creditReferralReward } from "../../modules/food/user/services/userWallet.service.js";
 import { loadReferralSettingsForZone, zoneIdForUserReferral } from "../../modules/food/shared/referralZone.js";
@@ -798,13 +798,13 @@ export const getProfile = async (userId, role) => {
     case ROLES.DELIVERY_PARTNER: {
       const partner = await prisma.foodDeliveryPartner.findUnique({ where: { id } });
       if (!partner) break;
-      const deliveryId = partner._id
-        ? `DP-${partner._id.toString().slice(-8).toUpperCase()}`
-        : null;
+      const deliveryId = riderDisplayId(partner.id);
       profile = {
         ...partner,
         email: partner.email || null,
         deliveryId,
+        // Decimal column: a string in JSON otherwise.
+        rating: Number(partner.rating) || 0,
         status: partner.status === "rejected" ? "blocked" : partner.status,
         profileImage: partner.profilePhoto
           ? { url: partner.profilePhoto }

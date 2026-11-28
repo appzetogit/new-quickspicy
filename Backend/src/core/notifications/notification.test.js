@@ -8,6 +8,7 @@ import {
     markNotificationAsRead,
     dismissNotification,
     dismissAllNotifications,
+    markAllNotificationsAsRead,
 } from './notification.service.js';
 import {
     upsertFirebaseDeviceToken,
@@ -135,6 +136,24 @@ test('another owner cannot read or dismiss your notification', async () => {
         () => markNotificationAsRead({ notificationId: items[0].id, ownerType: 'USER', ownerId: otherUserId }),
         /Notification not found/,
     );
+});
+
+test('mark all read clears the unread count and keeps the list', async () => {
+    await createInboxNotifications({
+        notifications: [
+            { ownerType: 'USER', ownerId: otherUserId, title: 'One', message: 'First unread' },
+            { ownerType: 'USER', ownerId: otherUserId, title: 'Two', message: 'Second unread' },
+        ],
+    });
+    assert.equal((await getInboxNotifications({ ownerType: 'USER', ownerId: otherUserId })).unreadCount, 2);
+
+    const result = await markAllNotificationsAsRead({ ownerType: 'USER', ownerId: otherUserId });
+    assert.equal(result.modifiedCount, 2);
+    const after = await getInboxNotifications({ ownerType: 'USER', ownerId: otherUserId });
+    assert.equal(after.unreadCount, 0);
+    assert.equal(after.items.length, 2, 'read, not removed');
+    // Someone else's inbox is untouched by it.
+    assert.equal((await markAllNotificationsAsRead({ ownerType: 'USER', ownerId: otherUserId })).modifiedCount, 0);
 });
 
 test('dismissAll empties the inbox and reports how many moved', async () => {

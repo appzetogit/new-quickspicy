@@ -43,7 +43,7 @@ const blankOr = (test, message, { upper = false } = {}) => z
 
 /** Indian registration: MH12AB1234 (state + RTO + series + number) or BH series 22BH1234AB. */
 export const normalizeVehicleNumber = (v) => String(v ?? '').replace(/[\s-]/g, '').toUpperCase();
-const vehicleNumberRegex = /^(?:[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}|\d{2}BH\d{4}[A-Z]{1,2})$/;
+export const vehicleNumberRegex = /^(?:[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}|\d{2}BH\d{4}[A-Z]{1,2})$/;
 
 const deliveryRegisterSchema = z.object({
     name: z.string({ required_error: 'Name is required' }).trim().min(1, 'Name is required').max(100),

@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { prisma } from '../../../../config/prisma.js';
 import { uniquePhone, uniqueTag } from '../../../../utils/testIds.js';
 import { getRiderCashInHand, getDeliveryPartnerWalletEnhanced } from './deliveryFinance.service.js';
-import { getDeliveryPartnerWallet } from './delivery.service.js';
+import { getDeliveryPartnerWallet, updateDeliveryPartnerDetails } from './delivery.service.js';
+import { getBulkDeliveryPartnerStats } from '../../admin/services/adminDeliveryPartner.service.js';
 
 /**
  * Cash in hand is the COD cash a rider collected and has not deposited (plus
@@ -49,6 +50,7 @@ test.after(async () => {
     const ids = created.orders;
     await prisma.foodChangeCredit.deleteMany({ where: { orderId: { in: ids } } });
     await prisma.foodDeliveryCashDeposit.deleteMany({ where: { id: { in: created.deposits } } });
+    await prisma.settlement.deleteMany({ where: { entityType: 'deliveryBoy', entityId: { in: created.riders } } });
     await prisma.wallet.deleteMany({ where: { entityId: { in: created.riders } } });
     await prisma.foodOrder.deleteMany({ where: { id: { in: ids } } });
     await prisma.foodDeliveryPartner.deleteMany({ where: { id: { in: created.riders } } });
@@ -109,4 +111,41 @@ test('a rider with no cash orders has nothing in hand', async () => {
     await newOrder(rider.id, { paymentMethod: 'razorpay' });
     assert.equal((await getRiderCashInHand(rider.id)).cashInHand, 0);
     assert.equal((await getDeliveryPartnerWallet(rider.id)).cashInHand, 0);
+});
+
+test('a weekly-statement payout comes off the pocket, and the admin list shows the same balance', async () => {
+    const rider = await prisma.foodDeliveryPartner.create({
+        data: { name: `${tag} Paid Rider`, phone: uniquePhone('8'), status: 'approved' },
+    });
+    created.riders.push(rider.id);
+    for (let i = 0; i < 5; i += 1) await newOrder(rider.id, { paymentMethod: 'razorpay', riderEarning: 100 });
+    // Paid 300 through the balance sheet (a Settlement row, not a withdrawal).
+    await prisma.settlement.create({
+        data: { entityType: 'deliveryBoy', entityId: rider.id, amount: 300, status: 'processed', processedAt: new Date() },
+    });
+
+    const wallet = await getDeliveryPartnerWalletEnhanced(rider.id);
+    assert.equal(wallet.pocketBalance, 200, '500 earned - 300 paid out');
+    assert.equal(wallet.totalWithdrawn, 300);
+    assert.equal(wallet.deliveryId, `DP-${rider.id.slice(-8).toUpperCase()}`);
+
+    const stats = (await getBulkDeliveryPartnerStats([rider.id])).get(rider.id);
+    assert.equal(stats.pocketBalance, wallet.pocketBalance, 'one figure on both screens');
+});
+
+test('a rider can edit their vehicle, and a bad type or plate is refused', async () => {
+    const rider = await prisma.foodDeliveryPartner.create({
+        data: { name: `${tag} Vehicle Rider`, phone: uniquePhone('8'), status: 'approved' },
+    });
+    created.riders.push(rider.id);
+    const plate = `MP09${tag.replace(/[^A-Z]/gi, '').slice(-2).toUpperCase().padEnd(2, 'X')}${String(Date.now()).slice(-4)}`;
+    const updated = await updateDeliveryPartnerDetails(rider.id, {
+        vehicle: { type: 'Scooter', model: 'Activa 6G', number: plate.replace(/(\d{4})$/, '-$1').toLowerCase() },
+    });
+    assert.equal(updated.vehicleType, 'scooter');
+    assert.equal(updated.vehicleName, 'Activa 6G');
+    assert.equal(updated.vehicleNumber, plate);
+
+    await assert.rejects(() => updateDeliveryPartnerDetails(rider.id, { vehicle: { type: 'truck' } }), /bike, scooter/);
+    await assert.rejects(() => updateDeliveryPartnerDetails(rider.id, { vehicle: { number: 'NOTAPLATE' } }), /valid vehicle number/);
 });

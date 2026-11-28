@@ -129,6 +129,10 @@ test('a manual zone offers nothing to riders; the order waits for an admin', asy
 
     const queue = await listManualQueue();
     assert.ok(queue.orders.some((o) => o.id === orderA));
+    // Both ends of the trip, so the admin can judge which rider is near.
+    const queued = queue.orders.find((o) => o.id === orderA);
+    assert.deepEqual(queued.restaurantLocation, { lat: HERE.lat, lng: HERE.lng });
+    assert.ok('dropLocation' in queued && 'dropAddress' in queued && 'restaurantAddress' in queued);
 });
 
 test('riders can neither see nor grab an unassigned manual order', async () => {

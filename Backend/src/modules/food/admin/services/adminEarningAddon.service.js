@@ -1,6 +1,6 @@
 import { dayRange } from '../../../../utils/timezone.js';
 import { prisma } from '../../../../config/prisma.js';
-import { isId } from '../../../../utils/helpers.js';
+import { isId, riderDisplayId } from '../../../../utils/helpers.js';
 import { logger } from '../../../../utils/logger.js';
 import { recordTransaction } from '../../../../core/payments/transaction.service.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
@@ -154,7 +154,7 @@ const serializeHistory = (h, index = 0, offset = 0) => ({
     id: h.id,
     sl: offset + index + 1,
     deliveryPartnerId: h.deliveryPartnerId,
-    deliveryId: h.deliveryPartnerId ? `DP-${h.deliveryPartnerId.slice(-8).toUpperCase()}` : null,
+    deliveryId: riderDisplayId(h.deliveryPartnerId),
     deliveryman: h.deliveryPartner?.name || '',
     deliveryPhone: h.deliveryPartner?.phone || 'N/A',
     offerTitle: h.offer?.title || '',

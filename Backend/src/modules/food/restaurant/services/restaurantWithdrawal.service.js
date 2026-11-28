@@ -1,6 +1,8 @@
 import { prisma } from '../../../../config/prisma.js';
 import { ValidationError } from '../../../../core/auth/errors.js';
 import { getRestaurantFinance } from './restaurantFinance.service.js';
+import { alertAdmins } from '../../admin/services/decisionNotify.js';
+import { restaurantDisplayId } from '../../../../utils/helpers.js';
 
 /**
  * A restaurant asking to be paid out. Admin acts on these in
@@ -46,6 +48,17 @@ export async function createWithdrawalRequest(restaurantId, { amount, bankDetail
             data: { restaurantId, amount: value, bankDetails: bankDetails ?? undefined, status: 'pending' },
         });
     }, { timeout: 15000 });
+
+    void prisma.foodRestaurant.findUnique({ where: { id: String(restaurantId) }, select: { restaurantName: true } })
+        .then((r) => alertAdmins({
+            title: 'New restaurant withdrawal request',
+            body: `${r?.restaurantName || 'A restaurant'} (${restaurantDisplayId(restaurantId)}) requested ${rupees(value)}.`,
+            data: {
+                type: 'withdrawal_request', subType: 'restaurant', withdrawalId: withdrawal.id,
+                restaurantId: String(restaurantId), amount: String(value), link: '/admin/food/restaurant-withdraws',
+            },
+        }))
+        .catch(() => {});
 
     return serialize(withdrawal);
 }
