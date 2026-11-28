@@ -775,7 +775,7 @@ const withinRange = (start, end) => [
     { orderStatus: { not: 'delivered' }, createdAt: { gte: start, lte: end } },
 ];
 
-const TRIP_ORDER_BY = [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }];
+const TRIP_ORDER_BY = [{ deliveredAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }];
 
 // ----- Earnings summary -----
 /** Wallet/earnings line for a salaried rider's order, or null for gig orders. */
